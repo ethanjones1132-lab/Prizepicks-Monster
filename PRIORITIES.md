@@ -1,7 +1,8 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-17 (Phase 1 perf shipped)
+Last updated: 2026-06-23 (initial commit with proper git setup)
 Working copy: `C:\Projects\prizepicks-monster`
+Commit: `0e8536b`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
 
