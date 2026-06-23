@@ -210,14 +210,18 @@ export interface BankrollConfig {
 
 export interface BankrollSummary {
   config: BankrollConfig;
+  current_bankroll: number;
   roi_pct: number;
   total_wagered: number;
   total_won: number;
   total_lost: number;
-  net_profit: number;
-  current_bankroll: number;
+  profit_loss: number;
   bets_placed: number;
   win_rate: number;
+  bets_today: number;
+  bets_this_week: number;
+  remaining_daily: number;
+  remaining_weekly: number;
 }
 
 export interface DataSourceStatus {

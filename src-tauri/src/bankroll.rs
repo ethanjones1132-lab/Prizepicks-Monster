@@ -19,6 +19,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+use chrono::{Duration, Utc};
+use sqlx::Row;
+
 const BANKROLL_DIR: &str = ".openclaw/prizepicks-monster";
 const BANKROLL_FILE: &str = "bankroll.json";
 
@@ -129,11 +132,14 @@ pub struct BetRecommendation {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BankrollSummary {
     pub config: BankrollConfig,
+    pub current_bankroll: f64,
     pub roi_pct: f64,
     pub total_wagered: f64,
     pub total_won: f64,
     pub total_lost: f64,
     pub profit_loss: f64,
+    pub bets_placed: i64,
+    pub win_rate: f64,
     pub bets_today: f64,
     pub bets_this_week: f64,
     pub remaining_daily: f64,
@@ -447,26 +453,115 @@ pub fn record_result(config: &mut BankrollConfig, stake: f64, won: bool, odds: O
     }
 }
 
-/// Get a summary of bankroll status
-pub fn get_bankroll_summary(config: &BankrollConfig) -> BankrollSummary {
-    let profit_loss = config.total_bankroll - config.initial_bankroll;
+/// Get a summary of bankroll status, deriving real metrics from the database.
+///
+/// Combines:
+/// - Paper account balance (from `paper_account` table) as the source of truth for current bankroll
+/// - Bet history P&L (from `bet_history` table) for realized profit/loss, wagered, won, lost
+/// - Daily/weekly bet counts from `bet_history` for cap tracking
+pub async fn get_bankroll_summary(
+    config: &BankrollConfig,
+    db_pool: &sqlx::Pool<sqlx::Sqlite>,
+) -> BankrollSummary {
+    // ── Paper account: source of truth for current bankroll ──
+    let paper_balance: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(balance_dollars, 0.0) FROM paper_account WHERE id = 1",
+    )
+    .fetch_optional(db_pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(config.total_bankroll);
+
+    // ── Bet history aggregates ──
+    let (total_wagered, total_won, total_lost, bets_placed): (f64, f64, f64, i64) = {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                COALESCE(SUM(stake), 0.0) as total_wagered,
+                COALESCE(SUM(CASE WHEN profit_loss > 0 THEN profit_loss ELSE 0 END), 0.0) as total_won,
+                COALESCE(SUM(CASE WHEN profit_loss < 0 THEN -profit_loss ELSE 0 END), 0.0) as total_lost,
+                COUNT(*) as cnt
+            FROM bet_history
+            "#,
+        )
+        .fetch_one(db_pool)
+        .await;
+        match row {
+            Ok(r) => (
+                r.get::<f64, _>("total_wagered"),
+                r.get::<f64, _>("total_won"),
+                r.get::<f64, _>("total_lost"),
+                r.get::<i64, _>("cnt"),
+            ),
+            Err(_) => (0.0, 0.0, 0.0, 0),
+        }
+    };
+
+    // ── Daily / weekly bet counts ──
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let week_start = (Utc::now() - Duration::days(7))
+        .format("%Y-%m-%d")
+        .to_string();
+
+    let bets_today: f64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bet_history WHERE created_at LIKE ?1 || '%'",
+    )
+    .bind(&today)
+    .fetch_optional(db_pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(0) as f64;
+
+    let bets_this_week: f64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM bet_history WHERE created_at >= ?1",
+    )
+    .bind(&week_start)
+    .fetch_optional(db_pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(0) as f64;
+
+    // ── Derived metrics ──
+    let profit_loss = paper_balance - config.initial_bankroll;
     let roi_pct = if config.initial_bankroll > 0.0 {
         (profit_loss / config.initial_bankroll) * 100.0
     } else {
         0.0
     };
+    let win_rate = if bets_placed > 0 {
+        let wins: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM bet_history WHERE profit_loss > 0",
+        )
+        .fetch_optional(db_pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+        (wins as f64 / bets_placed as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let remaining_daily = (config.daily_bet_limit - bets_today).max(0.0);
+    let remaining_weekly = (config.weekly_bet_limit - bets_this_week).max(0.0);
 
     BankrollSummary {
         config: config.clone(),
+        current_bankroll: (paper_balance * 100.0).round() / 100.0,
         roi_pct: (roi_pct * 100.0).round() / 100.0,
-        total_wagered: 0.0, // Would be tracked via bet history
-        total_won: 0.0,
-        total_lost: 0.0,
+        total_wagered: (total_wagered * 100.0).round() / 100.0,
+        total_won: (total_won * 100.0).round() / 100.0,
+        total_lost: (total_lost * 100.0).round() / 100.0,
         profit_loss: (profit_loss * 100.0).round() / 100.0,
-        bets_today: 0.0,
-        bets_this_week: 0.0,
-        remaining_daily: config.daily_bet_limit,
-        remaining_weekly: config.weekly_bet_limit,
+        bets_placed,
+        win_rate: (win_rate * 100.0).round() / 100.0,
+        bets_today,
+        bets_this_week,
+        remaining_daily,
+        remaining_weekly,
     }
 }
 

@@ -19,8 +19,9 @@ pub async fn save_bankroll_config(config: bankroll::BankrollConfig) -> Result<()
 #[tauri::command]
 pub async fn get_bankroll_summary(
     config: bankroll::BankrollConfig,
+    db_pool: tauri::State<'_, sqlx::Pool<sqlx::Sqlite>>,
 ) -> Result<bankroll::BankrollSummary, String> {
-    Ok(bankroll::get_bankroll_summary(&config))
+    Ok(bankroll::get_bankroll_summary(&config, &db_pool).await)
 }
 
 #[tauri::command]

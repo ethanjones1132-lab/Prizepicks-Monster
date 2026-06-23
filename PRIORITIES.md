@@ -1,6 +1,6 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-23 (initial commit with proper git setup)
+Last updated: 2026-06-23 (P2: sync bankroll limits from predictions.db + paper positions)
 Working copy: `C:\Projects\prizepicks-monster`
 Commit: `0e8536b`
 
@@ -19,7 +19,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
 | **P1** | PrizePicks historical price/spread snapshots | `line_tracker.rs` is PrizePicks-only; no candlestick API in `prizepicks/client.rs` — blocks CLV tracking and momentum signals | ✅ Done |
 | **P1** | PrizePicks-native correlation engine | `correlation.rs` is NFL prop families; portfolio checks are ticker-prefix heuristics, not macro/political/event-graph correlation | ⚠️ Partial |
 | **P2** | Persist `localMaxBetPct` to config | UI-only state; resets when modal closes (unlike `minQuality`, which is in `localStorage`) | ⬜ Not started |
-| **P2** | Sync bankroll limits from `predictions.db` + paper positions | Makes daily/weekly cap warnings and `BankrollView` accurate | ⬜ Not started |
+| **P2** | Sync bankroll limits from `predictions.db` + paper positions | Makes daily/weekly cap warnings and `BankrollView` accurate | ✅ Done |
 | **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ⬜ Not started |
 | **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ⬜ Not started |
 | **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ⬜ Not started |
@@ -33,7 +33,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
 |------|------|-----------|
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
-| P2 | 0 | **4** |
+| P2 | 1 | **3** |
 | P3 | 0 | **2** |
 
 **6–7 items left** (6 if heuristic correlation counts as P1-complete).
