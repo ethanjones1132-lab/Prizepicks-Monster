@@ -1,8 +1,8 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-23 (P2: sync bankroll limits from predictions.db + paper positions)
-Working copy: `C:\Projects\prizepicks-monster`
-Commit: `0e8536b`
+Last updated: 2026-06-23 (P2: sync bankroll limits from predictions.db + paper positions; hygiene: removed broken CLV test stubs)
+Working copy: `C:\\Projects\\prizepicks-monster`
+Commit: `58afd95`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
 
