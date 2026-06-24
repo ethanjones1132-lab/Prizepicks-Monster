@@ -166,7 +166,7 @@ impl PrizePicksTradeDecision {
 
     /// Compute edge, EV, and paper-sim Kelly sizing from implied probability and fair probability.
     /// Call this after setting market_price_pct and fair_probability_pct.
-    pub fn compute(&mut self, bankroll_dollars: f64, kelly_fraction: f64) {
+    pub fn compute(&mut self, bankroll_dollars: f64, kelly_fraction: f64, max_bet_pct: f64) {
         let market_price = self.market_price_pct / 100.0;
         let fair_prob = self.fair_probability_pct / 100.0;
 
@@ -232,8 +232,9 @@ impl PrizePicksTradeDecision {
         // Liquidity score: simplistic scoring based on volume
         self.liquidity_score = ((self.liquidity_score / 50000.0) * 100.0).min(100.0);
 
-        // Max paper-sim position: cap at 5% of bankroll or data-depth limit.
-        self.max_position_dollars = (bankroll_dollars * 0.05).min(self.recommended_stake_dollars);
+        // Max paper-sim position: cap at config max_bet_pct of bankroll (persisted localMaxBetPct)
+        let max_pct = if max_bet_pct > 0.0 { max_bet_pct } else { 0.05 };
+        self.max_position_dollars = (bankroll_dollars * max_pct).min(self.recommended_stake_dollars);
     }
 
     /// Compute with isotonic calibration and portfolio correlation Kelly scaling.
@@ -242,6 +243,7 @@ impl PrizePicksTradeDecision {
         bankroll_dollars: f64,
         kelly_fraction: f64,
         kelly_scale: f64,
+        max_bet_pct: f64,
         apply_calibrator: bool,
     ) {
         if apply_calibrator {
@@ -252,7 +254,7 @@ impl PrizePicksTradeDecision {
                 self.fair_probability_pct = cal.calibrated_pct;
             }
         }
-        self.compute(bankroll_dollars, kelly_fraction);
+        self.compute(bankroll_dollars, kelly_fraction, max_bet_pct);
         let scale = kelly_scale.clamp(0.0, 1.0);
         if scale < 1.0 {
             self.fractional_kelly_pct *= scale;

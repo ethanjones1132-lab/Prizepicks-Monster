@@ -249,7 +249,7 @@ pub async fn prizepicks_record_paper_decision(
     prizepicks: State<'_, PrizePicksState>,
     db_pool: State<'_, Pool<Sqlite>>,
 ) -> Result<String, String> {
-    let bankroll = crate::bankroll::BankrollConfig::default();
+    let bankroll = crate::bankroll::load_bankroll_config();
     let pending = {
         let t = tracker.lock().await;
         t.get_prizepicks_predictions().await
