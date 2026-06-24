@@ -1,10 +1,10 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-23 (maintenance pass; hygiene: removed broken CLV test stubs)
+Last updated: 2026-06-24 (maintenance pass; fix bankroll max_bet_pct integration after feat; marked persist localMaxBetPct done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `9498577`
+Commit: `cecc56d`
 
-Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 2/4 done · P3 not started**
 
 ---
 
@@ -18,7 +18,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
 | **P1** | Wire `edge_eval` calibrator into PrizePicks decision path | Isotonic calibrator applied to `analyze_single_prop` (sports props), not LLM `PrizePicksTradeDecision` forecasts | ✅ Done |
 | **P1** | PrizePicks historical price/spread snapshots | `line_tracker.rs` is PrizePicks-only; no candlestick API in `prizepicks/client.rs` — blocks CLV tracking and momentum signals | ✅ Done |
 | **P1** | PrizePicks-native correlation engine | `correlation.rs` is NFL prop families; portfolio checks are ticker-prefix heuristics, not macro/political/event-graph correlation | ⚠️ Partial |
-| **P2** | Persist `localMaxBetPct` to config | UI-only state; resets when modal closes (unlike `minQuality`, which is in `localStorage`) | ⬜ Not started |
+| **P2** | Persist `localMaxBetPct` to config | UI-only state; resets when modal closes (unlike `minQuality`, which is in `localStorage`) | ✅ Done (2026-06-24) |
 | **P2** | Sync bankroll limits from `predictions.db` + paper positions | Makes daily/weekly cap warnings and `BankrollView` accurate | ✅ Done |
 | **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ⬜ Not started |
 | **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ⬜ Not started |
@@ -33,10 +33,10 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
 |------|------|-----------|
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
-| P2 | 1 | **3** |
+| P2 | 2 | **2** |
 | P3 | 0 | **2** |
 
-**6–7 items left** (6 if heuristic correlation counts as P1-complete).
+**5–6 items left** (5 if heuristic correlation counts as P1-complete).
 
 ---
 
@@ -64,8 +64,8 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2/P3 not started**
 
 Highest leverage for paper-sim trustworthiness:
 
-1. Sync bankroll limits from `predictions.db` + paper positions
-2. CLV per prediction (entry vs close)
+1. CLV per prediction (entry vs close)
+2. Model disagreement flags at entry
 
 ---
 
@@ -98,4 +98,4 @@ Highest leverage for paper-sim trustworthiness:
 ## Environment notes
 
 - Canonical WSL repo (`~/.openclaw/agents/coderclaw/workspace/prizepicks-monster`) was unreachable as of 2026-06-17
-- `edge-eval` and `monster-edge-core` live at `C:\Users\ethan\prizepicks-build\` (sibling paths)
+- `edge-eval` and `monster-edge-core` live at `C:\\Users\\ethan\\prizepicks-build\\` (sibling paths)
