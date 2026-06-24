@@ -361,7 +361,7 @@ mod tests {
         decision.fair_probability_pct = 62.0;
         decision.contract_side = ContractSide::YES;
         decision.liquidity_score = 50000.0; // Will be normalized to 100
-        decision.compute(1000.0, 0.25);
+        decision.compute(1000.0, 0.25, 0.05);
 
         assert!((decision.edge_points - 7.0).abs() < 0.01);
         assert!(decision.ev_roi_pct > 0.0);
@@ -379,7 +379,7 @@ mod tests {
         decision.market_price_pct = 80.0;
         decision.fair_probability_pct = 70.0;
         decision.contract_side = ContractSide::YES;
-        decision.compute(1000.0, 0.25);
+        decision.compute(1000.0, 0.25, 0.05);
 
         // Edge is negative — should not recommend a stake
         assert!(decision.edge_points < 0.0);
@@ -425,7 +425,7 @@ mod tests {
         decision.market_price_pct = 60.0;
         decision.fair_probability_pct = 40.0;
         decision.contract_side = ContractSide::NO;
-        decision.compute(1000.0, 0.25);
+        decision.compute(1000.0, 0.25, 0.05);
 
         assert!((decision.edge_points - 20.0).abs() < 0.01);
         assert!((decision.raw_kelly_pct - 33.33).abs() < 0.05);

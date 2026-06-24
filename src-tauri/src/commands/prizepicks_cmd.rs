@@ -282,6 +282,7 @@ pub async fn prizepicks_record_paper_decision(
         bankroll.total_bankroll,
         bankroll.kelly_fraction,
         adj.kelly_scale,
+        bankroll.max_bet_pct,
         true,
     );
 
