@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-25 (maintenance pass; P3-1 volatility-adjusted Kelly from historical Brier shipped — analysis::kelly_shrinkage computes multiplier from sample size + Brier Skill Score, wired into portfolio_risk::compute_stake_adjustment_with_shrinkage and exposed as the prizepicks_kelly_shrinkage_report Tauri command; 10 new shrinkage tests + 3 new portfolio_risk tests bring suite to 136 passing)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: (pending — see git log)
+Commit: `df43bd9`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 mostly done (1 done, 1 remaining)**
 
