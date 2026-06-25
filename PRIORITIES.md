@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-25 (maintenance pass; model disagreement flags implemented in PrizePicksTradeDecision::compute + test coverage; marked P2 item done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `05466f1`
+Commit: `e941fb7`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 3/4 done · P3 not started**
 
