@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-25 (maintenance pass; CLV per prediction implemented — entry_price_pct captured at insert via full_decision_json.market_price_pct, closing_price_pct/clv_points/clv_ticker/clv_captured_at captured by background sweep matching latest on-or-before resolved_at snapshot; marked P2 item done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: (this commit)
+Commit: `a8c645e`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 not started**
 
