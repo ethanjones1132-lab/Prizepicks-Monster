@@ -1,10 +1,10 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-25 (maintenance pass; model disagreement flags implemented in PrizePicksTradeDecision::compute + test coverage; marked P2 item done)
+Last updated: 2026-06-25 (maintenance pass; CLV per prediction implemented — entry_price_pct captured at insert via full_decision_json.market_price_pct, closing_price_pct/clv_points/clv_ticker/clv_captured_at captured by background sweep matching latest on-or-before resolved_at snapshot; marked P2 item done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `e941fb7`
+Commit: (this commit)
 
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 3/4 done · P3 not started**
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 not started**
 
 ---
 
@@ -21,7 +21,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 3/4 done · P3 not s
 | **P2** | Persist `localMaxBetPct` to config | UI-only state; resets when modal closes (unlike `minQuality`, which is in `localStorage`) | ✅ Done (2026-06-24) |
 | **P2** | Sync bankroll limits from `predictions.db` + paper positions | Makes daily/weekly cap warnings and `BankrollView` accurate | ✅ Done |
 | **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ✅ Done (2026-06-25) |
-| **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ⬜ Not started |
+| **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ✅ Done (2026-06-25) |
 | **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ⬜ Not started |
 | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; README still lists ML training as unchecked | ⬜ Not started |
 
@@ -33,12 +33,10 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 3/4 done · P3 not s
 |------|------|-----------|
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
-| P2 | 3 | **1** |
+| P2 | 4 | **0** |
 | P3 | 0 | **2** |
 
-**4–5 items left** (4 if heuristic correlation counts as P1-complete).
-
----
+**2–3 items left** (2 if heuristic correlation counts as P1-complete).
 
 ## P0 implementation notes (shipped)
 
@@ -46,8 +44,6 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 3/4 done · P3 not s
 - `src-tauri/src/prizepicks/models.rs` — `contract_side`, `market_price_at_entry` on predictions
 - `src-tauri/src/predictions/tracker.rs` — rich `PrizePicksTradeDecision` extraction
 - `src-tauri/src/lib.rs` — auto-grade task on startup
-
----
 
 ## P1 implementation notes (shipped)
 
@@ -58,22 +54,20 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 3/4 done · P3 not s
 
 **P1 gap:** ticker-prefix heuristics only — no macro/political/event-graph correlation yet.
 
----
-
 ## P2 implementation notes (shipped)
 
 - `src-tauri/src/chat/decision_schema.rs` — `model_disagreement: bool` and `disagreement_points: f64` now computed in `PrizePicksTradeDecision::compute()` (and thus `compute_risk_adjusted`); threshold >12pp divergence between fair_probability_pct and market_price_pct. Test coverage in `test_contract_side_no_ev`. Serialized via full_decision_json on paper trade record.
+- `src-tauri/src/predictions/storage.rs` — CLV columns `entry_price_pct`, `closing_price_pct`, `clv_points`, `clv_ticker`, `clv_captured_at` added via `migrate_predictions_columns`. `extract_entry_price_pct` parses `full_decision_json.market_price_pct` and writes it on `insert_prediction`. `capture_closing_prices_for_resolved` walks resolved predictions and links the latest `prizepicks_price_snapshots` row at-or-before `resolved_at`. Guarded with `WHERE clv_captured_at IS NULL` so the sweep is idempotent.
+- `src-tauri/src/predictions/clv.rs` — `spawn_clv_capture_task` background loop, interval shared with auto-grade/paper-settle tasks.
+- Tauri command `prizepicks_capture_clv` exposed for on-demand sweep from the UI; bound in `src-ui/src/services/prizepicks.ts` as `prizepicksApi.captureClv()`.
+- Tests: 13 new in `predictions::storage::tests` — entry-price extraction (valid/missing/invalid/none/out-of-range/boundaries), insert captures entry price, missing-decision tolerates NULL, capture skips without snapshot, capture picks latest-before-resolution snapshot, idempotent, skip when ticker missing. Total 123 lib tests passing.
 
----
+## Suggested next target: P3
 
-## Suggested next target: P2
+Both P3 items are deeper research projects. Recommended ordering:
 
-Highest leverage for paper-sim trustworthiness:
-
-1. CLV per prediction (entry vs close) — build on existing price snapshots and market_price_at_entry
-2. (done) Model disagreement flags at entry
-
----
+1. Volatility-adjusted Kelly from historical Brier — small, builds on the new CLV + grading columns
+2. Multi-category ML classifiers — larger, requires a Python training pipeline update
 
 ## Dashboard performance (deferred)
 

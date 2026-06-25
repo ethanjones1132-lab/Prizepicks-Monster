@@ -241,6 +241,16 @@ pub async fn prizepicks_get_price_history(
         .await
 }
 
+/// Sweep resolved predictions and capture closing-line value (CLV) for any that
+/// don't yet have a closing price tagged. Returns the number of predictions
+/// updated. Safe to invoke from the UI (e.g. on tab focus) — idempotent.
+#[tauri::command]
+pub async fn prizepicks_capture_clv(
+    db_pool: State<'_, Pool<Sqlite>>,
+) -> Result<usize, String> {
+    crate::predictions::storage::capture_closing_prices_for_resolved(&db_pool).await
+}
+
 #[tauri::command]
 pub async fn prizepicks_record_paper_decision(
     session_id: String,

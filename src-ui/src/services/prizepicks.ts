@@ -102,6 +102,10 @@ export const prizepicksApi = {
   getPriceHistory: (ticker: string, limit?: number) =>
     invoke<PrizePicksPriceHistory>('prizepicks_get_price_history', { ticker, limit: limit ?? 200 }),
 
+  // Walk resolved predictions and capture closing-line value (CLV) for any
+  // that don't yet have one. Idempotent; safe to call from a tab-focus handler.
+  captureClv: () => invoke<number>('prizepicks_capture_clv'),
+
   recordPaperDecision: (sessionId: string, decision: PrizePicksTradeDecision) =>
     invoke<string>('prizepicks_record_paper_decision', { sessionId, decision }),
 

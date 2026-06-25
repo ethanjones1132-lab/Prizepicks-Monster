@@ -132,6 +132,14 @@ pub fn run() {
                 prizepicks_auto_grade_secs,
             );
 
+            // Background CLV (closing-line value) capture: ties resolved predictions
+            // to their latest on-or-before-resolution price snapshot, so the
+            // predictions panel can show entry → close drift per pick.
+            predictions::spawn_clv_capture_task(
+                db_pool.clone(),
+                prizepicks_auto_grade_secs,
+            );
+
             // Warm full PrizePicks catalog in the background (dashboard uses quick cache first)
             let prizepicks_warm = prizepicks_for_warm.clone();
             tauri::async_runtime::spawn(async move {
@@ -247,6 +255,7 @@ pub fn run() {
             commands::prizepicks_compute_stake_adjustment,
             commands::prizepicks_snapshot_prices,
             commands::prizepicks_get_price_history,
+            commands::prizepicks_capture_clv,
             commands::prizepicks_record_paper_decision,
             commands::paper_get_analytics,
             commands::paper_get_positions,
