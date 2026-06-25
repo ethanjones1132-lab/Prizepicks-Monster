@@ -82,6 +82,8 @@ export function MarketDetailPanel({ market, onClose }: Props) {
         risk_flags: adjustment && adjustment.kelly_scale < 1 ? ['CorrelatedExposure'] : [],
         data_quality: 'Live',
         price_to_enter: contractSide === 'OVER' ? market.yes_ask : market.no_ask,
+        model_disagreement: Math.abs(fairProb - marketPricePct) > 12,
+        disagreement_points: Math.abs(fairProb - marketPricePct),
       };
       const id = await prizepicksApi.recordPaperDecision('paper-sim', decision);
       setMessage(`Paper trade recorded (${id.slice(0, 8)}…)`);

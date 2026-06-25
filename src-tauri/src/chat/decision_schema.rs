@@ -57,6 +57,13 @@ pub struct PrizePicksTradeDecision {
     pub data_quality: DataQuality,
     /// Price or line to enter the paper-sim position.
     pub price_to_enter: f64,
+    /// Flag set when |fair_probability_pct - market_price_pct| > 12pp at computation time.
+    /// Indicates significant model vs market disagreement at entry (P2 item).
+    #[serde(default)]
+    pub model_disagreement: bool,
+    /// Absolute |fair - market| difference in percentage points (for auditing / CLV correlation later).
+    #[serde(default)]
+    pub disagreement_points: f64,
 }
 
 /// Tracking side for a binary-style PrizePicks decision.
@@ -161,6 +168,8 @@ impl PrizePicksTradeDecision {
             risk_flags: Vec::new(),
             data_quality: DataQuality::Inferential,
             price_to_enter: 0.0,
+            model_disagreement: false,
+            disagreement_points: 0.0,
         }
     }
 
@@ -169,6 +178,11 @@ impl PrizePicksTradeDecision {
     pub fn compute(&mut self, bankroll_dollars: f64, kelly_fraction: f64, max_bet_pct: f64) {
         let market_price = self.market_price_pct / 100.0;
         let fair_prob = self.fair_probability_pct / 100.0;
+
+        // Model disagreement flag at entry (P2 item)
+        // Flag when fair_probability_pct diverges sharply from market implied prob at decision time
+        self.disagreement_points = (self.fair_probability_pct - self.market_price_pct).abs();
+        self.model_disagreement = self.disagreement_points > 12.0;
 
         if market_price <= 0.0 || market_price >= 1.0 || fair_prob <= 0.0 || fair_prob >= 1.0 {
             self.edge_points = 0.0;
@@ -368,6 +382,9 @@ mod tests {
         assert!(decision.raw_kelly_pct > 0.0);
         assert!(decision.fractional_kelly_pct > 0.0);
         assert!(decision.recommended_stake_dollars > 0.0);
+        // 7pp diff, below 12pp threshold
+        assert!(!decision.model_disagreement);
+        assert!((decision.disagreement_points - 7.0).abs() < 0.01);
     }
 
     #[test]
@@ -432,6 +449,9 @@ mod tests {
         assert!((decision.fractional_kelly_pct - 8.33).abs() < 0.05);
         assert!((decision.recommended_stake_dollars - 83.33).abs() < 0.5);
         assert!(decision.ev_roi_pct > 0.0);
+        // 20pp diff >12pp threshold
+        assert!(decision.model_disagreement);
+        assert!((decision.disagreement_points - 20.0).abs() < 0.01);
     }
 
     #[test]

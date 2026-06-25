@@ -1,10 +1,10 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-24 (maintenance pass; fix bankroll max_bet_pct integration after feat; marked persist localMaxBetPct done)
+Last updated: 2026-06-25 (maintenance pass; model disagreement flags implemented in PrizePicksTradeDecision::compute + test coverage; marked P2 item done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `cecc56d`
+Commit: `05466f1`
 
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 2/4 done · P3 not started**
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 3/4 done · P3 not started**
 
 ---
 
@@ -20,7 +20,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 2/4 done · P3 not s
 | **P1** | PrizePicks-native correlation engine | `correlation.rs` is NFL prop families; portfolio checks are ticker-prefix heuristics, not macro/political/event-graph correlation | ⚠️ Partial |
 | **P2** | Persist `localMaxBetPct` to config | UI-only state; resets when modal closes (unlike `minQuality`, which is in `localStorage`) | ✅ Done (2026-06-24) |
 | **P2** | Sync bankroll limits from `predictions.db` + paper positions | Makes daily/weekly cap warnings and `BankrollView` accurate | ✅ Done |
-| **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ⬜ Not started |
+| **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ✅ Done (2026-06-25) |
 | **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ⬜ Not started |
 | **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ⬜ Not started |
 | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; README still lists ML training as unchecked | ⬜ Not started |
@@ -33,10 +33,10 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 2/4 done · P3 not s
 |------|------|-----------|
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
-| P2 | 2 | **2** |
+| P2 | 3 | **1** |
 | P3 | 0 | **2** |
 
-**5–6 items left** (5 if heuristic correlation counts as P1-complete).
+**4–5 items left** (4 if heuristic correlation counts as P1-complete).
 
 ---
 
@@ -60,12 +60,18 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 2/4 done · P3 not s
 
 ---
 
+## P2 implementation notes (shipped)
+
+- `src-tauri/src/chat/decision_schema.rs` — `model_disagreement: bool` and `disagreement_points: f64` now computed in `PrizePicksTradeDecision::compute()` (and thus `compute_risk_adjusted`); threshold >12pp divergence between fair_probability_pct and market_price_pct. Test coverage in `test_contract_side_no_ev`. Serialized via full_decision_json on paper trade record.
+
+---
+
 ## Suggested next target: P2
 
 Highest leverage for paper-sim trustworthiness:
 
-1. CLV per prediction (entry vs close)
-2. Model disagreement flags at entry
+1. CLV per prediction (entry vs close) — build on existing price snapshots and market_price_at_entry
+2. (done) Model disagreement flags at entry
 
 ---
 

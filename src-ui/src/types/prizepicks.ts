@@ -116,6 +116,8 @@ export interface PrizePicksTradeDecision {
   risk_flags: string[];
   data_quality: string;
   price_to_enter: number;
+  model_disagreement: boolean;
+  disagreement_points: number;
 }
 
 export interface PaperAnalytics {
@@ -135,5 +137,4 @@ export interface PaperAnalytics {
   max_drawdown_pct: number;
   fetched_at: string;
 }
-
 
