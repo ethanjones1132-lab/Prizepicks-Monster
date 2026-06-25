@@ -2,6 +2,7 @@
 
 use super::models::{parse_bet_side, PrizePicksBetSide};
 use super::models::{PrizePicksPosition, PrizePicksPrediction};
+use crate::analysis::kelly_shrinkage::KellyShrinkageReport;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -59,6 +60,10 @@ pub struct StakeAdjustment {
     pub adjusted_recommended_stake: f64,
     pub conflicts: Vec<CorrelationConflict>,
     pub warnings: Vec<String>,
+    /// Optional Brier-driven shrinkage layer. `None` when the caller did not
+    /// compute one (e.g. legacy paths). When present, the shrinkage multiplier
+    /// is folded into `kelly_scale` after correlation scaling.
+    pub kelly_shrinkage: Option<KellyShrinkageReport>,
 }
 
 /// Parse player/game keys from a PrizePicks prop ticker.
@@ -148,6 +153,28 @@ pub fn compute_stake_adjustment(
     recommended_stake: f64,
     exposures: &[PortfolioExposure],
 ) -> StakeAdjustment {
+    compute_stake_adjustment_with_shrinkage(
+        target_ticker,
+        target_category,
+        target_side,
+        recommended_stake,
+        exposures,
+        None,
+    )
+}
+
+/// Like `compute_stake_adjustment` but applies a Brier-driven shrinkage layer
+/// on top of the correlation-aware Kelly scale. The shrinkage multiplier is
+/// folded into the final `kelly_scale`; `adjusted_recommended_stake` is the
+/// raw stake scaled by the combined factor.
+pub fn compute_stake_adjustment_with_shrinkage(
+    target_ticker: &str,
+    target_category: &str,
+    target_side: Option<&str>,
+    recommended_stake: f64,
+    exposures: &[PortfolioExposure],
+    shrinkage: Option<KellyShrinkageReport>,
+) -> StakeAdjustment {
     let mut conflicts = Vec::new();
     let mut min_scale = 1.0_f64;
     let mut warnings = Vec::new();
@@ -203,13 +230,41 @@ pub fn compute_stake_adjustment(
         ));
     }
 
+    // Apply Brier-driven shrinkage on top of the correlation scale. The
+    // shrinkage multiplier is always in [MIN_MULT, 1.0] (see
+    // analysis::kelly_shrinkage), so combining it can only ever reduce the
+    // stake further, never amplify it.
+    let (combined_scale, shrinkage_note) = match shrinkage.as_ref() {
+        Some(s) => {
+            let combined = (min_scale * s.multiplier).clamp(0.0, 1.0);
+            if s.multiplier < 1.0 {
+                let note = format!(
+                    "Volatility-adjusted Kelly: {:.0}% of raw (Brier-shrunk from observed history).",
+                    s.multiplier * 100.0
+                );
+                (combined, Some(note))
+            } else {
+                (combined, None)
+            }
+        }
+        None => (min_scale, None),
+    };
+    if let Some(note) = shrinkage_note {
+        warnings.push(note);
+    }
+
     StakeAdjustment {
-        kelly_scale: min_scale,
+        kelly_scale: round4(combined_scale),
         raw_recommended_stake: recommended_stake,
-        adjusted_recommended_stake: recommended_stake * min_scale,
+        adjusted_recommended_stake: recommended_stake * combined_scale,
         conflicts,
         warnings,
+        kelly_shrinkage: shrinkage,
     }
+}
+
+fn round4(x: f64) -> f64 {
+    (x * 10000.0).round() / 10000.0
 }
 
 #[cfg(test)]
@@ -270,5 +325,94 @@ mod tests {
         assert_eq!(exposure.len(), 1);
         assert_eq!(exposure[0].contract_side, "Over");
         assert_eq!(exposure[0].stake_amount, 40.0);
+    }
+
+    #[test]
+    fn shrinkage_folds_into_kelly_scale() {
+        use crate::analysis::kelly_shrinkage::KellyShrinkageReport;
+        // Event correlation alone would give 0.5; with a 0.8 shrinkage the
+        // combined scale should be 0.4, never amplifying above 0.5.
+        let shrinkage = KellyShrinkageReport {
+            multiplier: 0.8,
+            n: 50,
+            brier: Some(0.10),
+            base_rate: Some(0.6),
+            climatology_brier: Some(0.24),
+            brier_skill_score: Some(0.5833),
+            sample_factor: 1.0,
+            calibration_factor: 0.7638,
+            reason: "test fixture".to_string(),
+        };
+        let adj = compute_stake_adjustment_with_shrinkage(
+            "NFL-JoshAllen-O-275.5",
+            "NFL",
+            Some("Over"),
+            100.0,
+            &[PortfolioExposure {
+                ticker: "NFL-JoshAllen-U-275.5".into(),
+                title: "Josh Allen passing yards Under 275.5".into(),
+                category: "NFL".into(),
+                contract_side: "Under".into(),
+                stake_amount: 50.0,
+                source: "prediction".into(),
+            }],
+            Some(shrinkage.clone()),
+        );
+        assert!((adj.kelly_scale - 0.4).abs() < 1e-4, "got {}", adj.kelly_scale);
+        assert!((adj.adjusted_recommended_stake - 40.0).abs() < 1e-4);
+        assert!(adj.kelly_shrinkage.is_some());
+        assert!(adj.warnings.iter().any(|w| w.contains("Volatility-adjusted")));
+    }
+
+    #[test]
+    fn shrinkage_unity_keeps_legacy_behavior() {
+        // When the shrinkage multiplier is 1.0 (cold start), the result must
+        // match the legacy compute_stake_adjustment output.
+        let shrinkage = KellyShrinkageReport::cold_start();
+        let adj_with = compute_stake_adjustment_with_shrinkage(
+            "NFL-JoshAllen-O-275.5",
+            "NFL",
+            Some("Over"),
+            100.0,
+            &[],
+            Some(shrinkage),
+        );
+        let adj_legacy = compute_stake_adjustment(
+            "NFL-JoshAllen-O-275.5",
+            "NFL",
+            Some("Over"),
+            100.0,
+            &[],
+        );
+        assert!((adj_with.kelly_scale - adj_legacy.kelly_scale).abs() < 1e-9);
+        assert!(!adj_with.warnings.iter().any(|w| w.contains("Volatility-adjusted")));
+    }
+
+    #[test]
+    fn shrinkage_warms_to_full_kelly() {
+        use crate::analysis::kelly_shrinkage::KellyShrinkageReport;
+        // Multiplier 1.0 must NOT add a volatility warning even if there is
+        // an explicit report.
+        let shrinkage = KellyShrinkageReport {
+            multiplier: 1.0,
+            n: 100,
+            brier: Some(0.0),
+            base_rate: Some(0.5),
+            climatology_brier: Some(0.25),
+            brier_skill_score: Some(1.0),
+            sample_factor: 1.0,
+            calibration_factor: 1.0,
+            reason: "fully calibrated".to_string(),
+        };
+        let adj = compute_stake_adjustment_with_shrinkage(
+            "NFL-Mahomes-O-300.5",
+            "NFL",
+            Some("Over"),
+            50.0,
+            &[],
+            Some(shrinkage),
+        );
+        assert!((adj.kelly_scale - 1.0).abs() < 1e-9);
+        assert!(!adj.warnings.iter().any(|w| w.contains("Volatility-adjusted")));
     }
 }

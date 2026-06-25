@@ -61,12 +61,25 @@ export interface CorrelationConflict {
   explanation: string;
 }
 
+export interface KellyShrinkageReport {
+  multiplier: number;
+  n: number;
+  brier: number | null;
+  base_rate: number | null;
+  climatology_brier: number | null;
+  brier_skill_score: number | null;
+  sample_factor: number;
+  calibration_factor: number;
+  reason: string;
+}
+
 export interface StakeAdjustment {
   kelly_scale: number;
   raw_recommended_stake: number;
   adjusted_recommended_stake: number;
   conflicts: CorrelationConflict[];
   warnings: string[];
+  kelly_shrinkage?: KellyShrinkageReport | null;
 }
 
 export interface PrizePicksPriceSnapshot {

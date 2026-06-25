@@ -251,6 +251,51 @@ pub async fn prizepicks_capture_clv(
     crate::predictions::storage::capture_closing_prices_for_resolved(&db_pool).await
 }
 
+/// Compute the live volatility-adjusted Kelly shrinkage report from resolved
+/// predictions. Returns a `KellyShrinkageReport` with `multiplier`, Brier
+/// score, Brier Skill Score, sample factor, calibration factor, and a short
+/// human-readable reason. Cold-start (no resolved predictions) returns
+/// multiplier = 1.0 and `brier = None`.
+#[tauri::command]
+pub async fn prizepicks_kelly_shrinkage_report(
+    db_pool: State<'_, Pool<Sqlite>>,
+) -> Result<crate::analysis::kelly_shrinkage::KellyShrinkageReport, String> {
+    let resolved = fetch_resolved_for_brier(&db_pool).await?;
+    Ok(crate::analysis::kelly_shrinkage::compute_shrinkage(&resolved))
+}
+
+/// Shared helper: pull resolved predictions and project them into the
+/// minimal shape that `kelly_shrinkage` needs.
+async fn fetch_resolved_for_brier(
+    db_pool: &Pool<Sqlite>,
+) -> Result<Vec<crate::analysis::kelly_shrinkage::ResolvedForBrier>, String> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT predicted_probability, actual_outcome \
+         FROM predictions \
+         WHERE actual_outcome IS NOT NULL AND actual_outcome != ''",
+    )
+    .fetch_all(db_pool)
+    .await
+    .map_err(|e| format!("Failed to fetch resolved predictions: {}", e))?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        let prob: Option<f64> = r.try_get("predicted_probability").ok();
+        let outcome: Option<String> = r.try_get("actual_outcome").ok();
+        let (prob, outcome) = match (prob, outcome) {
+            (Some(p), Some(o)) => (p, o),
+            _ => continue,
+        };
+        if let Some(hit) = crate::analysis::kelly_shrinkage::parse_hit_outcome(&outcome) {
+            out.push(crate::analysis::kelly_shrinkage::ResolvedForBrier {
+                predicted_probability_pct: prob,
+                hit,
+            });
+        }
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn prizepicks_record_paper_decision(
     session_id: String,

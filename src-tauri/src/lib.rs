@@ -256,6 +256,7 @@ pub fn run() {
             commands::prizepicks_snapshot_prices,
             commands::prizepicks_get_price_history,
             commands::prizepicks_capture_clv,
+            commands::prizepicks_kelly_shrinkage_report,
             commands::prizepicks_record_paper_decision,
             commands::paper_get_analytics,
             commands::paper_get_positions,

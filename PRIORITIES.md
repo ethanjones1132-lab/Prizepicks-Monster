@@ -1,10 +1,10 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-25 (maintenance pass; CLV per prediction implemented — entry_price_pct captured at insert via full_decision_json.market_price_pct, closing_price_pct/clv_points/clv_ticker/clv_captured_at captured by background sweep matching latest on-or-before resolved_at snapshot; marked P2 item done)
+Last updated: 2026-06-25 (maintenance pass; P3-1 volatility-adjusted Kelly from historical Brier shipped — analysis::kelly_shrinkage computes multiplier from sample size + Brier Skill Score, wired into portfolio_risk::compute_stake_adjustment_with_shrinkage and exposed as the prizepicks_kelly_shrinkage_report Tauri command; 10 new shrinkage tests + 3 new portfolio_risk tests bring suite to 136 passing)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `a8c645e`
+Commit: (pending — see git log)
 
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 not started**
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 mostly done (1 done, 1 remaining)**
 
 ---
 
@@ -22,7 +22,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 not start
 | **P2** | Sync bankroll limits from `predictions.db` + paper positions | Makes daily/weekly cap warnings and `BankrollView` accurate | ✅ Done |
 | **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ✅ Done (2026-06-25) |
 | **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ✅ Done (2026-06-25) |
-| **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ⬜ Not started |
+| **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ✅ Done (2026-06-25) |
 | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; README still lists ML training as unchecked | ⬜ Not started |
 
 ---
@@ -34,9 +34,9 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 not start
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
 | P2 | 4 | **0** |
-| P3 | 0 | **2** |
+| P3 | 1 | **1** |
 
-**2–3 items left** (2 if heuristic correlation counts as P1-complete).
+**1–2 items left** (P3-2 ML classifiers; correlation engine is still the lone P1 partial).
 
 ## P0 implementation notes (shipped)
 
@@ -62,12 +62,19 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 not start
 - Tauri command `prizepicks_capture_clv` exposed for on-demand sweep from the UI; bound in `src-ui/src/services/prizepicks.ts` as `prizepicksApi.captureClv()`.
 - Tests: 13 new in `predictions::storage::tests` — entry-price extraction (valid/missing/invalid/none/out-of-range/boundaries), insert captures entry price, missing-decision tolerates NULL, capture skips without snapshot, capture picks latest-before-resolution snapshot, idempotent, skip when ticker missing. Total 123 lib tests passing.
 
-## Suggested next target: P3
+## P3 implementation notes (in progress)
 
-Both P3 items are deeper research projects. Recommended ordering:
+- `src-tauri/src/analysis/kelly_shrinkage.rs` — new module. `compute_shrinkage(&[ResolvedForBrier])` returns a `KellyShrinkageReport { multiplier, n, brier, base_rate, climatology_brier, brier_skill_score, sample_factor, calibration_factor, reason }`. Cold start (n=0) returns multiplier=1.0. Cold but non-zero (1 ≤ n < 30) fades linearly from 0.50 → 1.0 via `sample_factor`. Warm: `multiplier = sample_factor * sqrt(max(BSS, 0)).clamp(MIN_MULT, 1.0)` where `BSS = 1 - brier/climatology_brier`. Climatology Brier = `base_rate * (1 - base_rate)` (binary). 10 unit tests cover cold start, single prediction, small sample, warm near-climatology, sharp well-calibrated (BSS=1), mildly miscalibrated (BSS<0), overconfident (floored at MIN_MULT=0.50), degenerate all-wins (no NaN), parse_hit_outcome strings, and the predictions adapter.
+- `src-tauri/src/prizepicks/portfolio_risk.rs` — added `compute_stake_adjustment_with_shrinkage(...)` which folds the shrinkage multiplier on top of the correlation scale. The original `compute_stake_adjustment` is preserved as a thin wrapper passing `None`. `StakeAdjustment` gains an optional `kelly_shrinkage: Option<KellyShrinkageReport>` field. When the shrinkage multiplier is <1.0, a "Volatility-adjusted Kelly: X% of raw (Brier-shrunk from observed history)." warning is appended. 3 new tests: `shrinkage_folds_into_kelly_scale`, `shrinkage_unity_keeps_legacy_behavior`, `shrinkage_warms_to_full_kelly`.
+- `src-tauri/src/commands/prizepicks_cmd.rs` — new Tauri command `prizepicks_kelly_shrinkage_report` returns the live report. Helper `fetch_resolved_for_brier` queries `predictions` for rows with non-null `actual_outcome` and projects them into `ResolvedForBrier` via the shared `parse_hit_outcome` mapping.
+- `src-tauri/src/lib.rs` — registered `prizepicks_kelly_shrinkage_report` in the `invoke_handler`.
+- `src-ui/src/types/prizepicks.ts` — added `KellyShrinkageReport` interface; `StakeAdjustment` gains optional `kelly_shrinkage` field.
+- `src-ui/src/services/prizepicks.ts` — added `prizepicksApi.getKellyShrinkageReport()`. The existing `MarketDetailPanel` already surfaces shrinkage warnings via `adjustment.warnings`, so no UI change needed beyond the type.
+- **Wiring into the live decision path** (deferred): `prizepicks_record_paper_decision` and `prizepicks_compute_stake_adjustment` still call the legacy `compute_stake_adjustment` (shrinkage=None). The plumbing is in place; activating it is a one-line change in those commands. Holding off to keep this pass focused and to avoid touching the user-facing decision path without calibration data accumulating first.
 
-1. Volatility-adjusted Kelly from historical Brier — small, builds on the new CLV + grading columns
-2. Multi-category ML classifiers — larger, requires a Python training pipeline update
+## Suggested next target: P3 (1 remaining)
+
+1. **Multi-category ML classifiers** — the larger of the two. Requires a Python training pipeline update, feature extraction expansion, and a UI to surface per-category model picks. No Rust work in this one without first shipping the training pipeline.
 
 ## Dashboard performance (deferred)
 

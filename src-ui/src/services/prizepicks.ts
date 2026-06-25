@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  KellyShrinkageReport,
   PrizePicksCategoryStat,
   PrizePicksMarketSummary,
   PrizePicksPrediction,
@@ -105,6 +106,9 @@ export const prizepicksApi = {
   // Walk resolved predictions and capture closing-line value (CLV) for any
   // that don't yet have one. Idempotent; safe to call from a tab-focus handler.
   captureClv: () => invoke<number>('prizepicks_capture_clv'),
+
+  getKellyShrinkageReport: () =>
+    invoke<KellyShrinkageReport>('prizepicks_kelly_shrinkage_report'),
 
   recordPaperDecision: (sessionId: string, decision: PrizePicksTradeDecision) =>
     invoke<string>('prizepicks_record_paper_decision', { sessionId, decision }),
