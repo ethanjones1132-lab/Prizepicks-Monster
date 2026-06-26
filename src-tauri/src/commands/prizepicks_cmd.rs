@@ -191,6 +191,7 @@ pub async fn prizepicks_compute_stake_adjustment(
     recommended_stake: f64,
     tracker: State<'_, Arc<Mutex<crate::predictions::tracker::PredictionTracker>>>,
     prizepicks: State<'_, PrizePicksState>,
+    db_pool: State<'_, Pool<Sqlite>>,
 ) -> Result<crate::prizepicks::StakeAdjustment, String> {
     let pending = {
         let t = tracker.lock().await;
@@ -208,12 +209,21 @@ pub async fn prizepicks_compute_stake_adjustment(
         exposures.extend(crate::prizepicks::portfolio_risk::exposures_from_positions(&positions));
     }
 
-    Ok(crate::prizepicks::portfolio_risk::compute_stake_adjustment(
+    // Fold the live Brier-driven Kelly shrinkage into the adjustment so the
+    // returned `kelly_scale` already reflects historical calibration.
+    // `fetch_resolved_for_brier` is shared with the paper-decision path.
+    let shrinkage = match fetch_resolved_for_brier(&db_pool).await {
+        Ok(resolved) => Some(crate::analysis::kelly_shrinkage::compute_shrinkage(&resolved)),
+        Err(_) => None,
+    };
+
+    Ok(crate::prizepicks::portfolio_risk::compute_stake_adjustment_with_shrinkage(
         &ticker,
         &category,
         Some(&contract_side),
         recommended_stake,
         &exposures,
+        shrinkage,
     ))
 }
 
@@ -270,18 +280,25 @@ async fn fetch_resolved_for_brier(
     db_pool: &Pool<Sqlite>,
 ) -> Result<Vec<crate::analysis::kelly_shrinkage::ResolvedForBrier>, String> {
     use sqlx::Row;
+    // The production schema stores the predicted probability in the
+    // `probability` column and the realized outcome ("Win" / "Loss" /
+    // "Push") in the `outcome` column (see `predictions::storage` schema).
+    // Previously this helper queried the struct field names
+    // (`predicted_probability` / `actual_outcome`), which don't exist in
+    // the DB, so the helper always returned an empty Vec and the live
+    // shrinkage report silently fell back to the cold-start multiplier.
     let rows = sqlx::query(
-        "SELECT predicted_probability, actual_outcome \
+        "SELECT probability, outcome \
          FROM predictions \
-         WHERE actual_outcome IS NOT NULL AND actual_outcome != ''",
+         WHERE outcome IN ('Win', 'Loss', 'Push')",
     )
     .fetch_all(db_pool)
     .await
     .map_err(|e| format!("Failed to fetch resolved predictions: {}", e))?;
     let mut out = Vec::with_capacity(rows.len());
     for r in rows {
-        let prob: Option<f64> = r.try_get("predicted_probability").ok();
-        let outcome: Option<String> = r.try_get("actual_outcome").ok();
+        let prob: Option<f64> = r.try_get("probability").ok();
+        let outcome: Option<String> = r.try_get("outcome").ok();
         let (prob, outcome) = match (prob, outcome) {
             (Some(p), Some(o)) => (p, o),
             _ => continue,
@@ -320,18 +337,29 @@ pub async fn prizepicks_record_paper_decision(
         exposures.extend(crate::prizepicks::portfolio_risk::exposures_from_positions(&positions));
     }
 
+    // Fold the live Brier-driven Kelly shrinkage into the adjustment so the
+    // recorded paper decision and any UI display reflect historical
+    // calibration. `fetch_resolved_for_brier` is shared with the
+    // `prizepicks_kelly_shrinkage_report` command and the
+    // `prizepicks_compute_stake_adjustment` path.
+    let shrinkage = match fetch_resolved_for_brier(&db_pool).await {
+        Ok(resolved) => Some(crate::analysis::kelly_shrinkage::compute_shrinkage(&resolved)),
+        Err(_) => None,
+    };
+
     let side = format!("{:?}", decision.contract_side);
     let raw_stake = if decision.recommended_stake_dollars > 0.0 {
         decision.recommended_stake_dollars
     } else {
         bankroll.total_bankroll * (decision.fractional_kelly_pct / 100.0)
     };
-    let adj = crate::prizepicks::portfolio_risk::compute_stake_adjustment(
+    let adj = crate::prizepicks::portfolio_risk::compute_stake_adjustment_with_shrinkage(
         &decision.ticker,
         &decision.category,
         Some(&side),
         raw_stake,
         &exposures,
+        shrinkage,
     );
     decision.compute_risk_adjusted(
         bankroll.total_bankroll,
@@ -472,4 +500,134 @@ pub async fn prizepicks_get_scored_props(
 ) -> Result<Vec<serde_json::Value>, String> {
     let fetcher = prizepicks_fetcher.lock().await;
     fetcher.get_scored_props().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    /// Build a minimal in-memory pool with just the schema columns
+    /// `fetch_resolved_for_brier` reads. Mirrors the production schema in
+    /// `predictions::storage`.
+    async fn fresh_pool() -> Pool<Sqlite> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE predictions (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL DEFAULT '',
+                raw_text TEXT NOT NULL DEFAULT '',
+                player_name TEXT,
+                pick_type TEXT,
+                line REAL,
+                stat_category TEXT,
+                confidence TEXT,
+                confidence_score INTEGER,
+                probability REAL,
+                reasoning TEXT,
+                risk TEXT,
+                created_at TEXT NOT NULL DEFAULT '',
+                outcome TEXT NOT NULL DEFAULT 'Pending',
+                actual_result REAL,
+                notes TEXT,
+                resolved_at TEXT
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    /// Regression test: fetch_resolved_for_brier must read the production
+    /// schema columns (`probability` and `outcome`), not the in-memory struct
+    /// field names. The previous version queried `predicted_probability` /
+    /// `actual_outcome`, which don't exist in the DB, so the helper always
+    /// returned an empty Vec and the live shrinkage report silently fell
+    /// back to the cold-start multiplier.
+    #[tokio::test]
+    async fn fetch_resolved_reads_production_schema_columns() {
+        let pool = fresh_pool().await;
+
+        // Insert a mix of resolved (Win / Loss / Push) and Pending rows.
+        // The probability is the model's predicted win probability in
+        // percent — the same shape the production code writes to the
+        // `probability` column at insert time.
+        let rows = [
+            ("win-1", "Win", 60.0_f64),
+            ("win-2", "Win", 70.0),
+            ("loss-1", "Loss", 55.0),
+            ("push-1", "Push", 50.0),
+            ("pending-1", "Pending", 80.0),
+        ];
+        for (id, outcome, prob) in rows {
+            sqlx::query(
+                "INSERT INTO predictions (id, outcome, probability) VALUES (?1, ?2, ?3)",
+            )
+            .bind(id)
+            .bind(outcome)
+            .bind(prob)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let resolved = fetch_resolved_for_brier(&pool).await.unwrap();
+        // 4 resolved rows (Win / Win / Loss / Push); the Pending row is
+        // filtered out by the WHERE clause.
+        assert_eq!(resolved.len(), 4);
+
+        // All hit flags should be parsed: Win → true, Loss → false,
+        // Push → false (see parse_hit_outcome test cases).
+        let hits: Vec<bool> = resolved.iter().map(|r| r.hit).collect();
+        assert_eq!(hits.iter().filter(|h| **h).count(), 2);
+        assert_eq!(hits.iter().filter(|h| !**h).count(), 2);
+
+        // Probability is read as-is from the `probability` column.
+        let probs: Vec<f64> = resolved
+            .iter()
+            .map(|r| r.predicted_probability_pct)
+            .collect();
+        for p in &probs {
+            assert!((50.0..=70.0).contains(p), "unexpected prob: {p}");
+        }
+    }
+
+    /// An empty pool (no resolved rows) should return an empty Vec — the
+    /// downstream `compute_shrinkage` handles that as a cold start.
+    #[tokio::test]
+    async fn fetch_resolved_empty_pool_returns_empty() {
+        let pool = fresh_pool().await;
+        let resolved = fetch_resolved_for_brier(&pool).await.unwrap();
+        assert!(resolved.is_empty());
+    }
+
+    /// All-Pending pool (no resolved rows) should also return empty, since
+    /// the WHERE clause filters on `outcome IN ('Win','Loss','Push')`.
+    #[tokio::test]
+    async fn fetch_resolved_filters_pending_rows() {
+        let pool = fresh_pool().await;
+        sqlx::query("INSERT INTO predictions (id, outcome, probability) VALUES (?1, ?2, ?3)")
+            .bind("p1")
+            .bind("Pending")
+            .bind(60.0_f64)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO predictions (id, outcome, probability) VALUES (?1, ?2, ?3)")
+            .bind("p2")
+            .bind("Pending")
+            .bind(70.0_f64)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let resolved = fetch_resolved_for_brier(&pool).await.unwrap();
+        assert!(resolved.is_empty());
+    }
 }
