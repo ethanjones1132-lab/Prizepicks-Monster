@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-26 (mid-morning maintenance pass; **Kelly shrinkage wired into the live decision path** — `prizepicks_compute_stake_adjustment` and `prizepicks_record_paper_decision` now call `compute_stake_adjustment_with_shrinkage(...)` with a live report from `fetch_resolved_for_brier`. **Bug fix in `fetch_resolved_for_brier`:** the SQL was querying the in-memory struct field names (`predicted_probability` / `actual_outcome`) instead of the actual DB columns (`probability` / `outcome`), so the helper always returned an empty Vec and the live shrinkage report silently fell back to the cold-start multiplier. SQL and `try_get` column names fixed. 3 new unit tests for `fetch_resolved_for_brier` (mix of Win/Loss/Push/Pending, empty pool, all-pending). 146 lib tests passing, up from 143)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `pending`
+Commit: `dfd1a72`
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 2 done, 1 in progress**
 
 ---
