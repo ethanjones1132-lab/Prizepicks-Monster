@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { prizepicksApi } from '../services/prizepicks';
 import type {
+  MLCategoryModelInfo,
+  MLCategoryModelList,
+  MLCategoryTrainResult,
   MLModelStatus,
   MLPrediction,
   MLPredictionBatch,
@@ -33,17 +36,31 @@ export function MLPredictorPanel() {
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Per-category state
+  const [pcatTraining, setPcatTraining] = useState(false);
+  const [pcatScoring, setPcatScoring] = useState(false);
+  const [pcatList, setPcatList] = useState<MLCategoryModelList | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, preds] = await Promise.all([
+      const [s, preds, pcat] = await Promise.all([
         prizepicksApi.mlGetModelStatus(),
         prizepicksApi.mlGetPredictions(20).catch(() => [] as MLPrediction[]),
+        prizepicksApi.mlGetCategoryModels().catch(
+          () =>
+            ({
+              status: 'error',
+              model_dir: '',
+              message: 'list failed',
+              models: [],
+            }) as MLCategoryModelList,
+        ),
       ]);
       setStatus(s);
       setPredictions(preds);
+      setPcatList(pcat);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -116,6 +133,59 @@ export function MLPredictorPanel() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setExporting(false);
+    }
+  };
+
+  const onTrainPerCategory = async () => {
+    setPcatTraining(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const result: MLCategoryTrainResult = await prizepicksApi.mlTrainPerCategory();
+      if (result.status === 'trained') {
+        setMessage(
+          `Per-category: ${result.message} (dir: ${result.output_dir})`,
+        );
+      } else if (result.status === 'insufficient_data') {
+        setMessage(
+          `${result.message} Need resolved predictions across multiple stat categories.`,
+        );
+      } else {
+        setMessage(result.message || `Train status: ${result.status}`);
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPcatTraining(false);
+    }
+  };
+
+  const onScorePerCategory = async () => {
+    setPcatScoring(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const batch: MLPredictionBatch =
+        await prizepicksApi.mlPredictBatchPerCategory();
+      if (batch.status === 'no_model') {
+        setMessage('No per-category models on disk. Train first.');
+      } else if (batch.status === 'no_pending') {
+        setMessage('No pending props to score.');
+      } else if (batch.status === 'no_models') {
+        setMessage(
+          'No per-category models matched the pending props (different stat categories?).',
+        );
+      } else {
+        setMessage(
+          `Per-category scored ${batch.predictions_count} pending props. ${batch.message}`,
+        );
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPcatScoring(false);
     }
   };
 
@@ -302,6 +372,96 @@ export function MLPredictorPanel() {
           <p className="muted small pad">
             Model file: <code>{status.model_path}</code>
           </p>
+
+          <h5 className="sectionHeader">Per-category classifiers</h5>
+          <p className="muted small pad">
+            One GradientBoosting model per stat_category. Each category with at
+            least 10 resolved samples gets its own model file (in the per-category
+            models directory) and its own CV accuracy. Scoring picks the model
+            that matches each pending prop's <code>stat_category</code>.
+          </p>
+          <div className="panelToolbar">
+            <button
+              type="button"
+              className="ghostBtn"
+              onClick={() => void onTrainPerCategory()}
+              disabled={pcatTraining || (status?.resolved_predictions ?? 0) < 10}
+              title={
+                (status?.resolved_predictions ?? 0) < 10
+                  ? `Need ≥10 resolved predictions (have ${status?.resolved_predictions ?? 0})`
+                  : 'Train one model per stat_category (writes ml_models/ directory)'
+              }
+            >
+              {pcatTraining ? 'Training…' : 'Train per-category'}
+            </button>
+            <button
+              type="button"
+              className="ghostBtn"
+              onClick={() => void onScorePerCategory()}
+              disabled={
+                pcatScoring ||
+                !pcatList ||
+                pcatList.models.length === 0
+              }
+              title={
+                pcatList && pcatList.models.length > 0
+                  ? 'Score pending props with their matching per-category model'
+                  : 'Train per-category models first'
+              }
+            >
+              {pcatScoring ? 'Scoring…' : 'Score pending (per-category)'}
+            </button>
+          </div>
+
+          {pcatList && pcatList.models.length > 0 ? (
+            <div className="featureImportanceBlock">
+              <table className="featureTable">
+                <thead>
+                  <tr>
+                    <th>Stat category</th>
+                    <th style={{ textAlign: 'right' }}>Samples</th>
+                    <th style={{ textAlign: 'right' }}>CV acc.</th>
+                    <th style={{ textAlign: 'right' }}>Win rate</th>
+                    <th>Trained at</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pcatList.models.map((m: MLCategoryModelInfo) => (
+                    <tr key={m.token}>
+                      <td>
+                        <span className="chip small">{m.category}</span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>{m.samples ?? '—'}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {m.cv_accuracy_mean !== null
+                          ? `${(m.cv_accuracy_mean * 100).toFixed(1)}% ± ${((m.cv_accuracy_std ?? 0) * 100).toFixed(1)}%`
+                          : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        {m.win_rate !== null
+                          ? `${(m.win_rate * 100).toFixed(1)}%`
+                          : '—'}
+                      </td>
+                      <td>
+                        {m.trained_at
+                          ? new Date(m.trained_at).toLocaleString()
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="muted small pad">
+                Models directory: <code>{pcatList.model_dir}</code>
+              </p>
+            </div>
+          ) : (
+            <p className="muted pad">
+              No per-category models trained yet. With at least 10 resolved
+              predictions spread across stat categories (Points, Rebounds, etc.),
+              click "Train per-category" to build a dedicated model for each.
+            </p>
+          )}
         </>
       )}
     </section>

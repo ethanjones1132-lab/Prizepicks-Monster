@@ -84,6 +84,58 @@ pub struct MLModelStatus {
     pub message: String,
 }
 
+/// Result of training a single per-stat-category model
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MLCategoryModelResult {
+    pub category: String,
+    pub token: String,
+    pub status: String,
+    pub samples: i64,
+    pub win_rate: f64,
+    pub model_path: Option<String>,
+    pub cv_accuracy_mean: Option<f64>,
+    pub cv_accuracy_std: Option<f64>,
+    pub feature_importance: Vec<MLFeatureImportance>,
+    pub message: String,
+}
+
+/// Outcome of training one model per stat_category
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MLCategoryTrainResult {
+    pub status: String,
+    pub message: String,
+    pub output_dir: String,
+    pub trained_count: i64,
+    pub skipped_count: i64,
+    pub min_samples: i64,
+    pub categories: Vec<MLCategoryModelResult>,
+}
+
+/// Summary of a single per-category model on disk (read from its _meta.json)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MLCategoryModelInfo {
+    pub category: String,
+    pub token: String,
+    pub model_path: String,
+    pub meta_path: String,
+    pub trained_at: Option<String>,
+    pub samples: Option<i64>,
+    pub cv_accuracy_mean: Option<f64>,
+    pub cv_accuracy_std: Option<f64>,
+    pub win_rate: Option<f64>,
+    pub feature_importance: Vec<MLFeatureImportance>,
+}
+
+/// Envelope returned from `list_category_models` — one entry per model file
+/// on disk plus an aggregate status / message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MLCategoryModelList {
+    pub status: String,
+    pub model_dir: String,
+    pub message: String,
+    pub models: Vec<MLCategoryModelInfo>,
+}
+
 /// ML-enhanced analysis context — extends the existing AnalysisContext
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MLAnalysisContext {
@@ -123,6 +175,46 @@ pub fn default_db_path() -> PathBuf {
     PathBuf::from(home).join(".openclaw/prizepicks-monster/predictions.db")
 }
 
+/// Default per-category model directory.
+///
+/// Returns ``<config_dir>/ml_models`` where ``<config_dir>`` is the same root
+/// used for the single-model path. Per-category training writes
+/// ``ml_model_<token>.joblib`` files here.
+pub fn default_category_model_dir() -> PathBuf {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".openclaw/prizepicks-monster/ml_models")
+}
+
+/// Convert a stat_category string into a filesystem-safe token.
+///
+/// Mirrors :func:`ml_predictor._safe_filename_token` in the Python side. We
+/// keep the implementation here so the Rust side can also reason about file
+/// paths without shelling out to Python (used by the listing helper).
+pub fn safe_category_token(category: &str) -> String {
+    if category.trim().is_empty() {
+        return "uncategorized".to_string();
+    }
+    let mut out = String::with_capacity(category.len());
+    let mut last_was_underscore = false;
+    for ch in category.trim().chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
+            out.push(ch);
+            last_was_underscore = false;
+        } else if !last_was_underscore {
+            out.push('_');
+            last_was_underscore = true;
+        }
+    }
+    let trimmed = out.trim_matches(|c: char| c == '_' || c == '.' || c == '-').to_string();
+    if trimmed.is_empty() {
+        "uncategorized".to_string()
+    } else {
+        trimmed
+    }
+}
+
 /// Model metadata path
 fn model_meta_path(model_path: &PathBuf) -> PathBuf {
     model_path.with_file_name(format!(
@@ -140,6 +232,285 @@ pub fn model_meta_path_for(model_path: &PathBuf) -> PathBuf {
 // ═══════════════════════════════════════════════════════════════
 // Core Operations
 // ═══════════════════════════════════════════════════════════════
+
+/// Train one GradientBoosting model per stat_category.
+///
+/// Shells out to ``ml_predictor.py train-per-category`` and parses its JSON
+/// output into an :struct:`MLCategoryTrainResult`. ``min_samples`` defaults
+/// to 10 to match the single-model gate, and the output directory defaults
+/// to the same per-category directory used by the rest of the per-category
+/// surface.
+pub async fn train_per_category(
+    db_path: Option<&str>,
+    output_dir: Option<&str>,
+    min_samples: Option<i64>,
+) -> Result<MLCategoryTrainResult, String> {
+    let db = db_path.map(PathBuf::from).unwrap_or_else(default_db_path);
+    let output = output_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_category_model_dir);
+    let script = ml_script_path();
+
+    if !script.exists() {
+        return Err(format!(
+            "ML script not found at {}. Ensure ml_predictor.py is in the src/ directory.",
+            script.display()
+        ));
+    }
+
+    let min_samples = min_samples.unwrap_or(10);
+    let output_str = output.display().to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let out = Command::new("python3")
+            .arg(&script)
+            .arg("train-per-category")
+            .arg("--db")
+            .arg(db.display().to_string())
+            .arg("--output-dir")
+            .arg(&output_str)
+            .arg("--min-samples")
+            .arg(min_samples.to_string())
+            .output()
+            .map_err(|e| format!("Failed to run ml_predictor.py: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+        if !out.status.success() {
+            return Err(format!(
+                "ml_predictor.py train-per-category failed (exit {}): {}",
+                out.status, stderr
+            ));
+        }
+
+        let json_line = stdout
+            .lines()
+            .rev()
+            .find(|l| l.trim().starts_with('{'))
+            .ok_or("No JSON output from ml_predictor.py")?;
+
+        let result: MLCategoryTrainResult = serde_json::from_str(json_line).map_err(|e| {
+            format!(
+                "Failed to parse ml_predictor per-category output: {}\nRaw: {}",
+                e, json_line
+            )
+        })?;
+
+        Ok::<_, String>(result)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    Ok(result)
+}
+
+/// List per-category model files on disk by globbing for ``ml_model_*_meta.json``.
+///
+/// Pure filesystem operation — does not shell out to Python. Used by the
+/// frontend to render the per-category metrics table without re-training.
+pub fn list_category_models(model_dir: Option<&str>) -> MLCategoryModelList {
+    let dir = model_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_category_model_dir);
+    let dir_str = dir.display().to_string();
+
+    if !dir.exists() {
+        return MLCategoryModelList {
+            status: "no_models".to_string(),
+            model_dir: dir_str.clone(),
+            message: format!(
+                "Model directory {} does not exist. Train first.",
+                dir_str
+            ),
+            models: vec![],
+        };
+    }
+
+    let mut models: Vec<MLCategoryModelInfo> = Vec::new();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(err) => {
+            return MLCategoryModelList {
+                status: "error".to_string(),
+                model_dir: dir_str.clone(),
+                message: format!("Failed to read_dir {}: {}", dir_str, err),
+                models: vec![],
+            };
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        // Only consume <token>_meta.json files. We skip the single-model
+        // `ml_model_meta.json` (no underscore-suffixed category token).
+        if !name.starts_with("ml_model_") || !name.ends_with("_meta.json") {
+            continue;
+        }
+        // The category token lives between the prefix and the suffix.
+        let token = name
+            .trim_start_matches("ml_model_")
+            .trim_end_matches("_meta.json")
+            .to_string();
+
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_err) => {
+                let joblib_name = format!("ml_model_{}.joblib", token);
+                models.push(MLCategoryModelInfo {
+                    category: token.clone(),
+                    token: token.clone(),
+                    model_path: path.with_file_name(joblib_name).display().to_string(),
+                    meta_path: path.display().to_string(),
+                    trained_at: None,
+                    samples: None,
+                    cv_accuracy_mean: None,
+                    cv_accuracy_std: None,
+                    win_rate: None,
+                    feature_importance: vec![],
+                });
+                continue;
+            }
+        };
+        #[derive(Deserialize)]
+        struct Meta {
+            category: String,
+            token: Option<String>,
+            trained_at: String,
+            samples: i64,
+            cv_accuracy_mean: f64,
+            cv_accuracy_std: f64,
+            win_rate: f64,
+            feature_importance: Vec<MLFeatureImportance>,
+        }
+        match serde_json::from_str::<Meta>(&content) {
+            Ok(m) => {
+                let token_for_path = m.token.clone().unwrap_or_else(|| token.clone());
+                let joblib_name = format!("ml_model_{}.joblib", token_for_path);
+                models.push(MLCategoryModelInfo {
+                    category: m.category,
+                    token: m.token.unwrap_or(token),
+                    model_path: path.with_file_name(joblib_name).display().to_string(),
+                    meta_path: path.display().to_string(),
+                    trained_at: Some(m.trained_at),
+                    samples: Some(m.samples),
+                    cv_accuracy_mean: Some(m.cv_accuracy_mean),
+                    cv_accuracy_std: Some(m.cv_accuracy_std),
+                    win_rate: Some(m.win_rate),
+                    feature_importance: m.feature_importance,
+                });
+            }
+            Err(_) => continue, // silently skip unparseable meta
+        }
+    }
+
+    let status = if models.is_empty() {
+        "no_models"
+    } else {
+        "ok"
+    };
+    let message = format!("Found {} per-category model(s) on disk.", models.len());
+    MLCategoryModelList {
+        status: status.to_string(),
+        model_dir: dir_str,
+        message,
+        models,
+    }
+}
+
+/// Generate ML predictions for all pending props using per-category models.
+pub async fn predict_batch_per_category(
+    db_path: Option<&str>,
+    model_dir: Option<&str>,
+) -> Result<MLPredictionBatch, String> {
+    let db = db_path.map(PathBuf::from).unwrap_or_else(default_db_path);
+    let dir = model_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(default_category_model_dir);
+    let script = ml_script_path();
+
+    if !script.exists() {
+        return Err(format!("ML script not found at {}", script.display()));
+    }
+
+    if !dir.exists() {
+        return Ok(MLPredictionBatch {
+            status: "no_model".to_string(),
+            model_path: Some(dir.display().to_string()),
+            predictions_count: 0,
+            predictions: vec![],
+            message: format!(
+                "Per-category model directory {} not found. Train first.",
+                dir.display()
+            ),
+        });
+    }
+
+    let dir_str = dir.display().to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        let out = Command::new("python3")
+            .arg(&script)
+            .arg("predict-per-category")
+            .arg("--db")
+            .arg(db.display().to_string())
+            .arg("--model-dir")
+            .arg(&dir_str)
+            .output()
+            .map_err(|e| format!("Failed to run ml_predictor.py: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+        if !out.status.success() {
+            return Err(format!(
+                "ml_predictor.py predict-per-category failed (exit {}): {}",
+                out.status, stderr
+            ));
+        }
+
+        let json_line = stdout
+            .lines()
+            .rev()
+            .find(|l| l.trim().starts_with('{'))
+            .ok_or("No JSON output from ml_predictor.py")?;
+
+        #[derive(Deserialize)]
+        struct RawBatch {
+            status: String,
+            predictions_count: i64,
+            predictions: Vec<MLPrediction>,
+            message: Option<String>,
+            model_dir: Option<String>,
+        }
+        let raw: RawBatch = serde_json::from_str(json_line)
+            .map_err(|e| format!("Failed to parse per-category predict output: {}", e))?;
+
+        let model_path = raw
+            .model_dir
+            .unwrap_or_else(|| dir.display().to_string());
+        let message = raw.message.unwrap_or_else(|| match raw.status.as_str() {
+            "ok" => format!("Generated {} ML predictions", raw.predictions_count),
+            "no_pending" => "No pending predictions to score".to_string(),
+            "no_models" => "No per-category models matched the pending props.".to_string(),
+            _ => format!("Status: {}", raw.status),
+        });
+
+        Ok::<_, String>(MLPredictionBatch {
+            status: raw.status,
+            model_path: Some(model_path),
+            predictions_count: raw.predictions_count,
+            predictions: raw.predictions,
+            message,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    Ok(result)
+}
 
 /// Train the ML model on historical prediction data
 pub async fn train_model(
@@ -689,5 +1060,157 @@ mod tests {
         assert!(ctx.contains("Player 9"));
         assert!(!ctx.contains("Player 10"));
         assert!(!ctx.contains("Player 14"));
+    }
+
+    // ── Per-category helpers ──
+
+    #[test]
+    fn safe_category_token_keeps_alphanumeric() {
+        assert_eq!(safe_category_token("Points"), "Points");
+        assert_eq!(safe_category_token("3-Pt Made"), "3-Pt_Made");
+        assert_eq!(safe_category_token("FG%"), "FG");
+    }
+
+    #[test]
+    fn safe_category_token_collapses_special_chars() {
+        assert_eq!(safe_category_token("Pts/Rebs"), "Pts_Rebs");
+        assert_eq!(safe_category_token("a   b"), "a_b");
+    }
+
+    #[test]
+    fn safe_category_token_handles_empty_and_whitespace() {
+        assert_eq!(safe_category_token(""), "uncategorized");
+        assert_eq!(safe_category_token("   "), "uncategorized");
+        assert_eq!(safe_category_token("___"), "uncategorized");
+        assert_eq!(safe_category_token("..."), "uncategorized");
+    }
+
+    #[test]
+    fn safe_category_token_strips_edge_punctuation() {
+        // Leading/trailing punctuation is trimmed before falling back to default.
+        assert_eq!(safe_category_token("__Points__"), "Points");
+        assert_eq!(safe_category_token("...Assists..."), "Assists");
+    }
+
+    #[test]
+    fn default_category_model_dir_lives_under_openclaw_prizepicks() {
+        let dir = default_category_model_dir();
+        let s = dir.to_string_lossy();
+        assert!(
+            s.contains("prizepicks-monster"),
+            "expected prizepicks-monster in path, got {}",
+            s
+        );
+        assert!(s.ends_with("ml_models"), "expected ml_models suffix, got {}", s);
+    }
+
+    #[test]
+    fn list_category_models_returns_no_models_for_missing_dir() {
+        let result = list_category_models(Some("C:/path/that/should/never/exist/here"));
+        assert_eq!(result.status, "no_models");
+        assert_eq!(result.models.len(), 0);
+        assert!(result.message.contains("does not exist"));
+    }
+
+    #[test]
+    fn list_category_models_returns_no_models_for_empty_dir() {
+        // Use a unique temp directory that we know is empty.
+        let dir = std::env::temp_dir().join(format!(
+            "ppml_list_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let result = list_category_models(Some(&dir.to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(result.status, "no_models");
+        assert_eq!(result.models.len(), 0);
+    }
+
+    #[test]
+    fn list_category_models_reads_meta_files_in_dir() {
+        let dir = std::env::temp_dir().join(format!(
+            "ppml_list_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Write two per-category meta files with valid JSON.
+        let meta_a = r#"{
+            "trained_at": "2026-06-26T10:00:00+00:00",
+            "category": "Points",
+            "token": "Points",
+            "samples": 42,
+            "cv_accuracy_mean": 0.66,
+            "cv_accuracy_std": 0.04,
+            "feature_names": ["line","conf"],
+            "feature_importance": [{"feature":"line","importance":0.7},{"feature":"conf","importance":0.3}],
+            "win_rate": 0.58,
+            "num_features": 2
+        }"#;
+        let meta_b = r#"{
+            "trained_at": "2026-06-26T10:00:00+00:00",
+            "category": "Rebounds",
+            "token": "Rebounds",
+            "samples": 31,
+            "cv_accuracy_mean": 0.61,
+            "cv_accuracy_std": 0.05,
+            "feature_names": ["line","conf"],
+            "feature_importance": [{"feature":"line","importance":0.4},{"feature":"conf","importance":0.6}],
+            "win_rate": 0.55,
+            "num_features": 2
+        }"#;
+        let path_a = dir.join("ml_model_Points_meta.json");
+        let path_b = dir.join("ml_model_Rebounds_meta.json");
+        std::fs::write(&path_a, meta_a).unwrap();
+        std::fs::write(&path_b, meta_b).unwrap();
+        // Also drop a file that should be ignored: the single-model meta
+        // (no underscore-suffixed category token between `ml_model_` and
+        // `_meta.json`).
+        std::fs::write(
+            dir.join("ml_model_meta.json"),
+            r#"{"trained_at":"x","samples":1,"cv_accuracy_mean":0.5,"cv_accuracy_std":0.1,"win_rate":0.5,"feature_importance":[]}"#,
+        )
+        .unwrap();
+
+        let result = list_category_models(Some(&dir.to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(result.status, "ok");
+        assert_eq!(result.models.len(), 2, "expected 2 per-category models");
+        let names: Vec<&str> = result.models.iter().map(|m| m.category.as_str()).collect();
+        assert!(names.contains(&"Points"));
+        assert!(names.contains(&"Rebounds"));
+        // Feature importance should be parsed for both.
+        for m in &result.models {
+            assert_eq!(m.feature_importance.len(), 2);
+        }
+        // The single-model meta (ml_model_meta.json) should be ignored.
+        for m in &result.models {
+            assert!(m.model_path.contains("ml_model_"));
+            assert!(m.model_path.ends_with(".joblib"));
+        }
+    }
+
+    #[test]
+    fn list_category_models_skips_unparseable_meta() {
+        let dir = std::env::temp_dir().join(format!(
+            "ppml_list_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ml_model_Points_meta.json"), b"not valid json").unwrap();
+        let result = list_category_models(Some(&dir.to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // Garbage meta is silently dropped.
+        assert_eq!(result.models.len(), 0);
+        assert_eq!(result.status, "no_models");
     }
 }

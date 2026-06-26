@@ -293,6 +293,9 @@ pub fn run() {
             commands::ml_get_model_status,
             commands::ml_get_predictions,
             commands::ml_export_features,
+            commands::ml_train_per_category,
+            commands::ml_predict_batch_per_category,
+            commands::ml_get_category_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

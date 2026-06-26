@@ -15,6 +15,7 @@ import argparse
 import json
 import sys
 import os
+import re
 import sqlite3
 import numpy as np
 from pathlib import Path
@@ -192,6 +193,428 @@ def extract_features_from_db(db_path: str, category_map: list = None) -> dict:
         "y": np.array(y_rows) if y_rows else np.array([]),
         "metadata": metadata,
         "category_map": category_map,
+    }
+
+
+def _safe_filename_token(category: str) -> str:
+    """Convert a stat_category string into a filesystem-safe token.
+
+    Keeps alphanumerics, underscore, hyphen, and dot. Replaces everything else
+    with a single underscore and collapses runs. Empty strings yield
+    ``"uncategorized"``.
+    """
+    if not category:
+        return "uncategorized"
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", category.strip())
+    token = token.strip("._-")
+    return token or "uncategorized"
+
+
+def extract_features_by_category(db_path: str) -> dict:
+    """Extract training features grouped by stat_category.
+
+    Returns a dict: ``{ category: { "X": ..., "y": ..., "metadata": [...] } }``.
+
+    Per-category models only see one stat type at a time, so we strip the
+    one-hot ``stat_category__<name>`` columns added by
+    :func:`extract_features_from_db`. The numeric features (line, probability,
+    line movement, etc.) are kept intact. This way each per-category model
+    only has to learn the 13 numeric signals.
+
+    Categories with fewer than 1 sample are omitted. Categories that appear in
+    resolved predictions but resolve to a single class (all-Win or all-Loss) are
+    still returned so the caller can decide whether to train on them — they
+    just won't have a meaningful CV score.
+    """
+    base = extract_features_from_db(db_path)
+    X = base["X"]
+    y = base["y"]
+    metadata = base["metadata"]
+    by_category: dict = {}
+    if len(X) == 0:
+        return by_category
+    numeric_count = len(NUMERIC_FEATURES)
+    if X.shape[1] > numeric_count:
+        # Drop the one-hot category columns appended by extract_features_from_db.
+        X = X[:, :numeric_count]
+    for i, row in enumerate(metadata):
+        cat = (row.get("stat_category") or "").strip() or "uncategorized"
+        bucket = by_category.setdefault(
+            cat, {"X": [], "y": [], "metadata": []}
+        )
+        bucket["X"].append(X[i])
+        bucket["y"].append(y[i])
+        bucket["metadata"].append(metadata[i])
+    # Convert to numpy arrays
+    for cat, bucket in by_category.items():
+        bucket["X"] = np.array(bucket["X"])
+        bucket["y"] = np.array(bucket["y"])
+    return by_category
+
+
+def _train_one_pipeline(X: np.ndarray, y: np.ndarray) -> dict:
+    """Fit a single Pipeline (StandardScaler + GradientBoosting) and report CV.
+
+    Returns a dict with keys: ``pipeline``, ``cv_mean``, ``cv_std``,
+    ``samples``, ``win_rate``. CV folds clamp to ``[2, min(5, n)]`` so small
+    categories still get a numeric score.
+    """
+    from sklearn.ensemble import GradientBoostingClassifier
+    from sklearn.model_selection import cross_val_score
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import Pipeline
+
+    pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("model", GradientBoostingClassifier(
+            n_estimators=min(100, max(10, len(X) // 2)),
+            max_depth=min(5, max(2, len(X) // 10)),
+            learning_rate=0.1,
+            random_state=42,
+        )),
+    ])
+    cv_folds = max(2, min(5, len(X)))
+    cv_scores = cross_val_score(pipeline, X, y, cv=cv_folds, scoring="accuracy")
+    pipeline.fit(X, y)
+    return {
+        "pipeline": pipeline,
+        "cv_mean": float(cv_scores.mean()),
+        "cv_std": float(cv_scores.std()),
+        "samples": int(len(X)),
+        "win_rate": float(np.mean(y)) if len(y) > 0 else 0.0,
+    }
+
+
+def train_per_category_model(db_path: str, output_dir: str, min_samples: int = 10) -> dict:
+    """Train one GradientBoosting model per stat_category.
+
+    Writes ``<output_dir>/ml_model_<token>.joblib`` plus a matching
+    ``_meta.json`` for every category with at least ``min_samples`` resolved
+    predictions. Categories below the threshold are skipped (still reported in
+    the response).
+
+    Returns a JSON-serializable dict suitable for returning to the Rust side.
+    """
+    import joblib
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    by_category = extract_features_by_category(db_path)
+    if not by_category:
+        return {
+            "status": "insufficient_data",
+            "message": "No resolved predictions to train per-category models on.",
+            "categories": [],
+            "output_dir": output_dir,
+            "trained_count": 0,
+            "skipped_count": 0,
+        }
+
+    NUMERIC_COUNT = len(NUMERIC_FEATURES)
+    results = []
+    trained_count = 0
+    skipped_count = 0
+    for cat in sorted(by_category.keys()):
+        bucket = by_category[cat]
+        n = bucket["X"].shape[0] if len(bucket["X"]) > 0 else 0
+        token = _safe_filename_token(cat)
+        if n < min_samples:
+            skipped_count += 1
+            results.append({
+                "category": cat,
+                "token": token,
+                "status": "skipped",
+                "samples": n,
+                "win_rate": float(np.mean(bucket["y"])) if n > 0 else 0.0,
+                "model_path": None,
+                "cv_accuracy_mean": None,
+                "cv_accuracy_std": None,
+                "feature_importance": [],
+                "message": f"Need >= {min_samples} samples, found {n}.",
+            })
+            continue
+        try:
+            fit = _train_one_pipeline(bucket["X"], bucket["y"])
+            # Per-category features: numeric only — no one-hot (we already
+            # filtered to a single category). Track importance using just the
+            # numeric column names.
+            importances = fit["pipeline"].named_steps["model"].feature_importances_.tolist()
+            feature_importance = sorted(
+                zip(NUMERIC_FEATURES, importances),
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            model_path = os.path.join(output_dir, f"ml_model_{token}.joblib")
+            meta_path = model_path.replace(".joblib", "_meta.json")
+            joblib.dump(fit["pipeline"], model_path)
+            with open(meta_path, "w") as f:
+                json.dump({
+                    "trained_at": datetime.now(timezone.utc).isoformat(),
+                    "category": cat,
+                    "token": token,
+                    "samples": fit["samples"],
+                    "cv_accuracy_mean": fit["cv_mean"],
+                    "cv_accuracy_std": fit["cv_std"],
+                    "feature_names": list(NUMERIC_FEATURES),
+                    "feature_importance": [
+                        {"feature": ft, "importance": float(imp)}
+                        for ft, imp in feature_importance
+                    ],
+                    "win_rate": fit["win_rate"],
+                    "num_features": NUMERIC_COUNT,
+                }, f, indent=2)
+            trained_count += 1
+            results.append({
+                "category": cat,
+                "token": token,
+                "status": "trained",
+                "samples": fit["samples"],
+                "win_rate": round(fit["win_rate"], 4),
+                "model_path": model_path,
+                "cv_accuracy_mean": round(fit["cv_mean"], 4),
+                "cv_accuracy_std": round(fit["cv_std"], 4),
+                "feature_importance": [
+                    {"feature": ft, "importance": round(float(imp), 4)}
+                    for ft, imp in feature_importance
+                ],
+                "message": (
+                    f"Trained on {fit['samples']} samples; "
+                    f"CV accuracy {fit['cv_mean']:.1%} ± {fit['cv_std']:.1%}"
+                ),
+            })
+        except Exception as exc:
+            skipped_count += 1
+            results.append({
+                "category": cat,
+                "token": token,
+                "status": "error",
+                "samples": n,
+                "win_rate": float(np.mean(bucket["y"])) if n > 0 else 0.0,
+                "model_path": None,
+                "cv_accuracy_mean": None,
+                "cv_accuracy_std": None,
+                "feature_importance": [],
+                "message": f"Training failed: {exc}",
+            })
+
+    overall_status = "trained" if trained_count > 0 else "insufficient_data"
+    return {
+        "status": overall_status,
+        "message": (
+            f"Trained {trained_count} per-category model(s); "
+            f"skipped {skipped_count} (need >= {min_samples} samples)."
+        ),
+        "categories": results,
+        "output_dir": output_dir,
+        "trained_count": trained_count,
+        "skipped_count": skipped_count,
+        "min_samples": min_samples,
+    }
+
+
+def _load_per_category_model(output_dir: str, category: str):
+    """Load a per-category model and its meta. Returns (pipeline, meta) or None."""
+    import joblib
+
+    token = _safe_filename_token(category)
+    model_path = os.path.join(output_dir, f"ml_model_{token}.joblib")
+    meta_path = model_path.replace(".joblib", "_meta.json")
+    if not Path(model_path).exists():
+        return None
+    pipeline = joblib.load(model_path)
+    meta = None
+    if Path(meta_path).exists():
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+        except Exception:
+            meta = None
+    return pipeline, meta, model_path
+
+
+def predict_batch_per_category(db_path: str, output_dir: str) -> dict:
+    """Generate predictions for all pending props using per-category models.
+
+    For each pending prediction, the matching ``<category>`` model is loaded
+    and used to score the numeric feature vector. Categories without a trained
+    model are skipped (the prediction is omitted from results, not errored).
+
+    Falls back to a single ``ml_model_uncategorized.joblib`` if the prediction's
+    stat category doesn't match any trained model and that token exists.
+    """
+    import joblib
+
+    if not Path(output_dir).exists():
+        return {
+            "status": "no_models",
+            "model_dir": output_dir,
+            "predictions_count": 0,
+            "predictions": [],
+            "message": f"Model directory {output_dir} does not exist. Train first.",
+        }
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    predictions = conn.execute("""
+        SELECT id, player_name, stat_category, line, confidence_score,
+               probability, created_at
+        FROM predictions
+        WHERE outcome = 'Pending'
+          AND line IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 200
+    """).fetchall()
+    if not predictions:
+        conn.close()
+        return {
+            "status": "no_pending",
+            "model_dir": output_dir,
+            "predictions_count": 0,
+            "predictions": [],
+            "message": "No pending predictions to score.",
+        }
+
+    line_data: dict = {}
+    try:
+        rows = conn.execute("""
+            SELECT prop_key, player_name, stat_category,
+                   MIN(line) as min_line, MAX(line) as max_line,
+                   COUNT(*) as snapshot_count,
+                   MIN(snapshot_at) as first_seen,
+                   (SELECT line FROM line_movements l2
+                    WHERE l2.prop_key = line_movements.prop_key
+                    ORDER BY snapshot_at ASC LIMIT 1) as opening_line,
+                   (SELECT line FROM line_movements l3
+                    WHERE l3.prop_key = line_movements.prop_key
+                    ORDER BY snapshot_at DESC LIMIT 1) as current_line
+            FROM line_movements
+            GROUP BY prop_key
+        """).fetchall()
+        for r in rows:
+            key = f"{r['player_name']}|{r['stat_category']}"
+            line_data[key] = dict(r)
+    except Exception:
+        pass
+    conn.close()
+
+    results = []
+    used_models: set = set()
+    for pred in predictions:
+        player = pred["player_name"] or ""
+        stat = (pred["stat_category"] or "").strip()
+        key = f"{player}|{stat}"
+        lm = line_data.get(key, {})
+
+        opening = lm.get("opening_line") or pred["line"]
+        current = lm.get("current_line") or pred["line"]
+        line_change = (current - opening) if opening else 0.0
+        line_volatility = 0.0
+        if lm.get("min_line") is not None and lm.get("max_line") is not None:
+            line_volatility = lm["max_line"] - lm["min_line"]
+        snap_count = lm.get("snapshot_count", 0)
+        days_since_first = 0.0
+        if lm.get("first_seen"):
+            try:
+                first = datetime.fromisoformat(lm["first_seen"].replace("Z", "+00:00"))
+                days_since_first = (datetime.now(timezone.utc) - first).total_seconds() / 86400.0
+            except Exception:
+                pass
+        conf = pred["confidence_score"] or 50
+        edge_pct = (conf - 50) * 0.4
+        ev = edge_pct * 0.8
+        kelly = max(0.0, ev / 10.0)
+        win_prob = pred["probability"] or (50.0 + edge_pct)
+        features = [
+            pred["line"] or 0.0,
+            float(conf),
+            pred["probability"] or 50.0,
+            edge_pct,
+            ev,
+            kelly,
+            win_prob,
+            line_change,
+            line_volatility,
+            float(snap_count),
+            days_since_first,
+            1.0 if line_change > 0.05 else 0.0,
+            1.0 if line_change < -0.05 else 0.0,
+        ]
+        # Per-category model expects NUMERIC features only (no one-hot).
+        loaded = _load_per_category_model(output_dir, stat)
+        if loaded is None:
+            # No trained model for this category — skip silently.
+            continue
+        pipeline, _meta, model_path = loaded
+        used_models.add(model_path)
+        feat_array = np.array([features])
+        ml_win_prob = float(pipeline.predict_proba(feat_array)[0][1])
+        ml_prediction = "Win" if ml_win_prob >= 0.5 else "Loss"
+        results.append({
+            "prediction_id": pred["id"],
+            "player_name": player,
+            "stat_category": stat,
+            "line": pred["line"],
+            "ml_win_probability": round(ml_win_prob, 4),
+            "ml_prediction": ml_prediction,
+            "original_confidence": conf,
+            "original_probability": pred["probability"],
+            "line_change": round(line_change, 2),
+            "model_path": model_path,
+        })
+
+    return {
+        "status": "ok" if results else "no_models",
+        "model_dir": output_dir,
+        "predictions_count": len(results),
+        "predictions": results,
+        "models_used": sorted(used_models),
+        "message": (
+            f"Generated {len(results)} ML predictions across {len(used_models)} per-category model(s)."
+            if results
+            else "No per-category models matched the pending props."
+        ),
+    }
+
+
+def list_category_models(output_dir: str) -> dict:
+    """Enumerate per-category model files on disk and parse their _meta.json."""
+    out_dir = Path(output_dir)
+    if not out_dir.exists():
+        return {
+            "status": "no_models",
+            "model_dir": output_dir,
+            "models": [],
+            "message": f"Model directory {output_dir} does not exist. Train first.",
+        }
+    models = []
+    for meta_path in sorted(out_dir.glob("ml_model_*_meta.json")):
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+            models.append({
+                "category": meta.get("category", meta_path.stem.replace("ml_model_", "").replace("_meta", "")),
+                "token": meta.get("token"),
+                "model_path": str(meta_path.with_name(meta_path.name.replace("_meta.json", ".joblib"))),
+                "meta_path": str(meta_path),
+                "trained_at": meta.get("trained_at"),
+                "samples": meta.get("samples"),
+                "cv_accuracy_mean": meta.get("cv_accuracy_mean"),
+                "cv_accuracy_std": meta.get("cv_accuracy_std"),
+                "win_rate": meta.get("win_rate"),
+                "feature_importance": meta.get("feature_importance", []),
+            })
+        except Exception as exc:
+            models.append({
+                "category": meta_path.stem.replace("ml_model_", "").replace("_meta", ""),
+                "model_path": None,
+                "meta_path": str(meta_path),
+                "status": "error",
+                "message": f"Failed to read meta: {exc}",
+            })
+    return {
+        "status": "ok" if models else "no_models",
+        "model_dir": output_dir,
+        "models": models,
+        "message": f"Found {len(models)} per-category model(s) on disk.",
     }
 
 
@@ -469,6 +892,36 @@ def main():
     info_parser = subparsers.add_parser("info", help="Show model info")
     info_parser.add_argument("--model", required=True, help="Path to model.joblib (or _meta.json)")
 
+    # Per-category train
+    pcat_train_parser = subparsers.add_parser(
+        "train-per-category", help="Train one model per stat_category"
+    )
+    pcat_train_parser.add_argument("--db", required=True, help="Path to SQLite database")
+    pcat_train_parser.add_argument(
+        "--output-dir", required=True, help="Directory to write ml_model_<token>.joblib files"
+    )
+    pcat_train_parser.add_argument(
+        "--min-samples", type=int, default=10,
+        help="Minimum resolved samples required to train a category (default 10)"
+    )
+
+    # Per-category predict
+    pcat_pred_parser = subparsers.add_parser(
+        "predict-per-category", help="Score pending props with per-category models"
+    )
+    pcat_pred_parser.add_argument("--db", required=True, help="Path to SQLite database")
+    pcat_pred_parser.add_argument(
+        "--model-dir", required=True, help="Directory containing ml_model_<token>.joblib files"
+    )
+
+    # Per-category list
+    pcat_list_parser = subparsers.add_parser(
+        "list-category-models", help="List per-category models on disk"
+    )
+    pcat_list_parser.add_argument(
+        "--model-dir", required=True, help="Directory containing ml_model_<token>.joblib files"
+    )
+
     args = parser.parse_args()
 
     if args.command == "train":
@@ -485,6 +938,12 @@ def main():
             result["status"] = "model_info"
         else:
             result = {"status": "no_meta", "message": f"Model meta not found at {meta_path}"}
+    elif args.command == "train-per-category":
+        result = train_per_category_model(args.db, args.output_dir, args.min_samples)
+    elif args.command == "predict-per-category":
+        result = predict_batch_per_category(args.db, args.model_dir)
+    elif args.command == "list-category-models":
+        result = list_category_models(args.model_dir)
     else:
         parser.print_help()
         sys.exit(1)

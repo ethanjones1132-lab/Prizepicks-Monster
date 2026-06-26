@@ -8,6 +8,8 @@ import type {
   PrizePicksTradeDecision,
   PaperAnalytics,
   StakeAdjustment,
+  MLCategoryModelList,
+  MLCategoryTrainResult,
   MLModelStatus,
   MLPrediction,
   MLPredictionBatch,
@@ -138,4 +140,18 @@ export const prizepicksApi = {
 
   mlExportFeatures: (outputPath?: string) =>
     invoke<string>('ml_export_features', { outputPath }),
+
+  // ── Per-category ML models ──
+
+  mlTrainPerCategory: (outputDir?: string, minSamples?: number) =>
+    invoke<MLCategoryTrainResult>('ml_train_per_category', {
+      outputDir,
+      minSamples: minSamples ?? 10,
+    }),
+
+  mlPredictBatchPerCategory: () =>
+    invoke<MLPredictionBatch>('ml_predict_batch_per_category'),
+
+  mlGetCategoryModels: () =>
+    invoke<MLCategoryModelList>('ml_get_category_models'),
 };

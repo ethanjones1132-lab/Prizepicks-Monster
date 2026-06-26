@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-26 (mid-morning maintenance pass; **Kelly shrinkage wired into the live decision path** — `prizepicks_compute_stake_adjustment` and `prizepicks_record_paper_decision` now call `compute_stake_adjustment_with_shrinkage(...)` with a live report from `fetch_resolved_for_brier`. **Bug fix in `fetch_resolved_for_brier`:** the SQL was querying the in-memory struct field names (`predicted_probability` / `actual_outcome`) instead of the actual DB columns (`probability` / `outcome`), so the helper always returned an empty Vec and the live shrinkage report silently fell back to the cold-start multiplier. SQL and `try_get` column names fixed. 3 new unit tests for `fetch_resolved_for_brier` (mix of Win/Loss/Push/Pending, empty pool, all-pending). 146 lib tests passing, up from 143)
+Last updated: 2026-06-26 (afternoon maintenance pass; **P3-2 multi-category ML classifiers shipped** — `ml_predictor.py` now trains one GradientBoosting model per `stat_category` (writes `ml_model_<token>.joblib` + `_meta.json` into `~/.openclaw/prizepicks-monster/ml_models/`); `train_per_category` strips the one-hot category columns from the input since the per-category model only sees one stat type at a time. New Tauri commands `ml_train_per_category`, `ml_predict_batch_per_category`, `ml_get_category_models`; new `MLPredictorPanel` "Per-category classifiers" section with a table of per-category CV accuracy / sample count / win rate / trained-at. Predict-per-category picks the model that matches each pending prop's `stat_category` (silently skips unknown categories). 9 new Rust unit tests for `safe_category_token` + `list_category_models` (empty / missing / populated / unparseable meta cases). 155 lib tests passing, up from 146)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `dfd1a72`
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 2 done, 1 in progress**
+Commit: `d0c8fac`
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done**
 
 ---
 
@@ -22,7 +22,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 2 done, 1
 | **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ✅ Done (2026-06-25) |
 | **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ✅ Done (2026-06-25) |
 | **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ✅ Done (2026-06-25) |
-|    | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; stat_category one-hot features added 2026-06-26; UI surface (ML predictor tab) added 2026-06-26; **Kelly shrinkage wired into the live decision path on 2026-06-26** (was an unblocked deferred item from this P3 row) | 🔄 UI live — training/prediction still scikit-learn sports-only |
+|    | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; stat_category one-hot features added 2026-06-26; UI surface (ML predictor tab) added 2026-06-26; Kelly shrinkage wired into the live decision path on 2026-06-26 (was an unblocked deferred item from this P3 row) | ✅ Done (2026-06-26) |
 
 ---
 
@@ -33,9 +33,9 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 2 done, 1
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
 | P2 | 4 | **0** |
-| P3 | 1 | **1 in progress (UI done, multi-category training deferred)** |
+| P3 | 2 | **0** |
 
-**1–2 items left** (P3-2 multi-category classifiers deferred; correlation engine is still the lone P1 partial).
+**0–1 items left** (P3-2 shipped 2026-06-26; correlation engine is still the lone P1 partial — no proposed implementation yet, accepted limitation).
 
 ## P0 implementation notes (shipped)
 
@@ -81,10 +81,18 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 2 done, 1
   - `src-tauri/src/ml_predictor.rs` — added `pub fn model_meta_path_for(...)` (test-only wrapper around the existing private path-derivation helper) and a `#[cfg(test)] mod tests` block with 7 new unit tests: `model_meta_path_strips_joblib_and_appends_meta_json`, `model_meta_path_handles_alternate_filename`, `model_meta_path_preserves_directory` (with a `paths_eq` helper that ignores `/` vs `\` so the assertions are cross-platform), `ml_context_with_empty_predictions_returns_empty_string`, `ml_context_includes_accuracy_when_provided`, `ml_context_uses_na_when_accuracy_missing`, `ml_context_caps_at_ten_predictions`. Total **143 lib tests passing** (was 136).
   - **Multi-category training pipeline** (deferred): The Python script still trains a single `GradientBoostingClassifier` per stat_category via the one-hot expansion. True per-category classifiers (separate model files per `points` / `rebounds` / etc.) require routing changes in `ml_predictor.py` and per-category feature importances. Not on the maintenance critical path; deferred to a future pass.
   - **Train button gating:** the panel disables "Train model" until at least 10 resolved predictions exist in the DB (matches the Python script's `len(X) < 10` early return), and disables "Score pending" until a model file is on disk.
+- **Per-category training pipeline (✅ Done 2026-06-26):**
+  - `src-tauri/src/ml_predictor.py` — added `train_per_category_model(db_path, output_dir, min_samples=10)`, `predict_batch_per_category(db_path, model_dir)`, `list_category_models(model_dir)`, plus three matching CLI subcommands (`train-per-category`, `predict-per-category`, `list-category-models`). `extract_features_by_category` strips the one-hot `stat_category__<name>` columns added by `extract_features_from_db` so each per-category model only has to learn the 13 numeric features. Filenames are tokenized via `_safe_filename_token` (alphanumerics / `_` / `-` / `.` kept, other chars collapsed to `_`, edge-punctuation trimmed, empty → `uncategorized`).
+  - `src-tauri/src/ml_predictor.rs` — added `MLCategoryModelResult`, `MLCategoryTrainResult`, `MLCategoryModelInfo`, `MLCategoryModelList`; new functions `train_per_category`, `list_category_models` (pure filesystem, globs `ml_model_*_meta.json` and skips the single-model `ml_model_meta.json` file), `predict_batch_per_category`, plus helpers `default_category_model_dir` (`~/.openclaw/prizepicks-monster/ml_models/`) and `safe_category_token` (mirrors the Python side).
+  - `src-tauri/src/commands/ml_cmd.rs` — new Tauri commands `ml_train_per_category`, `ml_predict_batch_per_category` (also saves to `ml_predictions` table), `ml_get_category_models`.
+  - `src-tauri/src/lib.rs` — registered the 3 new commands in `invoke_handler`.
+  - `src-ui/src/types/prizepicks.ts` — added `MLCategoryTrainResult`, `MLCategoryModelList`, `MLCategoryModelInfo` types.
+  - `src-ui/src/services/prizepicks.ts` — added `mlTrainPerCategory(outputDir?, minSamples?)`, `mlPredictBatchPerCategory()`, `mlGetCategoryModels()`.
+  - `src-ui/src/components/MLPredictorPanel.tsx` — new "Per-category classifiers" section with two actions (`Train per-category`, `Score pending (per-category)`) and a table of per-category model metrics (stat category chip, sample count, CV accuracy ± std, win rate, trained-at). Train button is disabled when `resolved_predictions < 10`; score button is disabled until at least one per-category model is on disk. Load pulls `mlGetCategoryModels` in parallel with the existing status + predictions calls.
 
-## Suggested next target: P3 (1 remaining, deferred)
+## Suggested next target: P1 (1 partial, no plan)
 
-1. **Multi-category ML classifiers** — train one scikit-learn model file per `stat_category` (Points / Rebounds / Assists / etc.) so each category has its own CV accuracy, threshold, and feature importances. Requires updating `ml_predictor.py` to fan out training, switching `predict_batch` to load the right per-category model, and surfacing per-category metrics in the new ML predictor tab. No Rust work in this one without first shipping the per-category training pipeline.
+1. **PrizePicks-native correlation engine** — The existing `prizepicks/portfolio_risk.rs` correlation is ticker-prefix heuristics only. A proper implementation would need an event/series/macro graph (player-level correlations, team-level, same-game parlay structure) and a way to fetch it. No concrete plan in place. Most users of the current app have small (≤3 leg) paper positions where the heuristic is sufficient.
 
 ## Dashboard performance (deferred)
 

@@ -203,3 +203,48 @@ export interface MLModelStatus {
   message: string;
 }
 
+// ── Per-category ML models (mirrors src-tauri/src/ml_predictor.rs) ──
+
+export interface MLCategoryModelResult {
+  category: string;
+  token: string;
+  status: string;
+  samples: number;
+  win_rate: number;
+  model_path: string | null;
+  cv_accuracy_mean: number | null;
+  cv_accuracy_std: number | null;
+  feature_importance: MLFeatureImportance[];
+  message: string;
+}
+
+export interface MLCategoryTrainResult {
+  status: string;
+  message: string;
+  output_dir: string;
+  trained_count: number;
+  skipped_count: number;
+  min_samples: number;
+  categories: MLCategoryModelResult[];
+}
+
+export interface MLCategoryModelInfo {
+  category: string;
+  token: string;
+  model_path: string;
+  meta_path: string;
+  trained_at: string | null;
+  samples: number | null;
+  cv_accuracy_mean: number | null;
+  cv_accuracy_std: number | null;
+  win_rate: number | null;
+  feature_importance: MLFeatureImportance[];
+}
+
+export interface MLCategoryModelList {
+  status: string;
+  model_dir: string;
+  message: string;
+  models: MLCategoryModelInfo[];
+}
+
