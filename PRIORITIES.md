@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-26 (overnight maintenance pass; P3-2 advanced — ml_predictor.py now one-hot encodes stat_category as categorical features for per-prop-type learning, saved to model metadata for prediction consistency; 3 sample export verified working with 15 features)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `df43bd9`
+Commit: `298ab9d`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1 in progress**
 
