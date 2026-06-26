@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-26 (overnight maintenance pass; P3-2 UI surface complete — new 🤖 ML predictor tab in `App.tsx`, `MLPredictorPanel.tsx` consumes the existing 5 Tauri commands (`ml_train_model`, `ml_predict_batch`, `ml_get_model_status`, `ml_get_predictions`, `ml_export_features`), types added in `types/prizepicks.ts`, 7 new unit tests in `ml_predictor.rs` for path-derivation and `generate_ml_context` (143 lib tests passing, up from 136); 136+ test threshold maintained)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `65edb19`
+Commit: `6dee425`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1 in progress**
 
