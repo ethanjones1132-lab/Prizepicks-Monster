@@ -1,10 +1,10 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-25 (maintenance pass; P3-1 volatility-adjusted Kelly from historical Brier shipped — analysis::kelly_shrinkage computes multiplier from sample size + Brier Skill Score, wired into portfolio_risk::compute_stake_adjustment_with_shrinkage and exposed as the prizepicks_kelly_shrinkage_report Tauri command; 10 new shrinkage tests + 3 new portfolio_risk tests bring suite to 136 passing)
+Last updated: 2026-06-26 (overnight maintenance pass; P3-2 advanced — ml_predictor.py now one-hot encodes stat_category as categorical features for per-prop-type learning, saved to model metadata for prediction consistency; 3 sample export verified working with 15 features)
 Working copy: `C:\\Projects\\prizepicks-monster`
 Commit: `df43bd9`
 
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 mostly done (1 done, 1 remaining)**
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1 in progress**
 
 ---
 
@@ -23,7 +23,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 mostly do
 | **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ✅ Done (2026-06-25) |
 | **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ✅ Done (2026-06-25) |
 | **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ✅ Done (2026-06-25) |
-| **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; README still lists ML training as unchecked | ⬜ Not started |
+|    | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; stat_category one-hot features added 2026-06-26 | 🔄 Feature engineering (stat_category one-hot) |
 
 ---
 
@@ -34,7 +34,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 mostly do
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
 | P2 | 4 | **0** |
-| P3 | 1 | **1** |
+| P3 | 1 | **1 in progress** |
 
 **1–2 items left** (P3-2 ML classifiers; correlation engine is still the lone P1 partial).
 
@@ -63,6 +63,8 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 mostly do
 - Tests: 13 new in `predictions::storage::tests` — entry-price extraction (valid/missing/invalid/none/out-of-range/boundaries), insert captures entry price, missing-decision tolerates NULL, capture skips without snapshot, capture picks latest-before-resolution snapshot, idempotent, skip when ticker missing. Total 123 lib tests passing.
 
 ## P3 implementation notes (in progress)
+
+- `src-tauri/src/ml_predictor.py` — stat_category now one-hot encoded as categorical features (2026-06-26). Feature extraction dynamically detects unique stat categories from resolved predictions and adds binary columns. The category map is persisted to `_meta.json` alongside the trained model so `predict_batch` can construct identical feature vectors. Unknown categories during inference get all-zeros. `export-features` includes category columns in the CSV. `train_model` message now reports feature count and category count. The numeric features are unchanged (13 original + N category one-hots).
 
 - `src-tauri/src/analysis/kelly_shrinkage.rs` — new module. `compute_shrinkage(&[ResolvedForBrier])` returns a `KellyShrinkageReport { multiplier, n, brier, base_rate, climatology_brier, brier_skill_score, sample_factor, calibration_factor, reason }`. Cold start (n=0) returns multiplier=1.0. Cold but non-zero (1 ≤ n < 30) fades linearly from 0.50 → 1.0 via `sample_factor`. Warm: `multiplier = sample_factor * sqrt(max(BSS, 0)).clamp(MIN_MULT, 1.0)` where `BSS = 1 - brier/climatology_brier`. Climatology Brier = `base_rate * (1 - base_rate)` (binary). 10 unit tests cover cold start, single prediction, small sample, warm near-climatology, sharp well-calibrated (BSS=1), mildly miscalibrated (BSS<0), overconfident (floored at MIN_MULT=0.50), degenerate all-wins (no NaN), parse_hit_outcome strings, and the predictions adapter.
 - `src-tauri/src/prizepicks/portfolio_risk.rs` — added `compute_stake_adjustment_with_shrinkage(...)` which folds the shrinkage multiplier on top of the correlation scale. The original `compute_stake_adjustment` is preserved as a thin wrapper passing `None`. `StakeAdjustment` gains an optional `kelly_shrinkage: Option<KellyShrinkageReport>` field. When the shrinkage multiplier is <1.0, a "Volatility-adjusted Kelly: X% of raw (Brier-shrunk from observed history)." warning is appended. 3 new tests: `shrinkage_folds_into_kelly_scale`, `shrinkage_unity_keeps_legacy_behavior`, `shrinkage_warms_to_full_kelly`.

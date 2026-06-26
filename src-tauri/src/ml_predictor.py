@@ -20,9 +20,9 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime, timezone
 
-# ── Feature extraction from SQLite ──
+# ── Numeric feature columns (non-target, before one-hot stat_category) ──
 
-FEATURE_COLUMNS = [
+NUMERIC_FEATURES = [
     "line",
     "confidence_score",
     "probability",
@@ -30,17 +30,42 @@ FEATURE_COLUMNS = [
     "expected_value",
     "kelly_pct",
     "win_probability",
-    "line_change",        # from line_movements: current - opening
-    "line_volatility",    # stddev of line snapshots
-    "snapshot_count",     # number of line snapshots for this prop
-    "days_since_first",   # days since first snapshot
-    "direction_up",       # 1 if line moved up
-    "direction_down",     # 1 if line moved down
-    "outcome_encoded",    # target: 1=Win, 0=Loss/Push
+    "line_change",
+    "line_volatility",
+    "snapshot_count",
+    "days_since_first",
+    "direction_up",
+    "direction_down",
 ]
 
-def extract_features_from_db(db_path: str) -> dict:
-    """Extract training features from the SQLite database."""
+
+def _get_stat_categories(conn) -> list:
+    """Get sorted list of unique stat categories from resolved predictions."""
+    try:
+        rows = conn.execute("""
+            SELECT DISTINCT stat_category FROM predictions
+            WHERE outcome IN ('Win', 'Loss', 'Push')
+              AND stat_category IS NOT NULL
+              AND stat_category != ''
+            ORDER BY stat_category
+        """).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def extract_features_from_db(db_path: str, category_map: list = None) -> dict:
+    """Extract training features from the SQLite database.
+
+    Args:
+        db_path: Path to SQLite database.
+        category_map: Optional list of stat_category values in order. If not
+            provided, derived from the resolved predictions in the DB.
+
+    Returns:
+        dict with keys: X (feature array), y (target array), metadata (list of
+        prediction metadata dicts), category_map (list of category columns)
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
 
@@ -56,7 +81,11 @@ def extract_features_from_db(db_path: str) -> dict:
 
     if not predictions:
         conn.close()
-        return {"X": np.array([]), "y": np.array([]), "metadata": []}
+        return {"X": np.array([]), "y": np.array([]), "metadata": [], "category_map": []}
+
+    # If no category_map provided, derive it from this training data
+    if category_map is None:
+        category_map = _get_stat_categories(conn)
 
     # Get line movement data
     line_data = {}
@@ -123,6 +152,7 @@ def extract_features_from_db(db_path: str) -> dict:
         kelly = max(0.0, ev / 10.0)
         win_prob = pred["probability"] or (50.0 + edge_pct)
 
+        # Numeric features
         row = [
             pred["line"] or 0.0,           # line
             float(conf),                     # confidence_score
@@ -137,11 +167,15 @@ def extract_features_from_db(db_path: str) -> dict:
             days_since_first,                # days_since_first
             1.0 if line_change > 0.05 else 0.0,   # direction_up
             1.0 if line_change < -0.05 else 0.0,  # direction_down
-            float(target),                   # outcome_encoded (target)
         ]
 
-        X_rows.append(row[:-1])  # all except target
-        y_rows.append(row[-1])   # target
+        # One-hot stat_category features
+        for cat in category_map:
+            row.append(1.0 if stat == cat else 0.0)
+
+        # Feature row is everything except target
+        X_rows.append(row)
+        y_rows.append(float(target))
         metadata.append({
             "id": pred["id"],
             "player_name": player,
@@ -150,10 +184,14 @@ def extract_features_from_db(db_path: str) -> dict:
             "outcome": outcome,
         })
 
+    if not X_rows:
+        return {"X": np.array([]), "y": np.array([]), "metadata": [], "category_map": category_map}
+
     return {
         "X": np.array(X_rows) if X_rows else np.array([]),
         "y": np.array(y_rows) if y_rows else np.array([]),
         "metadata": metadata,
+        "category_map": category_map,
     }
 
 
@@ -167,6 +205,7 @@ def train_model(db_path: str, output_path: str) -> dict:
 
     data = extract_features_from_db(db_path)
     X, y = data["X"], data["y"]
+    category_map = data["category_map"]
 
     if len(X) < 10:
         return {
@@ -186,6 +225,9 @@ def train_model(db_path: str, output_path: str) -> dict:
         )),
     ])
 
+    # Build full feature name list (numeric + category one-hot)
+    feature_names = list(NUMERIC_FEATURES) + [f"stat_cat__{c}" for c in category_map]
+
     # Cross-validation
     cv_folds = min(5, len(X))
     if cv_folds >= 2:
@@ -200,7 +242,7 @@ def train_model(db_path: str, output_path: str) -> dict:
     model = pipeline.named_steps["model"]
     importances = model.feature_importances_.tolist()
     feature_importance = sorted(
-        zip(FEATURE_COLUMNS, importances),
+        zip(feature_names, importances),
         key=lambda x: x[1],
         reverse=True,
     )
@@ -217,8 +259,11 @@ def train_model(db_path: str, output_path: str) -> dict:
             "samples": len(X),
             "cv_accuracy_mean": float(cv_scores.mean()),
             "cv_accuracy_std": float(cv_scores.std()),
+            "feature_names": feature_names,
             "feature_importance": [{"feature": ft, "importance": float(imp)} for ft, imp in feature_importance],
             "win_rate": float(y.mean()),
+            "categories": category_map,
+            "num_features": X.shape[1],
         }, f, indent=2)
 
     return {
@@ -229,7 +274,8 @@ def train_model(db_path: str, output_path: str) -> dict:
         "win_rate": round(float(y.mean()), 4),
         "model_path": output_path,
         "feature_importance": [{"feature": ft, "importance": round(float(imp), 4)} for ft, imp in feature_importance],
-        "message": f"Trained on {len(X)} samples. CV accuracy: {cv_scores.mean():.1%} ± {cv_scores.std():.1%}",
+        "message": f"Trained on {len(X)} samples ({X.shape[1]} features) across {len(category_map)} stat categories. "
+                   f"CV accuracy: {cv_scores.mean():.1%} ± {cv_scores.std():.1%}",
     }
 
 
@@ -241,6 +287,17 @@ def predict_batch(db_path: str, model_path: str) -> dict:
         return {"status": "no_model", "message": f"Model not found at {model_path}. Train first."}
 
     pipeline = joblib.load(model_path)
+
+    # Load category map from training metadata
+    meta_path = model_path.replace(".joblib", "_meta.json")
+    category_map = []
+    if Path(meta_path).exists():
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+                category_map = meta.get("categories", [])
+        except Exception:
+            pass
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -314,7 +371,7 @@ def predict_batch(db_path: str, model_path: str) -> dict:
         kelly = max(0.0, ev / 10.0)
         win_prob = pred["probability"] or (50.0 + edge_pct)
 
-        features = np.array([[
+        features = [
             pred["line"] or 0.0,
             float(conf),
             pred["probability"] or 50.0,
@@ -328,9 +385,15 @@ def predict_batch(db_path: str, model_path: str) -> dict:
             days_since_first,
             1.0 if line_change > 0.05 else 0.0,
             1.0 if line_change < -0.05 else 0.0,
-        ]])
+        ]
 
-        ml_win_prob = float(pipeline.predict_proba(features)[0][1])
+        # One-hot stat_category features (using training category map)
+        # Unknown categories (not seen during training) get all-zeros
+        for cat in category_map:
+            features.append(1.0 if stat == cat else 0.0)
+
+        feat_array = np.array([features])
+        ml_win_prob = float(pipeline.predict_proba(feat_array)[0][1])
         ml_prediction = "Win" if ml_win_prob >= 0.5 else "Loss"
 
         results.append({
@@ -357,6 +420,7 @@ def export_features_csv(db_path: str, output_path: str) -> dict:
     """Export feature matrix as CSV for external analysis."""
     data = extract_features_from_db(db_path)
     X, y, metadata = data["X"], data["y"], data["metadata"]
+    category_map = data["category_map"]
 
     if len(X) == 0:
         return {"status": "no_data", "message": "No resolved predictions to export."}
@@ -364,9 +428,12 @@ def export_features_csv(db_path: str, output_path: str) -> dict:
     import csv
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
+    # Build column headers: numeric + category one-hots + outcome
+    headers = list(NUMERIC_FEATURES) + [f"stat_cat__{c}" for c in category_map] + ["outcome"]
+
     with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(FEATURE_COLUMNS[:14] + ["outcome"])  # 14 features + target
+        writer.writerow(headers)
         for i in range(len(X)):
             row = list(X[i]) + [int(y[i])]
             writer.writerow(row)
@@ -374,6 +441,7 @@ def export_features_csv(db_path: str, output_path: str) -> dict:
     return {
         "status": "exported",
         "samples": len(X),
+        "features": X.shape[1] if len(X) > 0 else 0,
         "output_path": output_path,
     }
 

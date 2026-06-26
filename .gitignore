@@ -15,3 +15,7 @@ Thumbs.db
 # Generated build logs
 *.log
 reports/improve-pass/
+
+# Python
+__pycache__/
+*.pyc
