@@ -1,8 +1,8 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-26 (overnight maintenance pass; P3-2 advanced — ml_predictor.py now one-hot encodes stat_category as categorical features for per-prop-type learning, saved to model metadata for prediction consistency; 3 sample export verified working with 15 features)
+Last updated: 2026-06-26 (overnight maintenance pass; P3-2 UI surface complete — new 🤖 ML predictor tab in `App.tsx`, `MLPredictorPanel.tsx` consumes the existing 5 Tauri commands (`ml_train_model`, `ml_predict_batch`, `ml_get_model_status`, `ml_get_predictions`, `ml_export_features`), types added in `types/prizepicks.ts`, 7 new unit tests in `ml_predictor.rs` for path-derivation and `generate_ml_context` (143 lib tests passing, up from 136); 136+ test threshold maintained)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `298ab9d`
+Commit: `65edb19`
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1 in progress**
 
@@ -23,7 +23,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1
 | **P2** | Model disagreement flags at entry | Flag when `fair_probability_pct` diverges sharply from market implied prob at decision time | ✅ Done (2026-06-25) |
 | **P2** | CLV per prediction | `eval-cli` scores closing-line value on benchmark data; live predictions don't store entry vs close | ✅ Done (2026-06-25) |
 | **P3** | Volatility-adjusted Kelly from historical Brier | Shrinkage slider is manual; handoffs call for Brier-driven auto-shrinkage | ✅ Done (2026-06-25) |
-|    | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; stat_category one-hot features added 2026-06-26 | 🔄 Feature engineering (stat_category one-hot) |
+|    | **P3** | Multi-category ML classifiers (politics/econ/weather) | Current ML is scikit-learn on sports prop features via Python subprocess; stat_category one-hot features added 2026-06-26; UI surface (ML predictor tab) added 2026-06-26 | 🔄 UI live — training/prediction still scikit-learn sports-only |
 
 ---
 
@@ -34,9 +34,9 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1
 | P0 | 2 | **0** |
 | P1 | 3 (+1 partial) | **0–1** |
 | P2 | 4 | **0** |
-| P3 | 1 | **1 in progress** |
+| P3 | 1 | **1 in progress (UI done, multi-category training deferred)** |
 
-**1–2 items left** (P3-2 ML classifiers; correlation engine is still the lone P1 partial).
+**1–2 items left** (P3-2 multi-category classifiers deferred; correlation engine is still the lone P1 partial).
 
 ## P0 implementation notes (shipped)
 
@@ -65,7 +65,6 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1
 ## P3 implementation notes (in progress)
 
 - `src-tauri/src/ml_predictor.py` — stat_category now one-hot encoded as categorical features (2026-06-26). Feature extraction dynamically detects unique stat categories from resolved predictions and adds binary columns. The category map is persisted to `_meta.json` alongside the trained model so `predict_batch` can construct identical feature vectors. Unknown categories during inference get all-zeros. `export-features` includes category columns in the CSV. `train_model` message now reports feature count and category count. The numeric features are unchanged (13 original + N category one-hots).
-
 - `src-tauri/src/analysis/kelly_shrinkage.rs` — new module. `compute_shrinkage(&[ResolvedForBrier])` returns a `KellyShrinkageReport { multiplier, n, brier, base_rate, climatology_brier, brier_skill_score, sample_factor, calibration_factor, reason }`. Cold start (n=0) returns multiplier=1.0. Cold but non-zero (1 ≤ n < 30) fades linearly from 0.50 → 1.0 via `sample_factor`. Warm: `multiplier = sample_factor * sqrt(max(BSS, 0)).clamp(MIN_MULT, 1.0)` where `BSS = 1 - brier/climatology_brier`. Climatology Brier = `base_rate * (1 - base_rate)` (binary). 10 unit tests cover cold start, single prediction, small sample, warm near-climatology, sharp well-calibrated (BSS=1), mildly miscalibrated (BSS<0), overconfident (floored at MIN_MULT=0.50), degenerate all-wins (no NaN), parse_hit_outcome strings, and the predictions adapter.
 - `src-tauri/src/prizepicks/portfolio_risk.rs` — added `compute_stake_adjustment_with_shrinkage(...)` which folds the shrinkage multiplier on top of the correlation scale. The original `compute_stake_adjustment` is preserved as a thin wrapper passing `None`. `StakeAdjustment` gains an optional `kelly_shrinkage: Option<KellyShrinkageReport>` field. When the shrinkage multiplier is <1.0, a "Volatility-adjusted Kelly: X% of raw (Brier-shrunk from observed history)." warning is appended. 3 new tests: `shrinkage_folds_into_kelly_scale`, `shrinkage_unity_keeps_legacy_behavior`, `shrinkage_warms_to_full_kelly`.
 - `src-tauri/src/commands/prizepicks_cmd.rs` — new Tauri command `prizepicks_kelly_shrinkage_report` returns the live report. Helper `fetch_resolved_for_brier` queries `predictions` for rows with non-null `actual_outcome` and projects them into `ResolvedForBrier` via the shared `parse_hit_outcome` mapping.
@@ -73,10 +72,19 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 1 done, 1
 - `src-ui/src/types/prizepicks.ts` — added `KellyShrinkageReport` interface; `StakeAdjustment` gains optional `kelly_shrinkage` field.
 - `src-ui/src/services/prizepicks.ts` — added `prizepicksApi.getKellyShrinkageReport()`. The existing `MarketDetailPanel` already surfaces shrinkage warnings via `adjustment.warnings`, so no UI change needed beyond the type.
 - **Wiring into the live decision path** (deferred): `prizepicks_record_paper_decision` and `prizepicks_compute_stake_adjustment` still call the legacy `compute_stake_adjustment` (shrinkage=None). The plumbing is in place; activating it is a one-line change in those commands. Holding off to keep this pass focused and to avoid touching the user-facing decision path without calibration data accumulating first.
+- **ML predictor UI surface (2026-06-26):**
+  - `src-ui/src/types/prizepicks.ts` — added `MLFeatureImportance`, `MLTrainingResult`, `MLPrediction`, `MLPredictionBatch`, `MLModelStatus`.
+  - `src-ui/src/services/prizepicks.ts` — `prizepicksApi.mlTrainModel(outputPath?)`, `mlPredictBatch()`, `mlGetModelStatus()`, `mlGetPredictions(limit?)`, `mlExportFeatures(outputPath?)` wrapping the existing Tauri commands.
+  - `src-ui/src/components/MLPredictorPanel.tsx` — new component. Header summary card (model trained, sample count, CV accuracy ± std, training win rate, pending vs resolved, trained-at), top-10 feature importances table, latest 20 ML predictions table with Over/Under lean chip (green=Lean Over ≥0.6, gold=0.4–0.6 toss-up, red=Lean Under <0.4), three actions: Train model (disabled if <10 resolved), Score pending (disabled if no model), Export features CSV. Empty-state copy guides next steps when no model / no predictions.
+  - `src-ui/src/App.tsx` — new `ml` tab `🤖 ML predictor` in the sidebar nav, mounted as a `prizepicksPage` section.
+  - `src-ui/src/index.css` — added `.featureImportanceBlock`, `.featureTable`, `.predictionTable`, `.info` (success-tinted status banner), and `.chip.small.leanOver / .leanUnder / .leanToss` color variants.
+  - `src-tauri/src/ml_predictor.rs` — added `pub fn model_meta_path_for(...)` (test-only wrapper around the existing private path-derivation helper) and a `#[cfg(test)] mod tests` block with 7 new unit tests: `model_meta_path_strips_joblib_and_appends_meta_json`, `model_meta_path_handles_alternate_filename`, `model_meta_path_preserves_directory` (with a `paths_eq` helper that ignores `/` vs `\` so the assertions are cross-platform), `ml_context_with_empty_predictions_returns_empty_string`, `ml_context_includes_accuracy_when_provided`, `ml_context_uses_na_when_accuracy_missing`, `ml_context_caps_at_ten_predictions`. Total **143 lib tests passing** (was 136).
+  - **Multi-category training pipeline** (deferred): The Python script still trains a single `GradientBoostingClassifier` per stat_category via the one-hot expansion. True per-category classifiers (separate model files per `points` / `rebounds` / etc.) require routing changes in `ml_predictor.py` and per-category feature importances. Not on the maintenance critical path; deferred to a future pass.
+  - **Train button gating:** the panel disables "Train model" until at least 10 resolved predictions exist in the DB (matches the Python script's `len(X) < 10` early return), and disables "Score pending" until a model file is on disk.
 
-## Suggested next target: P3 (1 remaining)
+## Suggested next target: P3 (1 remaining, deferred)
 
-1. **Multi-category ML classifiers** — the larger of the two. Requires a Python training pipeline update, feature extraction expansion, and a UI to surface per-category model picks. No Rust work in this one without first shipping the training pipeline.
+1. **Multi-category ML classifiers** — train one scikit-learn model file per `stat_category` (Points / Rebounds / Assists / etc.) so each category has its own CV accuracy, threshold, and feature importances. Requires updating `ml_predictor.py` to fan out training, switching `predict_batch` to load the right per-category model, and surfacing per-category metrics in the new ML predictor tab. No Rust work in this one without first shipping the per-category training pipeline.
 
 ## Dashboard performance (deferred)
 

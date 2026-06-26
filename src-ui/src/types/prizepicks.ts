@@ -151,3 +151,55 @@ export interface PaperAnalytics {
   fetched_at: string;
 }
 
+// ── ML Predictor types (mirrors src-tauri/src/ml_predictor.rs) ──
+
+export interface MLFeatureImportance {
+  feature: string;
+  importance: number;
+}
+
+export interface MLTrainingResult {
+  status: string;
+  samples: number | null;
+  cv_accuracy_mean: number | null;
+  cv_accuracy_std: number | null;
+  win_rate: number | null;
+  model_path: string | null;
+  feature_importance: MLFeatureImportance[] | null;
+  message: string;
+}
+
+export interface MLPrediction {
+  prediction_id: string;
+  player_name: string;
+  stat_category: string;
+  line: number;
+  ml_win_probability: number;
+  ml_prediction: 'Win' | 'Loss' | string;
+  original_confidence: number;
+  original_probability: number | null;
+  line_change: number;
+}
+
+export interface MLPredictionBatch {
+  status: string;
+  model_path: string | null;
+  predictions_count: number;
+  predictions: MLPrediction[];
+  message: string;
+}
+
+export interface MLModelStatus {
+  model_exists: boolean;
+  model_path: string;
+  trained_at: string | null;
+  samples: number | null;
+  cv_accuracy_mean: number | null;
+  cv_accuracy_std: number | null;
+  win_rate: number | null;
+  feature_importance: MLFeatureImportance[] | null;
+  pending_predictions: number;
+  resolved_predictions: number;
+  message: string;
+}
+

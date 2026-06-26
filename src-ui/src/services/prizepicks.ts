@@ -8,6 +8,10 @@ import type {
   PrizePicksTradeDecision,
   PaperAnalytics,
   StakeAdjustment,
+  MLModelStatus,
+  MLPrediction,
+  MLPredictionBatch,
+  MLTrainingResult,
 } from '../types/prizepicks';
 import type { PropPick, ScoredProp } from '../types';
 
@@ -119,4 +123,19 @@ export const prizepicksApi = {
     invoke<{ settled: number; wins: number; losses: number; total_pnl: number }>(
       'paper_settle_pending',
     ),
+
+  // ── ML Predictor ──
+
+  mlTrainModel: (outputPath?: string) =>
+    invoke<MLTrainingResult>('ml_train_model', { outputPath }),
+
+  mlPredictBatch: () => invoke<MLPredictionBatch>('ml_predict_batch'),
+
+  mlGetModelStatus: () => invoke<MLModelStatus>('ml_get_model_status'),
+
+  mlGetPredictions: (limit?: number) =>
+    invoke<MLPrediction[]>('ml_get_predictions', { limit: limit ?? 50 }),
+
+  mlExportFeatures: (outputPath?: string) =>
+    invoke<string>('ml_export_features', { outputPath }),
 };

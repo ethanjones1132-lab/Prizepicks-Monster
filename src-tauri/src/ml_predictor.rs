@@ -131,6 +131,12 @@ fn model_meta_path(model_path: &PathBuf) -> PathBuf {
     ))
 }
 
+/// Public wrapper for tests — exposes the same path-derivation logic
+/// that `get_model_status` and `predict_batch` use internally.
+pub fn model_meta_path_for(model_path: &PathBuf) -> PathBuf {
+    model_meta_path(model_path)
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Core Operations
 // ═══════════════════════════════════════════════════════════════
@@ -561,4 +567,127 @@ pub async fn export_features_csv(output_path: Option<&str>) -> Result<String, St
     .map_err(|e| format!("Task join error: {}", e))??;
 
     Ok(result.output_path)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Compare two path strings ignoring separator differences (Windows uses
+    /// `\` while Unix uses `/`). Splits on either separator and rejoins with `/`.
+    fn paths_eq(a: &str, b: &str) -> bool {
+        a.split(|c| c == '/' || c == '\\')
+            .collect::<Vec<_>>()
+            == b.split(|c| c == '/' || c == '\\').collect::<Vec<_>>()
+    }
+
+    #[test]
+    fn model_meta_path_strips_joblib_and_appends_meta_json() {
+        let p = PathBuf::from("/home/user/.openclaw/prizepicks-monster/ml_model.joblib");
+        let meta = model_meta_path_for(&p);
+        assert!(
+            paths_eq(
+                &meta.to_string_lossy(),
+                "/home/user/.openclaw/prizepicks-monster/ml_model_meta.json"
+            ),
+            "got {:?}",
+            meta
+        );
+    }
+
+    #[test]
+    fn model_meta_path_handles_alternate_filename() {
+        let p = PathBuf::from("C:/models/prop_v2.joblib");
+        let meta = model_meta_path_for(&p);
+        assert!(
+            paths_eq(&meta.to_string_lossy(), "C:/models/prop_v2_meta.json"),
+            "got {:?}",
+            meta
+        );
+    }
+
+    #[test]
+    fn model_meta_path_preserves_directory() {
+        let p = PathBuf::from("models/subdir/foo.joblib");
+        let meta = model_meta_path_for(&p);
+        // PathBuf::with_file_name replaces only the file portion
+        assert!(
+            paths_eq(&meta.to_string_lossy(), "models/subdir/foo_meta.json"),
+            "got {:?}",
+            meta
+        );
+    }
+
+    #[test]
+    fn ml_context_with_empty_predictions_returns_empty_string() {
+        let ctx = generate_ml_context(&[], Some(0.65));
+        assert!(ctx.is_empty());
+    }
+
+    #[test]
+    fn ml_context_includes_accuracy_when_provided() {
+        let preds = vec![MLPrediction {
+            prediction_id: "p1".to_string(),
+            player_name: "Test Player".to_string(),
+            stat_category: "Points".to_string(),
+            line: 25.5,
+            ml_win_probability: 0.72,
+            ml_prediction: "Win".to_string(),
+            original_confidence: 70,
+            original_probability: Some(68.0),
+            line_change: 0.0,
+        }];
+        let ctx = generate_ml_context(&preds, Some(0.78));
+        assert!(ctx.contains("78.0%"));
+        assert!(ctx.contains("Test Player"));
+        assert!(ctx.contains("Points"));
+        assert!(ctx.contains("72.0%"));
+        assert!(ctx.contains("Lean Over"));
+    }
+
+    #[test]
+    fn ml_context_uses_na_when_accuracy_missing() {
+        let preds = vec![MLPrediction {
+            prediction_id: "p1".to_string(),
+            player_name: "P2".to_string(),
+            stat_category: "Rebounds".to_string(),
+            line: 8.0,
+            ml_win_probability: 0.35,
+            ml_prediction: "Loss".to_string(),
+            original_confidence: 50,
+            original_probability: None,
+            line_change: -0.2,
+        }];
+        let ctx = generate_ml_context(&preds, None);
+        assert!(ctx.contains("N/A"));
+        assert!(ctx.contains("Lean Under"));
+    }
+
+    #[test]
+    fn ml_context_caps_at_ten_predictions() {
+        let preds: Vec<MLPrediction> = (0..15)
+            .map(|i| MLPrediction {
+                prediction_id: format!("p{}", i),
+                player_name: format!("Player {}", i),
+                stat_category: "Points".to_string(),
+                line: 20.0,
+                ml_win_probability: 0.5,
+                ml_prediction: "Win".to_string(),
+                original_confidence: 50,
+                original_probability: None,
+                line_change: 0.0,
+            })
+            .collect();
+        let ctx = generate_ml_context(&preds, Some(0.6));
+        // Should include first 10 only
+        assert!(ctx.contains("Player 0"));
+        assert!(ctx.contains("Player 9"));
+        assert!(!ctx.contains("Player 10"));
+        assert!(!ctx.contains("Player 14"));
+    }
 }
