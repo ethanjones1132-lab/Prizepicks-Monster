@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-27 (midday maintenance pass; **prizepicks_get_dashboard_bootstrap shipped** — new Tauri command + `PrizePicksDashboardBootstrap` struct (props, scored_props, cache_status) replaces the three-call `getTopProps`/`getScoredProps`/`getCacheStatus` fan-out on dashboard mount; `PrizePicksView` `useEffect` now fires a single IPC round-trip; 3 new model unit tests + 14/17 ad-hoc verifications pass; Phase 3 "Combined IPC" sub-item now ✅ Done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: pending (this pass)
+Commit: `58803af`
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done**
 
 ---
