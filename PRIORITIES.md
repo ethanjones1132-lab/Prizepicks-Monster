@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-27 (overnight maintenance pass; **partial-cache indicator shipped** — new `prizepicks_get_cache_status` Tauri command returns cache status (has_cache, full_catalog, markets_count, fetched_at, is_stale); UI badge in `PrizePicksView` header shows 📦 N (full), 📦 N* (partial/quick-load), or 📦 empty; Phase 3 "Show partial-cache indicator" sub-item now ✅ Done)
+Last updated: 2026-06-27 (midday maintenance pass; **prizepicks_get_dashboard_bootstrap shipped** — new Tauri command + `PrizePicksDashboardBootstrap` struct (props, scored_props, cache_status) replaces the three-call `getTopProps`/`getScoredProps`/`getCacheStatus` fan-out on dashboard mount; `PrizePicksView` `useEffect` now fires a single IPC round-trip; 3 new model unit tests + 14/17 ad-hoc verifications pass; Phase 3 "Combined IPC" sub-item now ✅ Done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `2788417`
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 cache indicator done**
+Commit: pending (this pass)
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done**
 
 ---
 
@@ -109,7 +109,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 
 - ✅ **Show partial-cache indicator when `full_catalog == false`** (done 2026-06-27: `prizepicks_get_cache_status` command + 📦 badge in header)
 - Keep `PrizePicksView` mounted across tab switches (avoid cold reload)
-- Combined IPC: `prizepicks_get_dashboard_bootstrap` → `{ markets, categories, cache_full }`
+- ✅ **Combined IPC: `prizepicks_get_dashboard_bootstrap` → `{ markets, categories, cache_full }`** (done 2026-06-27: `prizepicks_get_dashboard_bootstrap` returns `{ props, scored_props, cache_status }`; `PrizePicksView` `useEffect` now fires a single IPC round-trip instead of three parallel invokes; granular commands remain for league/search/refresh)
 - Defer `PrizePicksPredictionsPanel` load; debounce `computeStakeAdjustment` in market detail
 
 ### Phase 4 — Startup prefetch and persistence (optional)

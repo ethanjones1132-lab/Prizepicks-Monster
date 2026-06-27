@@ -100,6 +100,52 @@ pub async fn prizepicks_get_cache_status(
     Ok(client.cache_status())
 }
 
+/// Combined dashboard payload — returns top props, scored props, and
+/// cache status in a single IPC round-trip. Replaces the previous
+/// `getTopProps` + `getScoredProps` + `getCacheStatus` fan-out that
+/// the dashboard `useEffect` used to issue on mount. The two state locks
+/// are independent, so we acquire them sequentially (one is held for the
+/// whole bootstrap; parallel `tokio::join` over the two locks would
+/// deadlock with the existing `State<'_>` access pattern).
+#[tauri::command]
+pub async fn prizepicks_get_dashboard_bootstrap(
+    limit: Option<usize>,
+    prizepicks: State<'_, PrizePicksState>,
+    prizepicks_fetcher: State<'_, Arc<Mutex<crate::prizepicks::PrizePicksFetcher>>>,
+) -> Result<crate::prizepicks::models::PrizePicksDashboardBootstrap, String> {
+    let n = limit.unwrap_or(50).min(100);
+
+    // 1. Cache status (cheap, in-memory)
+    let cache_status = {
+        let client = prizepicks.lock().await;
+        client.cache_status()
+    };
+
+    // 2. Top props — fetcher performs HTTP/projection work. We run
+    //    this after releasing the client lock above so a slow network
+    //    call doesn't pin the PrizePicks client.
+    let props = {
+        let mut fetcher = prizepicks_fetcher.lock().await;
+        let response = fetcher.fetch_props(None, false).await?;
+        response.props.into_iter().take(n).collect()
+    };
+
+    // 3. Scored props — currently empty (scoring is done in the
+    //    grading engine), but we call the same helper the standalone
+    //    command uses so any future scoring implementation is picked
+    //    up automatically.
+    let scored_props = {
+        let fetcher = prizepicks_fetcher.lock().await;
+        fetcher.get_scored_props().await?
+    };
+
+    Ok(crate::prizepicks::models::PrizePicksDashboardBootstrap {
+        props,
+        scored_props,
+        cache_status,
+    })
+}
+
 #[tauri::command]
 pub async fn prizepicks_refresh(
     config: State<'_, Arc<Mutex<crate::config::AppConfig>>>,

@@ -59,20 +59,36 @@ export function PrizePicksView() {
     }
   }, []);
 
-  const loadCacheStatus = useCallback(async () => {
+  /**
+   * Initial-mount loader — uses the single-call `getDashboardBootstrap`
+   * endpoint so the top-props, scored-props, and cache-status slices
+   * arrive in one IPC round-trip instead of three. Subsequent filter
+   * changes (league / search) and refreshes still use the granular
+   * commands because they touch only one slice.
+   */
+  const loadDashboardBootstrap = useCallback(async () => {
+    const id = ++requestId.current;
+    setLoading(true);
+    setError(null);
     try {
-      const status = await prizepicksApi.getCacheStatus();
-      setCacheStatus(status);
-    } catch {
-      // non-fatal
+      const data = await prizepicksApi.getDashboardBootstrap(INITIAL_PROP_LIMIT);
+      if (id !== requestId.current) return;
+      setProps(data.props);
+      setScoredProps(data.scored_props as ScoredProp[]);
+      setCacheStatus(data.cache_status);
+    } catch (e) {
+      if (id !== requestId.current) return;
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (id === requestId.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadProps({ league: selectedLeague });
-    void loadScored();
-    void loadCacheStatus();
-  }, [selectedLeague, loadProps, loadScored, loadCacheStatus]);
+    // Initial mount: single-call bootstrap. The granular commands
+    // remain available for league / search / refresh.
+    void loadDashboardBootstrap();
+  }, [loadDashboardBootstrap]);
 
   const runSearch = () => {
     void loadProps({ query: searchQuery, league: selectedLeague });

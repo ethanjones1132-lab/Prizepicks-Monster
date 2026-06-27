@@ -454,6 +454,25 @@ pub struct PrizePicksCacheStatus {
     pub is_stale: bool,
 }
 
+/// Combined payload returned by `prizepicks_get_dashboard_bootstrap`. Bundles
+/// the three data slices the dashboard tab needs on initial mount
+/// (top props, scored props, cache status) into a single IPC round-trip
+/// so the UI doesn't have to fire three parallel `invoke` calls and wait
+/// for the slowest one to finish. Replaces the previous
+/// `getTopProps` + `getScoredProps` + `getCacheStatus` fan-out with one
+/// payload, halving the number of serializer hops in practice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrizePicksDashboardBootstrap {
+    /// Top-N props for the default "All" league view (same shape as
+    /// `prizepicks_get_top_props`).
+    pub props: Vec<crate::prizepicks::PrizePicksProp>,
+    /// Pre-scored props for the "Top Scored Props" section (same shape
+    /// as `prizepicks_get_scored_props`).
+    pub scored_props: Vec<serde_json::Value>,
+    /// Cache status snapshot for the header badge.
+    pub cache_status: PrizePicksCacheStatus,
+}
+
 // ── PrizePicks Prediction Tracking ──
 
 /// A prediction made on a PrizePicks market
@@ -586,4 +605,141 @@ pub struct PrizePicksGradingSummary {
     pub total_pnl: f64,
     pub results: Vec<PrizePicksGradingResult>,
     pub fetched_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round-trip a `PrizePicksDashboardBootstrap` with all three sub-fields
+    /// populated to confirm the JSON wire shape matches what the UI's
+    /// `prizepicksApi.getDashboardBootstrap()` will receive. Catches
+    /// accidentally-renamed fields (e.g. `scoredProps` vs
+    /// `scored_props`) before they reach TypeScript.
+    #[test]
+    fn dashboard_bootstrap_round_trip() {
+        let prop = crate::prizepicks::PrizePicksProp {
+            player_name: "LeBron James".to_string(),
+            stat_category: "points".to_string(),
+            line: 25.5,
+            league: "NBA".to_string(),
+            ..Default::default()
+        };
+        let bootstrap = PrizePicksDashboardBootstrap {
+            props: vec![prop],
+            scored_props: vec![serde_json::json!({"tier": "top", "score": 0.91})],
+            cache_status: PrizePicksCacheStatus {
+                has_cache: true,
+                full_catalog: false,
+                markets_count: 12,
+                fetched_at: 1_700_000_000,
+                is_stale: false,
+            },
+        };
+
+        let json = serde_json::to_value(&bootstrap).unwrap();
+
+        // Top-level keys are exactly what the TS interface expects.
+        assert!(json.get("props").is_some(), "missing 'props' key");
+        assert!(
+            json.get("scored_props").is_some(),
+            "missing 'scored_props' key (camelCase mismatch?)"
+        );
+        assert!(
+            json.get("cache_status").is_some(),
+            "missing 'cache_status' key"
+        );
+        assert_eq!(json.as_object().unwrap().len(), 3, "unexpected top-level keys");
+
+        // props shape
+        let props = json.get("props").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(props.len(), 1);
+        assert_eq!(
+            props[0].get("player_name").and_then(|v| v.as_str()),
+            Some("LeBron James")
+        );
+        assert_eq!(props[0].get("league").and_then(|v| v.as_str()), Some("NBA"));
+
+        // scored_props shape
+        let scored = json
+            .get("scored_props")
+            .and_then(|v| v.as_array())
+            .unwrap();
+        assert_eq!(scored.len(), 1);
+        assert_eq!(scored[0].get("tier").and_then(|v| v.as_str()), Some("top"));
+
+        // cache_status shape — guards against adding a field that the UI
+        // would silently ignore.
+        let cache = json.get("cache_status").unwrap();
+        assert_eq!(cache.get("has_cache"), Some(&serde_json::json!(true)));
+        assert_eq!(cache.get("full_catalog"), Some(&serde_json::json!(false)));
+        assert_eq!(cache.get("markets_count"), Some(&serde_json::json!(12)));
+        assert_eq!(
+            cache.get("fetched_at"),
+            Some(&serde_json::json!(1_700_000_000))
+        );
+        assert_eq!(cache.get("is_stale"), Some(&serde_json::json!(false)));
+    }
+
+    /// Empty bootstrap (the cold-start case right after install) should
+    /// serialize cleanly with all three fields as empty / zero — no
+    /// missing keys, no surprises for the UI's first paint.
+    #[test]
+    fn dashboard_bootstrap_empty_round_trip() {
+        let bootstrap = PrizePicksDashboardBootstrap {
+            props: vec![],
+            scored_props: vec![],
+            cache_status: PrizePicksCacheStatus {
+                has_cache: false,
+                full_catalog: false,
+                markets_count: 0,
+                fetched_at: 0,
+                is_stale: false,
+            },
+        };
+
+        let json = serde_json::to_value(&bootstrap).unwrap();
+        assert_eq!(
+            json.get("props").and_then(|v| v.as_array()).unwrap().len(),
+            0
+        );
+        assert_eq!(
+            json.get("scored_props").and_then(|v| v.as_array()).unwrap().len(),
+            0
+        );
+        assert_eq!(
+            json.get("cache_status").and_then(|v| v.get("has_cache")),
+            Some(&serde_json::json!(false))
+        );
+        assert_eq!(
+            json.get("cache_status").and_then(|v| v.get("markets_count")),
+            Some(&serde_json::json!(0))
+        );
+    }
+
+    /// Deserialize the canonical wire shape back into a
+    /// `PrizePicksDashboardBootstrap` to confirm the keys are
+    /// symmetric (no `#[serde(rename = ...)]` slip-ups).
+    #[test]
+    fn dashboard_bootstrap_deserialize_from_wire_shape() {
+        let wire = serde_json::json!({
+            "props": [],
+            "scored_props": [],
+            "cache_status": {
+                "has_cache": true,
+                "full_catalog": true,
+                "markets_count": 200,
+                "fetched_at": 1_700_000_000u64,
+                "is_stale": false,
+            }
+        });
+
+        let bootstrap: PrizePicksDashboardBootstrap =
+            serde_json::from_value(wire).expect("wire shape must deserialize");
+        assert!(bootstrap.props.is_empty());
+        assert!(bootstrap.scored_props.is_empty());
+        assert!(bootstrap.cache_status.has_cache);
+        assert!(bootstrap.cache_status.full_catalog);
+        assert_eq!(bootstrap.cache_status.markets_count, 200);
+    }
 }

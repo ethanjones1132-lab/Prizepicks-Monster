@@ -1,3 +1,5 @@
+import type { PropPick, ScoredProp } from './index';
+
 export interface PrizePicksMarketSummary {
   ticker: string;
   event_ticker: string;
@@ -111,6 +113,19 @@ export interface PrizePicksCacheStatus {
   markets_count: number;
   fetched_at: number;
   is_stale: boolean;
+}
+
+/**
+ * Combined payload returned by `prizepicksApi.getDashboardBootstrap()`.
+ * Replaces the previous fan-out of `getTopProps` + `getScoredProps` +
+ * `getCacheStatus` on dashboard mount with a single IPC round-trip.
+ * Field names match the Rust struct (`PrizePicksDashboardBootstrap`)
+ * — the keys come through as snake_case via serde defaults.
+ */
+export interface PrizePicksDashboardBootstrap {
+  props: PropPick[];
+  scored_props: ScoredProp[];
+  cache_status: PrizePicksCacheStatus;
 }
 
 export interface PrizePicksTradeDecision {

@@ -3,6 +3,7 @@ import type {
   KellyShrinkageReport,
   PrizePicksCacheStatus,
   PrizePicksCategoryStat,
+  PrizePicksDashboardBootstrap,
   PrizePicksMarketSummary,
   PrizePicksPrediction,
   PrizePicksPriceHistory,
@@ -119,6 +120,17 @@ export const prizepicksApi = {
 
   getCacheStatus: () =>
     invoke<PrizePicksCacheStatus>('prizepicks_get_cache_status'),
+
+  /**
+   * Single-call dashboard payload: top props + scored props + cache
+   * status. Replaces the previous `getTopProps` + `getScoredProps` +
+   * `getCacheStatus` fan-out on `PrizePicksView` mount. Pass `limit`
+   * to control how many top props come back (default 50, max 100).
+   */
+  getDashboardBootstrap: (limit?: number) =>
+    invoke<PrizePicksDashboardBootstrap>('prizepicks_get_dashboard_bootstrap', {
+      limit: limit ?? 50,
+    }),
 
   recordPaperDecision: (sessionId: string, decision: PrizePicksTradeDecision) =>
     invoke<string>('prizepicks_record_paper_decision', { sessionId, decision }),
