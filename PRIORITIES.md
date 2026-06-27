@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-26 (afternoon maintenance pass; **P3-2 multi-category ML classifiers shipped** — `ml_predictor.py` now trains one GradientBoosting model per `stat_category` (writes `ml_model_<token>.joblib` + `_meta.json` into `~/.openclaw/prizepicks-monster/ml_models/`); `train_per_category` strips the one-hot category columns from the input since the per-category model only sees one stat type at a time. New Tauri commands `ml_train_per_category`, `ml_predict_batch_per_category`, `ml_get_category_models`; new `MLPredictorPanel` "Per-category classifiers" section with a table of per-category CV accuracy / sample count / win rate / trained-at. Predict-per-category picks the model that matches each pending prop's `stat_category` (silently skips unknown categories). 9 new Rust unit tests for `safe_category_token` + `list_category_models` (empty / missing / populated / unparseable meta cases). 155 lib tests passing, up from 146)
+Last updated: 2026-06-27 (overnight maintenance pass; **partial-cache indicator shipped** — new `prizepicks_get_cache_status` Tauri command returns cache status (has_cache, full_catalog, markets_count, fetched_at, is_stale); UI badge in `PrizePicksView` header shows 📦 N (full), 📦 N* (partial/quick-load), or 📦 empty; Phase 3 "Show partial-cache indicator" sub-item now ✅ Done)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `d0c8fac`
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done**
+Commit: `2788417`
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 cache indicator done**
 
 ---
 
@@ -107,10 +107,10 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done**
 
 ### Phase 3 — Frontend critical-path trim
 
+- ✅ **Show partial-cache indicator when `full_catalog == false`** (done 2026-06-27: `prizepicks_get_cache_status` command + 📦 badge in header)
 - Keep `PrizePicksView` mounted across tab switches (avoid cold reload)
 - Combined IPC: `prizepicks_get_dashboard_bootstrap` → `{ markets, categories, cache_full }`
 - Defer `PrizePicksPredictionsPanel` load; debounce `computeStakeAdjustment` in market detail
-- Show partial-cache indicator when `full_catalog == false`
 
 ### Phase 4 — Startup prefetch and persistence (optional)
 
