@@ -105,6 +105,14 @@ export interface PrizePicksPriceHistory {
   spread_change?: number | null;
 }
 
+export interface PrizePicksCacheStatus {
+  has_cache: boolean;
+  full_catalog: boolean;
+  markets_count: number;
+  fetched_at: number;
+  is_stale: boolean;
+}
+
 export interface PrizePicksTradeDecision {
   ticker: string;
   market_title: string;

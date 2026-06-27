@@ -454,6 +454,12 @@ button {
   letter-spacing: -0.04em;
 }
 
+.prizepicksHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .prizepicksToolbar {
   display: flex;
   gap: 10px;

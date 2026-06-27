@@ -1,5 +1,5 @@
 use crate::prizepicks::models::{
-    PrizePicksBalance, PrizePicksBalanceResponse, PrizePicksCache, PrizePicksConfig,
+    PrizePicksBalance, PrizePicksBalanceResponse, PrizePicksCache, PrizePicksCacheStatus, PrizePicksConfig,
     PrizePicksEvent, PrizePicksEventsResponse, PrizePicksMarket, PrizePicksMarketSummary,
     PrizePicksMarketsQuery, PrizePicksMarketsResponse, PrizePicksOrderbook,
     PrizePicksOrderbookResponse, PrizePicksPosition, PrizePicksPositionsResponse,
@@ -509,6 +509,26 @@ impl PrizePicksClient {
             None => true,
             Some(cache) if self.is_cache_stale() => true,
             Some(cache) => !cache.full_catalog,
+        }
+    }
+
+    /// Return the current cache status for the UI.
+    pub fn cache_status(&self) -> PrizePicksCacheStatus {
+        match &self.cache {
+            None => PrizePicksCacheStatus {
+                has_cache: false,
+                full_catalog: false,
+                markets_count: 0,
+                fetched_at: 0,
+                is_stale: true,
+            },
+            Some(cache) => PrizePicksCacheStatus {
+                has_cache: true,
+                full_catalog: cache.full_catalog,
+                markets_count: cache.markets.len(),
+                fetched_at: cache.fetched_at,
+                is_stale: self.is_cache_stale(),
+            },
         }
     }
 

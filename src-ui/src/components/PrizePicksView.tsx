@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { prizepicksApi } from '../services/prizepicks';
+import type { PrizePicksCacheStatus } from '../types/prizepicks';
 import type { PropPick, ScoredProp } from '../types';
 
 const INITIAL_PROP_LIMIT = 50;
@@ -20,6 +21,7 @@ export function PrizePicksView() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<PrizePicksCacheStatus | null>(null);
   const requestId = useRef(0);
 
   const leagues = ['All', 'NFL', 'NBA', 'MLB', 'NHL'];
@@ -57,10 +59,20 @@ export function PrizePicksView() {
     }
   }, []);
 
+  const loadCacheStatus = useCallback(async () => {
+    try {
+      const status = await prizepicksApi.getCacheStatus();
+      setCacheStatus(status);
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
   useEffect(() => {
     void loadProps({ league: selectedLeague });
     void loadScored();
-  }, [selectedLeague, loadProps, loadScored]);
+    void loadCacheStatus();
+  }, [selectedLeague, loadProps, loadScored, loadCacheStatus]);
 
   const runSearch = () => {
     void loadProps({ query: searchQuery, league: selectedLeague });
@@ -87,9 +99,29 @@ export function PrizePicksView() {
           <h2>Player Props</h2>
           <p className="muted">DFS prop board with edge analysis and projections</p>
         </div>
-        <button type="button" className="primaryBtn" onClick={() => void refreshAll()} disabled={refreshing || loading}>
+        <div className="prizepicksHeaderActions">
+          {cacheStatus && (
+            <span
+              className={`chip small ${
+                cacheStatus.full_catalog ? 'info' : cacheStatus.has_cache ? 'warn' : ''
+              }`}
+              title={
+                cacheStatus.has_cache
+                  ? `${cacheStatus.markets_count} markets · ${cacheStatus.full_catalog ? 'Full catalog' : 'Partial cache (quick load)'}${cacheStatus.is_stale ? ' · stale' : ''}`
+                  : 'Cache empty — awaiting first load'
+              }
+            >
+              {cacheStatus.full_catalog
+                ? `📦 ${cacheStatus.markets_count}`
+                : cacheStatus.has_cache
+                  ? `📦 ${cacheStatus.markets_count}*`
+                  : '📦 empty'}
+            </span>
+          )}
+          <button type="button" className="primaryBtn" onClick={() => void refreshAll()} disabled={refreshing || loading}>
           {refreshing ? 'Refreshing…' : 'Refresh props'}
         </button>
+        </div>   {/* prizepicksHeaderActions */}
       </header>
 
       <div className="prizepicksToolbar">

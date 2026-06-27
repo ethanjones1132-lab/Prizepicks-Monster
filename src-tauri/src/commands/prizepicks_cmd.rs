@@ -91,6 +91,15 @@ pub async fn prizepicks_get_portfolio(
     }))
 }
 
+/// Return the current PrizePicks cache status (partial vs full, age, etc.)
+#[tauri::command]
+pub async fn prizepicks_get_cache_status(
+    prizepicks: State<'_, PrizePicksState>,
+) -> Result<crate::prizepicks::models::PrizePicksCacheStatus, String> {
+    let client = prizepicks.lock().await;
+    Ok(client.cache_status())
+}
+
 #[tauri::command]
 pub async fn prizepicks_refresh(
     config: State<'_, Arc<Mutex<crate::config::AppConfig>>>,

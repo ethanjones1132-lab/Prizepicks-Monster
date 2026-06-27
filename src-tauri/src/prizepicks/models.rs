@@ -443,6 +443,17 @@ pub struct PrizePicksCache {
     pub full_catalog: bool,
 }
 
+/// Status of the PrizePicks cache — exposed to the UI so the user knows
+/// whether the market catalog is partial (quick load) or fully populated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrizePicksCacheStatus {
+    pub has_cache: bool,
+    pub full_catalog: bool,
+    pub markets_count: usize,
+    pub fetched_at: u64,
+    pub is_stale: bool,
+}
+
 // ── PrizePicks Prediction Tracking ──
 
 /// A prediction made on a PrizePicks market

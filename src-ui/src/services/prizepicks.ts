@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   KellyShrinkageReport,
+  PrizePicksCacheStatus,
   PrizePicksCategoryStat,
   PrizePicksMarketSummary,
   PrizePicksPrediction,
@@ -115,6 +116,9 @@ export const prizepicksApi = {
 
   getKellyShrinkageReport: () =>
     invoke<KellyShrinkageReport>('prizepicks_kelly_shrinkage_report'),
+
+  getCacheStatus: () =>
+    invoke<PrizePicksCacheStatus>('prizepicks_get_cache_status'),
 
   recordPaperDecision: (sessionId: string, decision: PrizePicksTradeDecision) =>
     invoke<string>('prizepicks_record_paper_decision', { sessionId, decision }),
