@@ -1,6 +1,6 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-27 (midday maintenance pass; **prizepicks_get_dashboard_bootstrap shipped** — new Tauri command + `PrizePicksDashboardBootstrap` struct (props, scored_props, cache_status) replaces the three-call `getTopProps`/`getScoredProps`/`getCacheStatus` fan-out on dashboard mount; `PrizePicksView` `useEffect` now fires a single IPC round-trip; 3 new model unit tests + 14/17 ad-hoc verifications pass; Phase 3 "Combined IPC" sub-item now ✅ Done)
+Last updated: 2026-06-27 (afternoon maintenance pass; **Paper equity curve chart shipped** — wired existing `get_equity_snapshots` backend fn through a new `paper_get_equity_history` Tauri command → `prizepicksApi.getPaperEquityHistory()` → pure-SVG `EquityCurve` component with 7d/30d/90d/All range toggle + delta/% markers + max-drawdown cell; 158 lib tests pass, tsc clean, 5/5 ad-hoc verifications pass)
 Working copy: `C:\\Projects\\prizepicks-monster`
 Commit: `58803af`
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done**
@@ -93,6 +93,16 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 ## Suggested next target: P1 (1 partial, no plan)
 
 1. **PrizePicks-native correlation engine** — The existing `prizepicks/portfolio_risk.rs` correlation is ticker-prefix heuristics only. A proper implementation would need an event/series/macro graph (player-level correlations, team-level, same-game parlay structure) and a way to fetch it. No concrete plan in place. Most users of the current app have small (≤3 leg) paper positions where the heuristic is sufficient.
+
+## Brainstormed & shipped (2026-06-27)
+
+- **Paper equity curve chart** — The `paper_equity_snapshots` table and `get_equity_snapshots` query existed in the backend but were never wired to the UI; `PrizePicksPredictionsPanel` only showed a single equity number from `PaperAnalytics`. Shipped:
+  - `src-tauri/src/commands/paper_cmd.rs` — new `paper_get_equity_history(limit?)` Tauri command (default 200).
+  - `src-tauri/src/lib.rs` — registered in `invoke_handler`.
+  - `src-ui/src/types/prizepicks.ts` — `PaperEquitySnapshot` interface.
+  - `src-ui/src/services/prizepicks.ts` — `prizepicksApi.getPaperEquityHistory(limit?)`.
+  - `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `EquityCurve` inner component (pure SVG, no chart lib), 7d/30d/90d/All range toggle, delta/$ + delta% markers, min/max markers, max-drawdown cell added to the `paperSummary` card.
+  - `src-ui/src/index.css` — `.equityChart*` + `.equityChartToolbar` styles (active range button state, header layout, SVG full-width).
 
 ## Dashboard performance (deferred)
 
