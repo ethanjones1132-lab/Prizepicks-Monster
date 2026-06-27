@@ -36,3 +36,14 @@ pub async fn paper_reset_account(
 ) -> Result<crate::paper::PaperAccount, String> {
     crate::paper::reset_account(&db_pool, starting_balance).await
 }
+
+/// Fetch historical equity snapshots for the paper-trading account.
+/// `limit` is the maximum number of snapshots to return (most recent first).
+/// Defaults to 200 (~enough for a full season of daily snapshots).
+#[tauri::command]
+pub async fn paper_get_equity_history(
+    db_pool: State<'_, Pool<Sqlite>>,
+    limit: Option<i64>,
+) -> Result<Vec<crate::paper::PaperEquitySnapshot>, String> {
+    crate::paper::get_equity_snapshots(&db_pool, limit.unwrap_or(200)).await
+}

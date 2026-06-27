@@ -9,6 +9,7 @@ import type {
   PrizePicksPriceHistory,
   PrizePicksTradeDecision,
   PaperAnalytics,
+  PaperEquitySnapshot,
   StakeAdjustment,
   MLCategoryModelList,
   MLCategoryTrainResult,
@@ -136,6 +137,14 @@ export const prizepicksApi = {
     invoke<string>('prizepicks_record_paper_decision', { sessionId, decision }),
 
   getPaperAnalytics: () => invoke<PaperAnalytics>('paper_get_analytics'),
+
+  /**
+   * Fetch historical equity snapshots (most recent first). Returns up to
+   * `limit` rows from the `paper_equity_snapshots` table. The UI flips
+   * this to chronological order before rendering the equity curve.
+   */
+  getPaperEquityHistory: (limit?: number) =>
+    invoke<PaperEquitySnapshot[]>('paper_get_equity_history', { limit: limit ?? 200 }),
 
   settlePaperPositions: () =>
     invoke<{ settled: number; wins: number; losses: number; total_pnl: number }>(

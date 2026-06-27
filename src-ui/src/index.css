@@ -841,6 +841,62 @@ button {
   font-size: 1.05rem;
 }
 
+.equityChartToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.equityChartToolbar .ghostBtn.small {
+  padding: 3px 9px;
+  font-size: 0.78rem;
+  border-radius: 8px;
+}
+
+.equityChartToolbar .ghostBtn.active {
+  background: rgba(120, 168, 255, 0.18);
+  border-color: rgba(120, 168, 255, 0.45);
+  color: #cfe0ff;
+}
+
+.equityChart {
+  margin-bottom: 14px;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.equityChart.empty {
+  padding: 10px 12px;
+}
+
+.equityChartHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.equityChartHeader > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.equityChartHeader strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.equityChartSvg {
+  display: block;
+  width: 100%;
+  height: 90px;
+}
+
 .predList {
   display: grid;
   gap: 12px;

@@ -174,6 +174,16 @@ export interface PaperAnalytics {
   fetched_at: string;
 }
 
+/** Historical equity snapshot for the paper-trading account. */
+export interface PaperEquitySnapshot {
+  id: number;
+  ts: string;
+  balance_dollars: number;
+  open_market_value: number;
+  equity_dollars: number;
+  unrealized_pnl: number;
+}
+
 // ── ML Predictor types (mirrors src-tauri/src/ml_predictor.rs) ──
 
 export interface MLFeatureImportance {
