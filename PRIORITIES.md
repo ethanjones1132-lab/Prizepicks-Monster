@@ -5,6 +5,13 @@ Working copy: `C:\\Projects\\prizepicks-monster`
 Commit: `58803af`
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done**
 
+## 2026-06-27 evening pass — Streak indicator
+
+- `src-tauri/src/paper/mod.rs` — new `PaperStreak { kind, length }` struct (Serialize/Deserialize). New `compute_current_streak(&[PaperLot])` walks DESC closed lots: seeds the streak on the first closed lot, increments while the sign matches, and returns the prior run as soon as the sign disagrees. Open lots are skipped. Pushes (realized_pnl == 0) are walked past so a single push doesn't erase a meaningful streak. Wired into `get_analytics` so the field is part of every `PaperAnalytics` payload. 8 new unit tests cover empty input, only-open-lots, all-wins, stop-at-first-loss, full loss streak, push-at-front with/without prior wins, push-after-wins preserves streak, and skipping open lots. **167 lib tests pass** (was 158).
+- `src-ui/src/types/prizepicks.ts` — added `PaperStreak` interface; brought `PaperAnalytics` into sync with the Rust struct (added the previously-missing `avg_winner`, `avg_loser`, `largest_winner`, `largest_loser` fields, plus the new `current_streak`).
+- `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `StreakChip` inner component renders `W3` (green pos tint), `L2` (red neg tint), or `—` (muted) for an empty streak. Mounted as a new `Streak` cell in the `paperSummary` row alongside Paper equity / Cash / Open / Return / Win rate / Max DD.
+- `src-ui/src/index.css` — `.streakChip` + `.pos/.neg/.muted` variants (pill, tinted border, themed background).
+
 ---
 
 ## High-impact improvements (ranked)

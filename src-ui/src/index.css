@@ -841,6 +841,38 @@ button {
   font-size: 1.05rem;
 }
 
+.streakChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  line-height: 1.2;
+}
+
+.streakChip.pos {
+  color: var(--pos, #3fbf7f);
+  border-color: rgba(63, 191, 127, 0.4);
+  background: rgba(63, 191, 127, 0.12);
+}
+
+.streakChip.neg {
+  color: var(--neg, #d04848);
+  border-color: rgba(208, 72, 72, 0.4);
+  background: rgba(208, 72, 72, 0.12);
+}
+
+.streakChip.muted {
+  color: var(--muted, rgba(255, 255, 255, 0.45));
+  font-weight: 500;
+}
+
 .equityChartToolbar {
   display: flex;
   align-items: center;

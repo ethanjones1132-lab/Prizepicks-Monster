@@ -156,6 +156,12 @@ export interface PrizePicksTradeDecision {
   disagreement_points: number;
 }
 
+export interface PaperStreak {
+  /** "W" for a win streak, "L" for a loss streak, "None" when no closed lots yet. */
+  kind: 'W' | 'L' | 'None' | string;
+  length: number;
+}
+
 export interface PaperAnalytics {
   starting_balance: number;
   cash_balance: number;
@@ -170,7 +176,12 @@ export interface PaperAnalytics {
   wins: number;
   losses: number;
   profit_factor: number;
+  avg_winner: number;
+  avg_loser: number;
+  largest_winner: number;
+  largest_loser: number;
   max_drawdown_pct: number;
+  current_streak: PaperStreak;
   fetched_at: string;
 }
 

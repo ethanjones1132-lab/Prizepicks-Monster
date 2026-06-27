@@ -3,6 +3,32 @@ import { prizepicksApi } from '../services/prizepicks';
 import type { PaperAnalytics, PaperEquitySnapshot, PrizePicksPrediction } from '../types/prizepicks';
 import { prizepicksBetWon } from '../services/prizepicks';
 
+/**
+ * Render the current streak as a short chip. Wins use the `pos` tint, losses
+ * use the `neg` tint, and an empty streak (no closed lots) renders muted `—`.
+ * `length === 0` is treated as "no streak" regardless of `kind`, so a stale
+ * `kind: "None"` with `length: 0` and a never-been-used account both look the
+ * same to the user.
+ */
+function StreakChip({ analytics }: { analytics: PaperAnalytics }) {
+  const { kind, length } = analytics.current_streak;
+  if (length === 0 || kind === 'None') {
+    return (
+      <span className="streakChip muted" aria-label="No current streak">
+        —
+      </span>
+    );
+  }
+  const tint = kind === 'W' ? 'pos' : 'neg';
+  const label = kind === 'W' ? 'Win streak' : 'Loss streak';
+  return (
+    <span className={`streakChip ${tint}`} aria-label={`${label}: ${length}`} title={label}>
+      {kind}
+      {length}
+    </span>
+  );
+}
+
 type EquityRange = '7d' | '30d' | '90d' | 'all';
 
 const EQUITY_RANGE_DAYS: Record<EquityRange, number | null> = {
@@ -189,6 +215,10 @@ export function PrizePicksPredictionsPanel() {
           <div>
             <span className="muted">Max DD</span>
             <strong>{analytics.max_drawdown_pct.toFixed(1)}%</strong>
+          </div>
+          <div>
+            <span className="muted">Streak</span>
+            <StreakChip analytics={analytics} />
           </div>
         </div>
       )}

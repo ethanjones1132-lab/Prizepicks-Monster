@@ -144,7 +144,79 @@ pub struct PaperAnalytics {
     pub largest_winner: f64,
     pub largest_loser: f64,
     pub max_drawdown_pct: f64,
+    pub current_streak: PaperStreak,
     pub fetched_at: String,
+}
+
+/// A run of consecutive wins or losses ending on the most-recent closed lot.
+/// `kind` is `"W"` (consecutive wins), `"L"` (consecutive losses), or `"None"`
+/// when there are no closed lots yet.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperStreak {
+    pub kind: String,
+    pub length: u32,
+}
+
+impl PaperStreak {
+    pub fn empty() -> Self {
+        Self { kind: "None".to_string(), length: 0 }
+    }
+}
+
+/// Compute the current streak by walking closed lots from most-recent to oldest.
+/// Lots are passed in DESC `opened_at` order (matching `get_all_lots`). The first
+/// closed lot's sign seeds the streak; the run ends as soon as a closed lot
+/// disagrees, or at the first non-closed lot. Push (realized_pnl == 0) breaks
+/// the streak without contributing to either side — it is rare but the binary
+/// contract path can produce it when the entry price equals the payout.
+fn compute_current_streak(lots_desc: &[PaperLot]) -> PaperStreak {
+    let mut length: u32 = 0;
+    let mut expected: Option<&'static str> = None;
+    for l in lots_desc {
+        if l.status != "Closed" {
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            match expected {
+                None => {
+                    expected = Some("W");
+                    length = 1;
+                }
+                Some("W") => length += 1,
+                Some("L") => {
+                    // Streak of losses ended; return the win streak that
+                    // just began with this lot.
+                    return PaperStreak { kind: "W".to_string(), length: 1 };
+                }
+                _ => unreachable!(),
+            }
+        } else if pnl < 0.0 {
+            match expected {
+                None => {
+                    expected = Some("L");
+                    length = 1;
+                }
+                Some("L") => length += 1,
+                Some("W") => {
+                    return PaperStreak { kind: "W".to_string(), length };
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            // Push (realized_pnl == 0): the lot settled neutrally. We keep
+            // walking so that a single push doesn't reset a meaningful
+            // streak — the user sees the last run of real wins or losses.
+            continue;
+        }
+    }
+    PaperStreak {
+        kind: match expected {
+            Some(e) => e.to_string(),
+            None => "None".to_string(),
+        },
+        length,
+    }
 }
 
 /// Equity snapshot used for drawdown and trend charts.
@@ -742,6 +814,8 @@ pub async fn get_analytics(
 
     let max_dd = max_drawdown_pct(pool).await.unwrap_or(0.0);
 
+    let current_streak = compute_current_streak(&all);
+
     Ok(PaperAnalytics {
         starting_balance: account.total_deposits,
         cash_balance: account.balance_dollars,
@@ -761,6 +835,7 @@ pub async fn get_analytics(
         largest_winner,
         largest_loser,
         max_drawdown_pct: max_dd,
+        current_streak,
         fetched_at: Utc::now().to_rfc3339(),
     })
 }
@@ -990,5 +1065,112 @@ mod tests {
     fn source_roundtrip() {
         assert_eq!(PaperTradeSource::AiDecision, "AiDecision".parse().unwrap());
         assert!("Other".parse::<PaperTradeSource>().is_err());
+    }
+
+    fn closed_lot(pnl: f64) -> PaperLot {
+        PaperLot {
+            id: format!("lot-{pnl}"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: "Points".to_string(),
+            side: "Over".to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: 0.5,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: Some("2026-01-01T01:00:00Z".to_string()),
+            closed_price_cents: Some(if pnl >= 0.0 { 100.0 } else { 0.0 }),
+            realized_pnl: Some(pnl),
+            status: "Closed".to_string(),
+            settlement_result: Some(if pnl > 0.0 { "Win" } else if pnl < 0.0 { "Loss" } else { "Push" }.to_string()),
+        }
+    }
+
+    fn open_lot() -> PaperLot {
+        let mut l = closed_lot(0.0);
+        l.status = "Open".to_string();
+        l.closed_at = None;
+        l.closed_price_cents = None;
+        l.realized_pnl = None;
+        l.settlement_result = None;
+        l
+    }
+
+    #[test]
+    fn streak_empty_input_returns_none() {
+        let lots: Vec<PaperLot> = vec![];
+        assert_eq!(compute_current_streak(&lots), PaperStreak::empty());
+    }
+
+    #[test]
+    fn streak_only_open_lots_returns_none() {
+        let lots = vec![open_lot(), open_lot()];
+        assert_eq!(compute_current_streak(&lots), PaperStreak::empty());
+    }
+
+    #[test]
+    fn streak_all_wins_counts_full_run() {
+        // Most recent first: W, W, W
+        let lots = vec![closed_lot(1.0), closed_lot(2.0), closed_lot(3.0)];
+        let s = compute_current_streak(&lots);
+        assert_eq!(s.kind, "W");
+        assert_eq!(s.length, 3);
+    }
+
+    #[test]
+    fn streak_stops_at_first_loss() {
+        // W, W, L, W — walk from newest: W, W, L (stop at L)
+        let lots = vec![closed_lot(1.0), closed_lot(1.0), closed_lot(-1.0), closed_lot(1.0)];
+        let s = compute_current_streak(&lots);
+        assert_eq!(s.kind, "W");
+        assert_eq!(s.length, 2);
+    }
+
+    #[test]
+    fn streak_loss_kind_and_length() {
+        // L, L, L, L — most recent four are losses
+        let lots = vec![closed_lot(-1.0), closed_lot(-2.0), closed_lot(-3.0), closed_lot(-4.0)];
+        let s = compute_current_streak(&lots);
+        assert_eq!(s.kind, "L");
+        assert_eq!(s.length, 4);
+    }
+
+    #[test]
+    fn streak_push_at_front_walks_past_to_real_streak() {
+        // A push at the front should not erase a meaningful streak of wins
+        // that came before it.
+        let lots = vec![closed_lot(0.0), closed_lot(1.0), closed_lot(1.0)];
+        let s = compute_current_streak(&lots);
+        assert_eq!(s.kind, "W");
+        assert_eq!(s.length, 2);
+    }
+
+    #[test]
+    fn streak_push_at_front_with_no_other_lots_returns_none() {
+        let lots = vec![closed_lot(0.0)];
+        let s = compute_current_streak(&lots);
+        assert_eq!(s.kind, "None");
+        assert_eq!(s.length, 0);
+    }
+
+    #[test]
+    fn streak_push_after_wins_preserves_prior_streak() {
+        // Newest push breaks a run that had wins before it.
+        let lots = vec![closed_lot(0.0), closed_lot(1.0), closed_lot(1.0), closed_lot(1.0)];
+        let s = compute_current_streak(&lots);
+        assert_eq!(s.kind, "W");
+        assert_eq!(s.length, 3);
+    }
+
+    #[test]
+    fn streak_skips_open_lots_when_walking_back() {
+        // Newest is an Open lot; the streak should be derived from the
+        // most recent Closed lot, not the Open one.
+        let lots = vec![open_lot(), closed_lot(1.0), closed_lot(1.0), closed_lot(-1.0)];
+        let s = compute_current_streak(&lots);
+        assert_eq!(s.kind, "W");
+        assert_eq!(s.length, 2);
     }
 }
