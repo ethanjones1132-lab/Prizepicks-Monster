@@ -4,8 +4,10 @@ import type {
   PaperAnalytics,
   PaperCategoryStats,
   PaperEquitySnapshot,
+  PaperSideStats,
   PrizePicksPrediction,
 } from '../types/prizepicks';
+import { paperSideLabel } from '../types/prizepicks';
 import { prizepicksBetWon } from '../services/prizepicks';
 
 /**
@@ -86,6 +88,69 @@ function CategoryBreakdown({ stats }: { stats: PaperCategoryStats[] }) {
                   <strong>{s.category}</strong>
                   {s.open_trades > 0 && (
                     <span className="muted small categoryOpenTag" title={`${s.open_trades} open lot(s)`}>
+                      {' '}+{s.open_trades} open
+                    </span>
+                  )}
+                </td>
+                <td>{s.total_trades}</td>
+                <td>{s.wins + s.losses > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                <td className={pnlPositive ? 'pos' : 'neg'}>
+                  {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                </td>
+                <td className={pnlPositive ? 'pos' : 'neg'}>
+                  {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Per-side (Over/Under) performance table. Mirrors the layout of
+ * `CategoryBreakdown` so the two read as siblings, but renders the side
+ * label via `paperSideLabel()` so the user sees "Over" / "Under" instead of
+ * the raw backend "YES" / "NO" tokens. The data layer keeps the raw side so
+ * a future cross-platform fork can re-map without code changes here.
+ */
+function SideBreakdown({ stats }: { stats: PaperSideStats[] }) {
+  if (!stats || stats.length === 0) {
+    return (
+      <div className="sideBreakdown empty">
+        <span className="muted small">
+          No side data yet — place or settle paper trades to populate Over/Under performance.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="sideBreakdown">
+      <div className="sideBreakdownHeader">
+        <span className="muted small">Per-side performance (Over / Under)</span>
+        <span className="muted small">{stats.length} {stats.length === 1 ? 'side' : 'sides'}</span>
+      </div>
+      <table className="sideTable">
+        <thead>
+          <tr>
+            <th scope="col">Side</th>
+            <th scope="col">Trades</th>
+            <th scope="col">Win %</th>
+            <th scope="col">PnL</th>
+            <th scope="col">ROI</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stats.map((s) => {
+            const pnlPositive = s.realized_pnl >= 0;
+            return (
+              <tr key={s.side}>
+                <td>
+                  <strong>{paperSideLabel(s.side)}</strong>
+                  {s.open_trades > 0 && (
+                    <span className="muted small sideOpenTag" title={`${s.open_trades} open lot(s)`}>
                       {' '}+{s.open_trades} open
                     </span>
                   )}
@@ -306,6 +371,7 @@ export function PrizePicksPredictionsPanel() {
       </div>
       <EquityCurve snapshots={filteredEquity} />
       {analytics && <CategoryBreakdown stats={analytics.category_stats} />}
+      {analytics && <SideBreakdown stats={analytics.side_stats} />}
       {message && <p className="muted small">{message}</p>}
       {loading && <p className="muted">Loading predictions…</p>}
       <div className="predList">

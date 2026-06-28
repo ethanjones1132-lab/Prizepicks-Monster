@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-28 (afternoon maintenance pass; **Per-category paper performance breakdown shipped** — `paper/mod.rs` `compute_category_stats` buckets closed + open lots by stat category, computes wins/losses/win_rate/total_staked/realized_pnl/roi_pct per category, sorts by PnL DESC then category ASC; `PaperAnalytics.category_stats: Vec<PaperCategoryStats>` exposes the data; UI table in `PrizePicksPredictionsPanel` (`CategoryBreakdown` component) renders category / trades / win % / PnL / ROI with positive/negative tints; 7 new unit tests, 174 lib tests pass, tsc clean)
+Last updated: 2026-06-28 (afternoon maintenance pass #2; **Per-side paper performance breakdown shipped** — `paper/mod.rs` `compute_side_stats` mirrors `compute_category_stats` but buckets closed + open lots by contract side, computes wins/losses/win_rate/realized_pnl/roi_pct per side, sorts by PnL DESC then side ASC; empty side → "Unknown" bucket; pushes excluded from win/loss counts but stake included in ROI denominator; `PaperAnalytics.side_stats: Vec<PaperSideStats>` exposes the data; UI table in `PrizePicksPredictionsPanel` (`SideBreakdown` component) renders Over/Under rows with `paperSideLabel()` mapping the raw "YES"/"NO" to "Over"/"Under"; 8 new unit tests, 182 lib tests pass, tsc clean)
 Working copy: `C:\\Projects\\prizepicks-monster`
 Commit: `dc7e907`
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done · Per-category paper breakdown done**
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done · Per-category paper breakdown done · Per-side paper breakdown done**
 
 ## 2026-06-27 evening pass — Streak indicator
 
@@ -13,6 +13,14 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 - `src-ui/src/index.css` — `.streakChip` + `.pos/.neg/.muted` variants (pill, tinted border, themed background).
 
 ---
+
+## 2026-06-28 afternoon pass #2 — Per-side paper performance breakdown
+
+- `src-tauri/src/paper/mod.rs` — new `PaperSideStats { side, total_trades, open_trades, wins, losses, win_rate, realized_pnl, total_staked, roi_pct }` struct (Serialize/Deserialize/PartialEq) and `compute_side_stats(&[PaperLot])` helper. Buckets all lots by raw `side` (empty/whitespace → "Unknown"), aggregates wins/losses/realized PnL/total staked for closed lots, counts open lots separately, computes win_rate and roi_pct identically to `compute_category_stats`. Result sorted by `realized_pnl` DESC, ties broken alphabetically for deterministic output. Wired into `get_analytics` and exposed as `PaperAnalytics.side_stats: Vec<PaperSideStats>`. 8 new unit tests cover empty input, sort by PnL DESC, alphabetical tie-break, win rate / ROI computation (including push handling), open-lot exclusion, empty / whitespace side → "Unknown" bucket, only-pushes / zero-PnL edge case, and YES/NO split with mixed wins and losses. **182 lib tests pass** (was 174).
+- `src-ui/src/types/prizepicks.ts` — added `PaperSideStats` interface; `PaperAnalytics` gains the `side_stats: PaperSideStats[]` field. New helper `paperSideLabel(side)` maps the raw backend "YES" → "Over" and "NO" → "Under" so the data layer stays platform-agnostic.
+- `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `SideBreakdown` inner component renders a five-column table (Side / Trades / Win % / PnL / ROI) with green/red tints matching the equity curve's color scheme. Open lot count is shown as a small `+N open` tag next to the side label. Empty-state copy guides the user to place paper trades. Mounted directly under the existing `CategoryBreakdown` table, gated on `analytics` being loaded. The two tables now complement each other: per-category answers "where is the edge?" (Points, Rebounds, etc.) and per-side answers "am I better at picking Overs or Unders?".
+- `src-ui/src/index.css` — added `.sideBreakdown`, `.sideBreakdownHeader`, `.sideTable` + th/td styles, `.sideOpenTag`, and pos/neg color variants using the existing `--pos` / `--neg` CSS variables. Same visual weight as `.categoryBreakdown` (12px padding, 14px border-radius) so the two read as siblings.
+- Ad-hoc verification (focused on the new behavior, NOT canonical suite green): `bash hermes-verify-2026-06-28-side-breakdown.sh` — 23/23 checks pass covering Rust struct/function presence, all 8 unit tests present, TypeScript types + UI wiring, CSS classes, no raw side leak in the table row (UI must use `paperSideLabel()`), and a re-run of `cargo check`.
 
 ## 2026-06-28 afternoon pass — Per-category paper performance breakdown
 
@@ -52,6 +60,12 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 | P3 | 2 | **0** |
 
 **0–1 items left** (P3-2 shipped 2026-06-26; correlation engine is still the lone P1 partial — no proposed implementation yet, accepted limitation).
+
+**Next brainstorm candidates** (in rough ROI order — pick the highest-impact one in a future clean-tree pass):
+1. **Hold-time / per-duration-bucket performance** — bucket closed lots by `closed_at - opened_at` (≤1h intraday, 1-24h, 1-7d, >7d) and report PnL / win-rate per bucket. Helps users see if they make money on quick in-game picks vs. long-shot futures. ~1.5h scope.
+2. **Today's PnL / this-week's PnL in the summary card** — the summary row shows total return, max DD, and streak but not a session-level delta. Walking equity snapshots and computing `equity_at_open_today - equity_at_midnight` is straightforward. ~30min scope.
+3. **Player-level PnL breakdown** — bucket closed lots by player name (extracted from `title` or a new column). Answers "which players am I making money on?" Requires either a parse or a schema change to store `player_name`. ~2-3h scope.
+4. **Per-entry-price-bucket performance** — bucket by entry_price_cents ranges (e.g. 30-50¢, 50-70¢, 70-90¢) to show whether long-shots or favorites are more profitable. ~1h scope.
 
 ## P0 implementation notes (shipped)
 
@@ -109,6 +123,14 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 ## Suggested next target: P1 (1 partial, no plan)
 
 1. **PrizePicks-native correlation engine** — The existing `prizepicks/portfolio_risk.rs` correlation is ticker-prefix heuristics only. A proper implementation would need an event/series/macro graph (player-level correlations, team-level, same-game parlay structure) and a way to fetch it. No concrete plan in place. Most users of the current app have small (≤3 leg) paper positions where the heuristic is sufficient.
+
+## Brainstormed & shipped (2026-06-28)
+
+- **Per-side paper performance breakdown** — The `PaperAnalytics` payload had `category_stats` (per stat category) but no equivalent for Over/Under performance. Most prop users have a strong opinion about whether they pick better Overs or Unders; without a per-side view they had to mentally aggregate from the prediction list. Shipped:
+  - `src-tauri/src/paper/mod.rs` — new `PaperSideStats` struct + `compute_side_stats(&[PaperLot])` helper. Mirrors `compute_category_stats` but buckets by raw `side` (empty/whitespace → "Unknown" bucket). 8 new unit tests.
+  - `src-ui/src/types/prizepicks.ts` — `PaperSideStats` interface + `paperSideLabel(side)` helper that maps raw "YES" → "Over" / "NO" → "Under".
+  - `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `SideBreakdown` inner component (five-column table: Side / Trades / Win % / PnL / ROI) mounted directly under the existing `CategoryBreakdown`. The two tables complement each other — per-category answers "where is the edge?" (Points, Rebounds, etc.) and per-side answers "am I better at picking Overs or Unders?".
+  - `src-ui/src/index.css` — `.sideBreakdown*` + `.sideTable*` + `.sideOpenTag` styles, same visual weight as `.categoryBreakdown` so they read as siblings.
 
 ## Brainstormed & shipped (2026-06-27)
 

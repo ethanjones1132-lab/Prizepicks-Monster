@@ -179,6 +179,33 @@ export interface PaperCategoryStats {
   roi_pct: number;
 }
 
+/**
+ * Per-side (Over/Under) performance breakdown. Returned as part of
+ * `PaperAnalytics`. The `side` field is the raw normalized value from the
+ * backend ("YES" = Over, "NO" = Under). The UI maps it to a friendlier
+ * label via `paperSideLabel()`. Sorted by `realized_pnl` DESC so the
+ * strongest side surfaces first.
+ */
+export interface PaperSideStats {
+  side: string;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+}
+
+/** Map a backend `side` value to a human-friendly Over/Under label. */
+export function paperSideLabel(side: string): string {
+  const upper = side.toUpperCase();
+  if (upper === 'YES') return 'Over';
+  if (upper === 'NO') return 'Under';
+  return side;
+}
+
 export interface PaperAnalytics {
   starting_balance: number;
   cash_balance: number;
@@ -200,6 +227,7 @@ export interface PaperAnalytics {
   max_drawdown_pct: number;
   current_streak: PaperStreak;
   category_stats: PaperCategoryStats[];
+  side_stats: PaperSideStats[];
   fetched_at: string;
 }
 

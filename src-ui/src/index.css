@@ -1001,6 +1001,72 @@ button {
   margin-left: 4px;
 }
 
+.sideBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 14px;
+}
+
+.sideBreakdown.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.sideBreakdownHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sideTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.sideTable th,
+.sideTable td {
+  text-align: left;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sideTable th {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sideTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.sideTable td.pos {
+  color: var(--pos, #3fbf7f);
+}
+
+.sideTable td.neg {
+  color: var(--neg, #d04848);
+}
+
+.sideTable td:first-child strong {
+  font-size: 0.95rem;
+}
+
+.sideOpenTag {
+  font-weight: 400;
+  margin-left: 4px;
+}
+
 .predList {
   display: grid;
   gap: 12px;

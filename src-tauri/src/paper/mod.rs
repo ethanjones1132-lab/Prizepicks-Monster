@@ -149,6 +149,10 @@ pub struct PaperAnalytics {
     /// the strongest categories surface first. Empty when no lots have been
     /// placed yet.
     pub category_stats: Vec<PaperCategoryStats>,
+    /// Per-side (Over/Under) performance breakdown. Sorted by
+    /// `realized_pnl` DESC so the strongest side surfaces first. Empty when
+    /// no lots have been placed yet.
+    pub side_stats: Vec<PaperSideStats>,
     pub fetched_at: String,
 }
 
@@ -189,6 +193,45 @@ impl PaperCategoryStats {
     fn new(category: String) -> Self {
         Self {
             category,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
+/// Performance breakdown for a single contract side ("YES" = Over, "NO" =
+/// Under). Mirrors `PaperCategoryStats` but buckets by `side` instead of
+/// `category`. Most-recent closed lots are aggregated; pushes (pnl == 0)
+/// contribute stake but neither wins nor losses. Open lots count toward
+/// `total_trades` and `open_trades` but contribute nothing to realized PnL
+/// or the ROI denominator.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperSideStats {
+    /// Raw `side` value from the lot ("YES", "NO", or other legacy strings).
+    /// The UI is responsible for mapping "YES" → "Over" / "NO" → "Under" for
+    /// display. We keep the raw value so the data layer doesn't have to
+    /// hard-code that mapping.
+    pub side: String,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperSideStats {
+    fn new(side: String) -> Self {
+        Self {
+            side,
             total_trades: 0,
             open_trades: 0,
             wins: 0,
@@ -260,6 +303,70 @@ fn compute_category_stats(lots: &[PaperLot]) -> Vec<PaperCategoryStats> {
             .partial_cmp(&a.realized_pnl)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.category.cmp(&b.category))
+    });
+    out
+}
+
+/// Bucket closed + open lots by side (YES/NO = Over/Under) and compute
+/// per-side stats. Empty side strings are bucketed under "Unknown" so we
+/// never silently drop a lot. Output is sorted by `realized_pnl` DESC,
+/// ties broken alphabetically for deterministic output. This mirrors
+/// `compute_category_stats` but groups by contract side instead of stat
+/// category — the two views complement each other (per-category answers
+/// "where is the edge?", per-side answers "am I better at picking Overs
+/// or Unders?").
+fn compute_side_stats(lots: &[PaperLot]) -> Vec<PaperSideStats> {
+    use std::collections::BTreeMap;
+
+    // BTreeMap keeps grouping deterministic; the explicit sort below
+    // ensures the result order doesn't leak the in-memory ordering.
+    let mut buckets: BTreeMap<String, PaperSideStats> = BTreeMap::new();
+    for l in lots {
+        let key = if l.side.trim().is_empty() {
+            "Unknown".to_string()
+        } else {
+            l.side.clone()
+        };
+        let entry = buckets
+            .entry(key.clone())
+            .or_insert_with(|| PaperSideStats::new(key));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            // Open lots: count exposure but not realized PnL.
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+    }
+
+    let mut out: Vec<PaperSideStats> = buckets.into_values().collect();
+    for s in out.iter_mut() {
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+    }
+    // Sort: realized_pnl DESC, then side ASC for ties. Stable so the
+    // BTreeMap-ordering above doesn't matter.
+    out.sort_by(|a, b| {
+        b.realized_pnl
+            .partial_cmp(&a.realized_pnl)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.side.cmp(&b.side))
     });
     out
 }
@@ -917,6 +1024,7 @@ pub async fn get_analytics(
 
     let current_streak = compute_current_streak(&all);
     let category_stats = compute_category_stats(&all);
+    let side_stats = compute_side_stats(&all);
 
     Ok(PaperAnalytics {
         starting_balance: account.total_deposits,
@@ -939,6 +1047,7 @@ pub async fn get_analytics(
         max_drawdown_pct: max_dd,
         current_streak,
         category_stats,
+        side_stats,
         fetched_at: Utc::now().to_rfc3339(),
     })
 }
@@ -1456,5 +1565,203 @@ mod tests {
         assert!((s.roi_pct - 0.0).abs() < 1e-9);
         assert!((s.realized_pnl - 0.0).abs() < 1e-9);
         assert!((s.total_staked - 10.0).abs() < 1e-9);
+    }
+
+    // ── compute_side_stats tests ──────────────────────────────────
+
+    /// Helper: closed lot parameterized by side (so we can mix YES / NO
+    /// "Over" / "Under" freely). Most tests use the actual normalized
+    /// values "YES" and "NO" since that's what `place_trade` writes after
+    /// `normalize_side` runs.
+    fn closed_lot_side(side: &str, stake: f64, pnl: f64) -> PaperLot {
+        PaperLot {
+            id: format!("{side}-{pnl}"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: "Points".to_string(),
+            side: side.to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: stake,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: Some("2026-01-01T01:00:00Z".to_string()),
+            closed_price_cents: Some(if pnl >= 0.0 { 100.0 } else { 0.0 }),
+            realized_pnl: Some(pnl),
+            status: "Closed".to_string(),
+            settlement_result: Some(
+                if pnl > 0.0 {
+                    "Win"
+                } else if pnl < 0.0 {
+                    "Loss"
+                } else {
+                    "Push"
+                }
+                .to_string(),
+            ),
+        }
+    }
+
+    fn open_lot_side(side: &str, stake: f64) -> PaperLot {
+        PaperLot {
+            id: format!("{side}-open"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: "Points".to_string(),
+            side: side.to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: stake,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: None,
+            closed_price_cents: None,
+            realized_pnl: None,
+            status: "Open".to_string(),
+            settlement_result: None,
+        }
+    }
+
+    #[test]
+    fn side_stats_empty_input_returns_empty_vec() {
+        let stats = compute_side_stats(&[]);
+        assert!(stats.is_empty());
+    }
+
+    #[test]
+    fn side_stats_sorts_by_realized_pnl_desc() {
+        // YES net +$3, NO net -$2 — YES ranks first.
+        let lots = vec![
+            closed_lot_side("NO", 5.0, -2.0),
+            closed_lot_side("YES", 5.0, 3.0),
+        ];
+        let stats = compute_side_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        assert_eq!(stats[0].side, "YES");
+        assert_eq!(stats[1].side, "NO");
+        assert!((stats[0].realized_pnl - 3.0).abs() < 1e-9);
+        assert!((stats[1].realized_pnl - (-2.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn side_stats_breaks_ties_alphabetically() {
+        // Both "NO" and "YES" net to $0 (one win + one loss each). Sort ASC.
+        let lots = vec![
+            closed_lot_side("YES", 1.0, 1.0),
+            closed_lot_side("YES", 1.0, -1.0),
+            closed_lot_side("NO", 1.0, 1.0),
+            closed_lot_side("NO", 1.0, -1.0),
+        ];
+        let stats = compute_side_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        // "NO" < "YES" alphabetically.
+        assert_eq!(stats[0].side, "NO");
+        assert_eq!(stats[1].side, "YES");
+        assert!((stats[0].win_rate - 50.0).abs() < 1e-6);
+        assert!((stats[1].win_rate - 50.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn side_stats_computes_win_rate_and_roi() {
+        // YES: 2 wins @ $5 (+$5 each = +$10), 1 loss @ $5 (-$5), 1 push.
+        // Win rate = 2/3 ≈ 66.67%, ROI = +$5 / $20 staked = 25%.
+        let lots = vec![
+            closed_lot_side("YES", 5.0, 5.0),
+            closed_lot_side("YES", 5.0, 5.0),
+            closed_lot_side("YES", 5.0, -5.0),
+            closed_lot_side("YES", 5.0, 0.0),
+        ];
+        let stats = compute_side_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        let s = &stats[0];
+        assert_eq!(s.side, "YES");
+        assert_eq!(s.wins, 2);
+        assert_eq!(s.losses, 1);
+        assert_eq!(s.total_trades, 4);
+        // Pushes (pnl == 0) don't count as wins or losses.
+        assert!((s.win_rate - (2.0 / 3.0) * 100.0).abs() < 1e-6);
+        assert!((s.realized_pnl - 5.0).abs() < 1e-9);
+        assert!((s.total_staked - 20.0).abs() < 1e-9);
+        assert!((s.roi_pct - (5.0 / 20.0) * 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn side_stats_open_lots_excluded_from_pnl_and_roi() {
+        // Open lots count toward total_trades + open_trades but contribute
+        // nothing to wins/losses/pnl/closed-staked.
+        let lots = vec![
+            open_lot_side("NO", 10.0),
+            closed_lot_side("NO", 5.0, 2.0),
+        ];
+        let stats = compute_side_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        let s = &stats[0];
+        assert_eq!(s.total_trades, 2);
+        assert_eq!(s.open_trades, 1);
+        assert_eq!(s.wins, 1);
+        assert_eq!(s.losses, 0);
+        // Only closed stake counts in the ROI denominator.
+        assert!((s.total_staked - 5.0).abs() < 1e-9);
+        assert!((s.realized_pnl - 2.0).abs() < 1e-9);
+        assert!((s.roi_pct - 40.0).abs() < 1e-6);
+        assert!((s.win_rate - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn side_stats_empty_side_bucketed_under_unknown() {
+        // Lots with an empty / whitespace side should roll up into
+        // "Unknown" so we never silently drop data.
+        let mut empty = closed_lot_side("YES", 5.0, 1.0);
+        empty.side = "".to_string();
+        let mut whitespace = closed_lot_side("YES", 5.0, -1.0);
+        whitespace.side = "   ".to_string();
+        let lots = vec![empty, whitespace];
+        let stats = compute_side_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].side, "Unknown");
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 1);
+    }
+
+    #[test]
+    fn side_stats_only_pushes_have_zero_roi() {
+        // No realized PnL but stake was committed; ROI = 0.0, win rate = 0.0.
+        let lots = vec![
+            closed_lot_side("YES", 5.0, 0.0),
+            closed_lot_side("NO", 5.0, 0.0),
+        ];
+        let stats = compute_side_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        for s in &stats {
+            assert_eq!(s.wins, 0);
+            assert_eq!(s.losses, 0);
+            assert!((s.win_rate - 0.0).abs() < 1e-9);
+            assert!((s.roi_pct - 0.0).abs() < 1e-9);
+            assert!((s.realized_pnl - 0.0).abs() < 1e-9);
+            assert!((s.total_staked - 5.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn side_stats_yes_and_no_split_correctly() {
+        // Mixed: 1 YES win (+$5), 1 NO loss (-$2). Two distinct buckets.
+        let lots = vec![
+            closed_lot_side("YES", 5.0, 5.0),
+            closed_lot_side("NO", 5.0, -2.0),
+        ];
+        let stats = compute_side_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        let yes = stats.iter().find(|s| s.side == "YES").unwrap();
+        let no = stats.iter().find(|s| s.side == "NO").unwrap();
+        assert_eq!(yes.wins, 1);
+        assert_eq!(yes.losses, 0);
+        assert!((yes.realized_pnl - 5.0).abs() < 1e-9);
+        assert!((yes.roi_pct - 100.0).abs() < 1e-6);
+        assert_eq!(no.wins, 0);
+        assert_eq!(no.losses, 1);
+        assert!((no.realized_pnl - (-2.0)).abs() < 1e-9);
+        assert!((no.roi_pct - (-40.0)).abs() < 1e-6);
     }
 }
