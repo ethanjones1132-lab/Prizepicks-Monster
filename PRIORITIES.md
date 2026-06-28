@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-28 (afternoon maintenance pass; **Per-category paper performance breakdown shipped** — `paper/mod.rs` `compute_category_stats` buckets closed + open lots by stat category, computes wins/losses/win_rate/total_staked/realized_pnl/roi_pct per category, sorts by PnL DESC then category ASC; `PaperAnalytics.category_stats: Vec<PaperCategoryStats>` exposes the data; UI table in `PrizePicksPredictionsPanel` (`CategoryBreakdown` component) renders category / trades / win % / PnL / ROI with positive/negative tints; 7 new unit tests, 174 lib tests pass, tsc clean)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: TBD
+Commit: `dc7e907`
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done · Per-category paper breakdown done**
 
 ## 2026-06-27 evening pass — Streak indicator
