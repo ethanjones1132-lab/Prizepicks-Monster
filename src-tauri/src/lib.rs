@@ -140,6 +140,19 @@ pub fn run() {
                 prizepicks_auto_grade_secs,
             );
 
+            // Phase 4: Immediate quick-cache prefetch at startup (before user opens dashboard)
+            // This runs synchronously in the background so the quick cache is ready
+            // by the time the user first navigates to the dashboard.
+            let prizepicks_prefetch = prizepicks_for_warm.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut client = prizepicks_prefetch.lock().await;
+                if let Err(e) = client.ensure_quick_cache().await {
+                    tracing::warn!("prizepicks startup quick-cache prefetch failed: {}", e);
+                } else {
+                    tracing::info!("prizepicks quick cache prefetched at startup");
+                }
+            });
+
             // Warm full PrizePicks catalog in the background (dashboard uses quick cache first)
             let prizepicks_warm = prizepicks_for_warm.clone();
             tauri::async_runtime::spawn(async move {

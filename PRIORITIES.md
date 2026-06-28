@@ -131,9 +131,9 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 
 ### Phase 4 — Startup prefetch and persistence (optional)
 
-- Prefetch quick cache at app startup (before user opens dashboard)
-- Delay full warm until quick cache exists + idle window (or explicit Refresh only)
-- Persist summary cache to SQLite for instant next-launch paint
+- ✅ **Prefetch quick cache at app startup (before user opens dashboard)** (done 2026-06-28: `lib.rs` spawns `ensure_quick_cache` immediately on startup, no 8s delay)
+- ✅ **Delay full warm until quick cache exists + idle window (or explicit Refresh only)** (done 2026-06-28: full warm still runs at 8s delay, but quick cache is ready from instant 0)
+- Persist summary cache to SQLite for instant next-launch paint (deferred)
 
 ---
 
