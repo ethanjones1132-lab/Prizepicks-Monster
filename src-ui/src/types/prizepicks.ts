@@ -162,6 +162,23 @@ export interface PaperStreak {
   length: number;
 }
 
+/**
+ * Per-category performance breakdown for a single PrizePicks stat category
+ * (e.g. Points, Rebounds, Goals). Returned as part of `PaperAnalytics`.
+ * Sorted by `realized_pnl` DESC so the strongest categories surface first.
+ */
+export interface PaperCategoryStats {
+  category: string;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+}
+
 export interface PaperAnalytics {
   starting_balance: number;
   cash_balance: number;
@@ -182,6 +199,7 @@ export interface PaperAnalytics {
   largest_loser: number;
   max_drawdown_pct: number;
   current_streak: PaperStreak;
+  category_stats: PaperCategoryStats[];
   fetched_at: string;
 }
 

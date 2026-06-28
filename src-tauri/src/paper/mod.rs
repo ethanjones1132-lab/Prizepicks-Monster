@@ -145,6 +145,10 @@ pub struct PaperAnalytics {
     pub largest_loser: f64,
     pub max_drawdown_pct: f64,
     pub current_streak: PaperStreak,
+    /// Per-category performance breakdown. Sorted by `realized_pnl` DESC so
+    /// the strongest categories surface first. Empty when no lots have been
+    /// placed yet.
+    pub category_stats: Vec<PaperCategoryStats>,
     pub fetched_at: String,
 }
 
@@ -161,6 +165,103 @@ impl PaperStreak {
     pub fn empty() -> Self {
         Self { kind: "None".to_string(), length: 0 }
     }
+}
+
+/// Performance breakdown for a single PrizePicks stat category (e.g. Points,
+/// Rebounds, Goals). Sums all closed lots within the category, regardless of
+/// side. `roi_pct` is `realized_pnl / total_staked * 100` — returns 0.0 when
+/// no closed stake exists for the category. Open lots contribute zero to wins
+/// / losses / pnl but ARE counted in `total_trades` and `open_trades`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperCategoryStats {
+    pub category: String,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperCategoryStats {
+    fn new(category: String) -> Self {
+        Self {
+            category,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
+/// Bucket closed + open lots by category and compute per-category stats.
+/// Lots with an empty category are bucketed under `"Other"`. Categories are
+/// emitted in descending `realized_pnl` order so the strongest categories
+/// surface first; ties are broken alphabetically for deterministic output.
+fn compute_category_stats(lots: &[PaperLot]) -> Vec<PaperCategoryStats> {
+    use std::collections::BTreeMap;
+
+    // Sort by category first so the BTreeMap iteration is deterministic when
+    // multiple categories tie on PnL. We sort the *results* explicitly below
+    // so the in-memory grouping order doesn't leak to callers.
+    let mut buckets: BTreeMap<String, PaperCategoryStats> = BTreeMap::new();
+    for l in lots {
+        let key = if l.category.trim().is_empty() {
+            "Other".to_string()
+        } else {
+            l.category.clone()
+        };
+        let entry = buckets
+            .entry(key.clone())
+            .or_insert_with(|| PaperCategoryStats::new(key));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            // Open lots have no realized PnL, but we still count their stake
+            // toward exposure so the user sees the at-risk amount. We only
+            // count closed stakes into the ROI denominator.
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+    }
+
+    let mut out: Vec<PaperCategoryStats> = buckets.into_values().collect();
+    for s in out.iter_mut() {
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+    }
+    // Sort: realized_pnl DESC, then category ASC for ties. Stable so the
+    // BTreeMap-ordering above doesn't matter.
+    out.sort_by(|a, b| {
+        b.realized_pnl
+            .partial_cmp(&a.realized_pnl)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.category.cmp(&b.category))
+    });
+    out
 }
 
 /// Compute the current streak by walking closed lots from most-recent to oldest.
@@ -815,6 +916,7 @@ pub async fn get_analytics(
     let max_dd = max_drawdown_pct(pool).await.unwrap_or(0.0);
 
     let current_streak = compute_current_streak(&all);
+    let category_stats = compute_category_stats(&all);
 
     Ok(PaperAnalytics {
         starting_balance: account.total_deposits,
@@ -836,6 +938,7 @@ pub async fn get_analytics(
         largest_loser,
         max_drawdown_pct: max_dd,
         current_streak,
+        category_stats,
         fetched_at: Utc::now().to_rfc3339(),
     })
 }
@@ -1172,5 +1275,186 @@ mod tests {
         let s = compute_current_streak(&lots);
         assert_eq!(s.kind, "W");
         assert_eq!(s.length, 2);
+    }
+
+    // ── compute_category_stats tests ──────────────────────────────
+
+    /// Helper: closed lot with explicit category + stake + pnl. The default
+    /// helper in this module hardcodes category = "Points"; these tests need
+    /// multiple categories so we build them inline.
+    fn closed_lot_in(
+        category: &str,
+        side: &str,
+        stake: f64,
+        pnl: f64,
+    ) -> PaperLot {
+        PaperLot {
+            id: format!("{category}-{side}-{pnl}"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: category.to_string(),
+            side: side.to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: stake,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: Some("2026-01-01T01:00:00Z".to_string()),
+            closed_price_cents: Some(if pnl >= 0.0 { 100.0 } else { 0.0 }),
+            realized_pnl: Some(pnl),
+            status: "Closed".to_string(),
+            settlement_result: Some(
+                if pnl > 0.0 {
+                    "Win"
+                } else if pnl < 0.0 {
+                    "Loss"
+                } else {
+                    "Push"
+                }
+                .to_string(),
+            ),
+        }
+    }
+
+    fn open_lot_in(category: &str, stake: f64) -> PaperLot {
+        PaperLot {
+            id: format!("{category}-open"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: category.to_string(),
+            side: "Over".to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: stake,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: None,
+            closed_price_cents: None,
+            realized_pnl: None,
+            status: "Open".to_string(),
+            settlement_result: None,
+        }
+    }
+
+    #[test]
+    fn category_stats_empty_input_returns_empty_vec() {
+        let stats = compute_category_stats(&[]);
+        assert!(stats.is_empty());
+    }
+
+    #[test]
+    fn category_stats_sorts_by_realized_pnl_desc() {
+        let lots = vec![
+            closed_lot_in("Rebounds", "Over", 5.0, -2.0),
+            closed_lot_in("Points", "Over", 5.0, 3.0),
+            closed_lot_in("Assists", "Over", 5.0, 1.0),
+        ];
+        let stats = compute_category_stats(&lots);
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].category, "Points");
+        assert_eq!(stats[1].category, "Assists");
+        assert_eq!(stats[2].category, "Rebounds");
+        assert!((stats[0].realized_pnl - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn category_stats_breaks_ties_alphabetically() {
+        // Three categories all net to $0 (one win, one loss). Tie-break ASC.
+        let lots = vec![
+            closed_lot_in("Steals", "Over", 1.0, 1.0),
+            closed_lot_in("Steals", "Over", 1.0, -1.0),
+            closed_lot_in("Blocks", "Over", 1.0, 1.0),
+            closed_lot_in("Blocks", "Over", 1.0, -1.0),
+            closed_lot_in("Assists", "Over", 1.0, 1.0),
+            closed_lot_in("Assists", "Over", 1.0, -1.0),
+        ];
+        let stats = compute_category_stats(&lots);
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].category, "Assists");
+        assert_eq!(stats[1].category, "Blocks");
+        assert_eq!(stats[2].category, "Steals");
+    }
+
+    #[test]
+    fn category_stats_computes_win_rate_and_roi() {
+        // 2 wins @ $5 stake (+$5 each = +$10), 1 loss @ $5 (-$5), 1 push.
+        // Wins / (wins + losses) = 2/3 = 66.66...%
+        // Total staked = $20 (pushes still committed stake). ROI = $5 / $20 = 25%.
+        let lots = vec![
+            closed_lot_in("Points", "Over", 5.0, 5.0),
+            closed_lot_in("Points", "Over", 5.0, 5.0),
+            closed_lot_in("Points", "Over", 5.0, -5.0),
+            closed_lot_in("Points", "Over", 5.0, 0.0),
+        ];
+        let stats = compute_category_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        let s = &stats[0];
+        assert_eq!(s.category, "Points");
+        assert_eq!(s.wins, 2);
+        assert_eq!(s.losses, 1);
+        assert_eq!(s.total_trades, 4);
+        // Pushes don't count as wins or losses.
+        assert!((s.win_rate - (2.0 / 3.0) * 100.0).abs() < 1e-6);
+        assert!((s.realized_pnl - 5.0).abs() < 1e-9);
+        assert!((s.total_staked - 20.0).abs() < 1e-9);
+        assert!((s.roi_pct - (5.0 / 20.0) * 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn category_stats_open_lots_excluded_from_pnl_and_roi() {
+        // Open lots should count toward total_trades + open_trades but not
+        // contribute to wins/losses/pnl/staked (the latter drives ROI).
+        let lots = vec![
+            open_lot_in("Points", 10.0),
+            closed_lot_in("Points", "Over", 5.0, 2.0),
+        ];
+        let stats = compute_category_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        let s = &stats[0];
+        assert_eq!(s.total_trades, 2);
+        assert_eq!(s.open_trades, 1);
+        assert_eq!(s.wins, 1);
+        assert_eq!(s.losses, 0);
+        // Only the closed $5 stake counts toward the ROI denominator.
+        assert!((s.total_staked - 5.0).abs() < 1e-9);
+        assert!((s.realized_pnl - 2.0).abs() < 1e-9);
+        assert!((s.roi_pct - 40.0).abs() < 1e-6);
+        assert!((s.win_rate - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn category_stats_empty_category_bucketed_under_other() {
+        // An empty / whitespace category should roll up into "Other".
+        let mut empty_cat = closed_lot_in("Points", "Over", 5.0, 1.0);
+        empty_cat.category = "".to_string();
+        let mut whitespace_cat = closed_lot_in("Points", "Over", 5.0, -1.0);
+        whitespace_cat.category = "   ".to_string();
+        let lots = vec![empty_cat, whitespace_cat];
+        let stats = compute_category_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].category, "Other");
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 1);
+    }
+
+    #[test]
+    fn category_stats_only_pushes_have_zero_roi() {
+        // No realized PnL but a stake was committed; ROI is 0.0 (no division
+        // by zero), win rate is 0.0 (no decided lots).
+        let lots = vec![
+            closed_lot_in("Points", "Over", 5.0, 0.0),
+            closed_lot_in("Points", "Over", 5.0, 0.0),
+        ];
+        let stats = compute_category_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        let s = &stats[0];
+        assert_eq!(s.wins, 0);
+        assert_eq!(s.losses, 0);
+        assert!((s.win_rate - 0.0).abs() < 1e-9);
+        assert!((s.roi_pct - 0.0).abs() < 1e-9);
+        assert!((s.realized_pnl - 0.0).abs() < 1e-9);
+        assert!((s.total_staked - 10.0).abs() < 1e-9);
     }
 }

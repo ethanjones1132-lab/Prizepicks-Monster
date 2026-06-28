@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-28 (overnight maintenance pass; **Phase 4 startup quick-cache prefetch shipped** — `lib.rs` spawns `ensure_quick_cache` immediately on app startup so the dashboard quick cache is ready from instant 0; full catalog warm still runs at 8s delay but quick cache exists first; 167 lib tests pass, tsc clean)
+Last updated: 2026-06-28 (afternoon maintenance pass; **Per-category paper performance breakdown shipped** — `paper/mod.rs` `compute_category_stats` buckets closed + open lots by stat category, computes wins/losses/win_rate/total_staked/realized_pnl/roi_pct per category, sorts by PnL DESC then category ASC; `PaperAnalytics.category_stats: Vec<PaperCategoryStats>` exposes the data; UI table in `PrizePicksPredictionsPanel` (`CategoryBreakdown` component) renders category / trades / win % / PnL / ROI with positive/negative tints; 7 new unit tests, 174 lib tests pass, tsc clean)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `25217a2`
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done**
+Commit: TBD
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done · Per-category paper breakdown done**
 
 ## 2026-06-27 evening pass — Streak indicator
 
@@ -11,6 +11,15 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 - `src-ui/src/types/prizepicks.ts` — added `PaperStreak` interface; brought `PaperAnalytics` into sync with the Rust struct (added the previously-missing `avg_winner`, `avg_loser`, `largest_winner`, `largest_loser` fields, plus the new `current_streak`).
 - `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `StreakChip` inner component renders `W3` (green pos tint), `L2` (red neg tint), or `—` (muted) for an empty streak. Mounted as a new `Streak` cell in the `paperSummary` row alongside Paper equity / Cash / Open / Return / Win rate / Max DD.
 - `src-ui/src/index.css` — `.streakChip` + `.pos/.neg/.muted` variants (pill, tinted border, themed background).
+
+---
+
+## 2026-06-28 afternoon pass — Per-category paper performance breakdown
+
+- `src-tauri/src/paper/mod.rs` — new `PaperCategoryStats { category, total_trades, open_trades, wins, losses, win_rate, realized_pnl, total_staked, roi_pct }` struct (Serialize/Deserialize/PartialEq). New `compute_category_stats(&[PaperLot])` buckets all lots by category (`""` / whitespace → `"Other"`), aggregates wins/losses/realized PnL/total staked for closed lots, counts open lots separately, computes win_rate = wins / (wins + losses) * 100, and roi_pct = realized_pnl / total_staked * 100. Pushes (realized_pnl == 0) don't count as wins or losses but their stake is included in `total_staked`. Open lots are excluded from the ROI denominator — only closed stake counts. Result sorted by `realized_pnl` DESC, ties broken alphabetically for deterministic output. Wired into `get_analytics` and exposed as `PaperAnalytics.category_stats: Vec<PaperCategoryStats>`. 7 new unit tests cover empty input, sort by PnL DESC, alphabetical tie-break, win rate / ROI computation (including push handling), open-lot exclusion, empty / whitespace category → "Other" bucket, and zero-decided / zero-PnL edge cases. **174 lib tests pass** (was 167).
+- `src-ui/src/types/prizepicks.ts` — added `PaperCategoryStats` interface; `PaperAnalytics` gains the `category_stats: PaperCategoryStats[]` field to match the Rust struct.
+- `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `CategoryBreakdown` inner component renders a five-column table (Category / Trades / Win % / PnL / ROI) with green/red tints matching the equity curve's color scheme. Open lot count is shown as a small `+N open` tag next to the category name. Empty-state copy guides the user to place paper trades. Mounted between the equity curve and the prediction list, gated on `analytics` being loaded.
+- `src-ui/src/index.css` — added `.categoryBreakdown`, `.categoryBreakdownHeader`, `.categoryTable` + th/td styles, `.categoryOpenTag`, and pos/neg color variants using the existing `--pos` / `--neg` CSS variables. Compact 12px padding / 14px border-radius to match the equity curve's visual weight.
 
 ---
 

@@ -929,6 +929,78 @@ button {
   height: 90px;
 }
 
+.categoryBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 14px;
+}
+
+.categoryBreakdown.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.categoryBreakdownHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.categoryTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.categoryTable th,
+.categoryTable td {
+  text-align: left;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.categoryTable th {
+  color: var(--muted, rgba(255, 255, 255, 0.55));
+  font-weight: 500;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.categoryTable tr:last-child td {
+  border-bottom: none;
+}
+
+.categoryTable td.pos,
+.categoryTable td.neg {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.categoryTable td.pos {
+  color: var(--pos, #3fbf7f);
+}
+
+.categoryTable td.neg {
+  color: var(--neg, #d04848);
+}
+
+.categoryTable td:first-child strong {
+  font-size: 0.95rem;
+}
+
+.categoryOpenTag {
+  font-weight: 400;
+  margin-left: 4px;
+}
+
 .predList {
   display: grid;
   gap: 12px;
