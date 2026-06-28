@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-28 (afternoon maintenance pass #2; **Per-side paper performance breakdown shipped** — `paper/mod.rs` `compute_side_stats` mirrors `compute_category_stats` but buckets closed + open lots by contract side, computes wins/losses/win_rate/realized_pnl/roi_pct per side, sorts by PnL DESC then side ASC; empty side → "Unknown" bucket; pushes excluded from win/loss counts but stake included in ROI denominator; `PaperAnalytics.side_stats: Vec<PaperSideStats>` exposes the data; UI table in `PrizePicksPredictionsPanel` (`SideBreakdown` component) renders Over/Under rows with `paperSideLabel()` mapping the raw "YES"/"NO" to "Over"/"Under"; 8 new unit tests, 182 lib tests pass, tsc clean)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `dc7e907`
+Commit: `761784e`
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done · Per-category paper breakdown done · Per-side paper breakdown done**
 
 ## 2026-06-27 evening pass — Streak indicator
