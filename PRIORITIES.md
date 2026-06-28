@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-27 (afternoon maintenance pass; **Paper equity curve chart shipped** — wired existing `get_equity_snapshots` backend fn through a new `paper_get_equity_history` Tauri command → `prizepicksApi.getPaperEquityHistory()` → pure-SVG `EquityCurve` component with 7d/30d/90d/All range toggle + delta/% markers + max-drawdown cell; 158 lib tests pass, tsc clean, 5/5 ad-hoc verifications pass)
+Last updated: 2026-06-28 (overnight maintenance pass; **Phase 4 startup quick-cache prefetch shipped** — `lib.rs` spawns `ensure_quick_cache` immediately on app startup so the dashboard quick cache is ready from instant 0; full catalog warm still runs at 8s delay but quick cache exists first; 167 lib tests pass, tsc clean)
 Working copy: `C:\\Projects\\prizepicks-monster`
-Commit: `58803af`
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done**
+Commit: `25217a2`
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done**
 
 ## 2026-06-27 evening pass — Streak indicator
 
