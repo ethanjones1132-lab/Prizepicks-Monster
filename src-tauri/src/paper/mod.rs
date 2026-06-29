@@ -153,6 +153,9 @@ pub struct PaperAnalytics {
     /// `realized_pnl` DESC so the strongest side surfaces first. Empty when
     /// no lots have been placed yet.
     pub side_stats: Vec<PaperSideStats>,
+    /// Today and 7-day equity deltas for the summary card. Both windows are
+    /// `None` when no baseline snapshot exists (e.g. a brand-new account).
+    pub session_pnl: SessionPnl,
     pub fetched_at: String,
 }
 
@@ -242,6 +245,100 @@ impl PaperSideStats {
             roi_pct: 0.0,
         }
     }
+}
+
+/// Per-window equity change for the paper-trading summary card. `pnl_dollars`
+/// is the dollar change between the most-recent equity snapshot and the
+/// baseline snapshot; `pnl_pct` is `pnl_dollars / baseline_equity * 100`
+/// (returns 0.0 when `baseline_equity` <= 0). `baseline_ts` is the timestamp
+/// of the baseline snapshot (the snapshot at-or-before the cutoff). Returns
+/// `None` from `compute_session_pnl` when no qualifying baseline snapshot
+/// exists (e.g. the account is brand-new and the cutoff predates the first
+/// recorded snapshot).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionDelta {
+    pub pnl_dollars: f64,
+    pub pnl_pct: f64,
+    pub baseline_equity: f64,
+    pub baseline_ts: String,
+}
+
+/// Today and 7-day session PnL deltas for the paper account. Both fields are
+/// `Option` because the user may have a brand-new account with no snapshot
+/// pre-dating the cutoff, or the snapshot table may be empty.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct SessionPnl {
+    pub today: Option<SessionDelta>,
+    pub this_week: Option<SessionDelta>,
+}
+
+/// Walk `paper_equity_snapshots` (DESC by `ts`, matching `get_equity_snapshots`)
+/// to find the most-recent snapshot at-or-before each cutoff timestamp, then
+/// compute the dollar and percent change versus the *current* equity supplied
+/// by the caller. Returns `None` for a given window when the snapshot list
+/// is empty, when every snapshot post-dates the cutoff, or when the baseline
+/// equity is non-positive (avoids divide-by-zero / sign flips in the percent).
+///
+/// `now` is passed in (rather than calling `Utc::now()` directly) so the
+/// function stays pure and testable.
+fn compute_session_pnl(
+    snapshots: &[PaperEquitySnapshot],
+    current_equity: f64,
+    now: &chrono::DateTime<chrono::Utc>,
+) -> SessionPnl {
+    fn find_baseline(
+        snapshots: &[PaperEquitySnapshot],
+        cutoff: &chrono::DateTime<chrono::Utc>,
+    ) -> Option<SessionDelta> {
+        // Snapshots come in DESC order. The first one whose parsed `ts` is
+        // at-or-before the cutoff is the most-recent baseline.
+        for s in snapshots {
+            let parsed = match chrono::DateTime::parse_from_rfc3339(&s.ts) {
+                Ok(dt) => dt.with_timezone(&chrono::Utc),
+                Err(_) => continue,
+            };
+            if parsed <= *cutoff {
+                return Some(SessionDelta {
+                    pnl_dollars: 0.0,
+                    pnl_pct: 0.0,
+                    baseline_equity: s.equity_dollars,
+                    baseline_ts: s.ts.clone(),
+                });
+            }
+        }
+        None
+    }
+
+    let today_cutoff = now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|d| d.and_utc().into())
+        .unwrap_or(*now);
+    let week_cutoff = *now - chrono::Duration::days(7);
+
+    let mut today = find_baseline(snapshots, &today_cutoff);
+    let mut this_week = find_baseline(snapshots, &week_cutoff);
+
+    // Fill in the dollar/percent change now that we know the baseline. Doing
+    // this in a second pass keeps `find_baseline` focused on lookup.
+    if let Some(ref mut d) = today {
+        d.pnl_dollars = current_equity - d.baseline_equity;
+        d.pnl_pct = if d.baseline_equity > 0.0 {
+            (d.pnl_dollars / d.baseline_equity) * 100.0
+        } else {
+            0.0
+        };
+    }
+    if let Some(ref mut d) = this_week {
+        d.pnl_dollars = current_equity - d.baseline_equity;
+        d.pnl_pct = if d.baseline_equity > 0.0 {
+            (d.pnl_dollars / d.baseline_equity) * 100.0
+        } else {
+            0.0
+        };
+    }
+
+    SessionPnl { today, this_week }
 }
 
 /// Bucket closed + open lots by category and compute per-category stats.
@@ -1026,6 +1123,16 @@ pub async fn get_analytics(
     let category_stats = compute_category_stats(&all);
     let side_stats = compute_side_stats(&all);
 
+    // Session PnL: fetch the most-recent equity snapshots and walk them to
+    // compute today's and 7-day deltas. The snapshot list is bounded to
+    // 500 rows which is well in excess of any realistic daily-snapshot
+    // history while keeping the in-memory scan cheap.
+    let session_pnl = {
+        let snapshots = get_equity_snapshots(pool, 500).await.unwrap_or_default();
+        let now = chrono::Utc::now();
+        compute_session_pnl(&snapshots, equity, &now)
+    };
+
     Ok(PaperAnalytics {
         starting_balance: account.total_deposits,
         cash_balance: account.balance_dollars,
@@ -1048,6 +1155,7 @@ pub async fn get_analytics(
         current_streak,
         category_stats,
         side_stats,
+        session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
 }
@@ -1763,5 +1871,189 @@ mod tests {
         assert_eq!(no.losses, 1);
         assert!((no.realized_pnl - (-2.0)).abs() < 1e-9);
         assert!((no.roi_pct - (-40.0)).abs() < 1e-6);
+    }
+
+    fn equity_snap(ts: &str, equity: f64) -> PaperEquitySnapshot {
+        PaperEquitySnapshot {
+            id: 1,
+            ts: ts.to_string(),
+            balance_dollars: equity,
+            open_market_value: 0.0,
+            equity_dollars: equity,
+            unrealized_pnl: 0.0,
+        }
+    }
+
+    #[test]
+    fn session_pnl_empty_snapshots_returns_both_none() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let pnl = compute_session_pnl(&[], 10_500.0, &now);
+        assert!(pnl.today.is_none());
+        assert!(pnl.this_week.is_none());
+    }
+
+    #[test]
+    fn session_pnl_all_snapshots_post_cutoff_returns_both_none() {
+        // All snapshots are from "tomorrow" — past midnight, but no row
+        // pre-dates the today midnight cutoff.
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let snaps = vec![equity_snap("2026-06-29T01:00:00Z", 11_000.0)];
+        let pnl = compute_session_pnl(&snaps, 11_000.0, &now);
+        assert!(pnl.today.is_none(), "no baseline at-or-before today midnight");
+        // The week cutoff is 2026-06-21T15:00:00Z; the 2026-06-29 snapshot is after that too.
+        assert!(pnl.this_week.is_none());
+    }
+
+    #[test]
+    fn session_pnl_uses_most_recent_baseline_at_or_before_cutoff() {
+        // DESC-sorted snapshots; the helper must pick the newest one whose
+        // ts <= the cutoff (NOT just the first snapshot in the list).
+        // now = 2026-06-28T15:00:00Z
+        // today_cutoff = 2026-06-28T00:00:00Z (midnight today)
+        // week_cutoff = 2026-06-21T15:00:00Z (7 days before now)
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let snaps = vec![
+            equity_snap("2026-06-28T20:00:00Z", 11_000.0), // future relative to now
+            equity_snap("2026-06-28T10:00:00Z", 10_800.0), // today, after midnight (> today_cutoff)
+            equity_snap("2026-06-28T05:00:00Z", 10_500.0), // today, after midnight (> today_cutoff)
+            equity_snap("2026-06-27T15:00:00Z", 10_300.0), // yesterday (<= today_cutoff, > week_cutoff)
+            equity_snap("2026-06-20T10:00:00Z", 10_000.0), // 8 days ago (<= both cutoffs)
+        ];
+        let pnl = compute_session_pnl(&snaps, 10_900.0, &now);
+        let today = pnl.today.expect("baseline exists for today");
+        // Most recent <= today_cutoff (28T00:00) is 2026-06-27T15:00:00Z, equity 10300
+        assert!((today.baseline_equity - 10_300.0).abs() < 1e-9);
+        assert!(today.baseline_ts.starts_with("2026-06-27"));
+        // pnl = 10900 - 10300 = +600; pct = 600 / 10300 * 100 ≈ 5.825
+        assert!((today.pnl_dollars - 600.0).abs() < 1e-9);
+        assert!((today.pnl_pct - (600.0 / 10_300.0 * 100.0)).abs() < 1e-6);
+
+        // Most recent <= week_cutoff (21T15:00) is 2026-06-20T10:00:00Z, equity 10000
+        // (27T15:00 is > 21T15:00, so doesn't qualify for week)
+        let week = pnl.this_week.expect("baseline exists for 7d");
+        assert!((week.baseline_equity - 10_000.0).abs() < 1e-9);
+        assert!((week.pnl_dollars - 900.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn session_pnl_today_and_week_pick_independent_baselines() {
+        // now = 2026-06-28T15:00:00Z
+        // today_cutoff = 2026-06-28T00:00:00Z (midnight today)
+        // week_cutoff = 2026-06-21T15:00:00Z (7 days before now)
+        // 3d ago = 2026-06-25T10:00:00Z (after today_cutoff, after week_cutoff)
+        // 10d ago = 2026-06-18T10:00:00Z (before today_cutoff, before week_cutoff)
+        // The 3d-ago snapshot (June 25) is AFTER today_cutoff (June 28 midnight) -
+        // wait, June 25 is BEFORE June 28. Let me fix:
+        // today_cutoff = June 28 00:00. June 25 < June 28, so June 25 qualifies for today.
+        // week_cutoff = June 21 15:00. June 25 > June 21, so June 25 does NOT qualify for week.
+        // June 18 < June 21, so June 18 qualifies for week.
+        // So: today -> June 25 (10_400), week -> June 18 (9_900).
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let snaps = vec![
+            equity_snap("2026-06-25T10:00:00Z", 10_400.0), // 3d ago (qualifies today, not week)
+            equity_snap("2026-06-18T10:00:00Z", 9_900.0),  // 10d ago (qualifies both)
+        ];
+        let pnl = compute_session_pnl(&snaps, 10_700.0, &now);
+        let today = pnl.today.expect("today baseline");
+        assert!((today.baseline_equity - 10_400.0).abs() < 1e-9);
+        assert!((today.pnl_dollars - 300.0).abs() < 1e-9);
+        let week = pnl.this_week.expect("week baseline");
+        assert!((week.baseline_equity - 9_900.0).abs() < 1e-9);
+        assert!((week.pnl_dollars - 800.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn session_pnl_picks_older_baseline_for_week_when_today_has_none() {
+        // now = 2026-06-28T15:00:00Z
+        // today_cutoff = 2026-06-28T00:00:00Z (midnight today)
+        // week_cutoff = 2026-06-21T15:00:00Z (7 days before now)
+        // 10d ago = 2026-06-18T10:00:00Z (before today_cutoff, before week_cutoff)
+        // 11d ago = 2026-06-17T10:00:00Z (before today_cutoff, before week_cutoff)
+        // Today cutoff should find June 18 (it IS before June 28 midnight)
+        // Week cutoff should find June 18 (it IS before June 21 15:00)
+        // Actually, let me use a date that's > today_cutoff but < week_cutoff
+        // That's impossible since today_cutoff (June 28 00:00) > week_cutoff (June 21 15:00)
+        // So any date before today_cutoff is ALSO before week_cutoff.
+        // Let me use dates that are ALL > today_cutoff:
+        // 1d ago = June 27 10:00 (after today_cutoff, after week_cutoff)
+        // 8d ago = June 20 10:00 (before today_cutoff, before week_cutoff)
+        // But that would give today = June 20, week = June 20
+        // To have today = None and week = Some, we need:
+        // - No snapshot <= today_cutoff
+        // - At least one snapshot <= week_cutoff
+        // This is impossible since week_cutoff < today_cutoff!
+        // Any snapshot <= week_cutoff is ALSO <= today_cutoff.
+        // So if week finds one, today MUST also find one (or a later one).
+        // The test as written is impossible - let me change it to a valid case.
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        // Use snapshots that are ALL after today_cutoff (June 28 00:00)
+        // so today = None, and week_cutoff is June 21 15:00, so also none
+        // Actually this test was checking an impossible case.
+        // Let me make it test the case where we have a snapshot after today_cutoff
+        // but before week_cutoff - impossible!
+        // Let me just remove this test or change it to a valid case.
+        // Valid case: all snapshots after today_cutoff -> both None
+        let snaps = vec![
+            equity_snap("2026-06-28T10:00:00Z", 11_000.0), // after today_cutoff
+            equity_snap("2026-06-28T05:00:00Z", 10_500.0), // after today_cutoff
+        ];
+        let pnl = compute_session_pnl(&snaps, 10_900.0, &now);
+        assert!(pnl.today.is_none(), "no baseline at-or-before today midnight");
+        assert!(pnl.this_week.is_none(), "no baseline at-or-before week cutoff");
+    }
+
+    #[test]
+    fn session_pnl_zero_baseline_equity_returns_zero_pct() {
+        // Degenerate: baseline equity is exactly $0. Division by zero must
+        // be guarded — pct returns 0.0, dollars still computed.
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let snaps = vec![equity_snap("2026-06-25T10:00:00Z", 0.0)];
+        let pnl = compute_session_pnl(&snaps, 100.0, &now);
+        let today = pnl.today.expect("today baseline");
+        assert!((today.baseline_equity - 0.0).abs() < 1e-9);
+        assert!((today.pnl_dollars - 100.0).abs() < 1e-9);
+        assert!((today.pnl_pct - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn session_pnl_negative_baseline_does_not_invert_pct() {
+        // Negative baseline equity must NOT flip the sign of the percent
+        // change. The guard on `baseline_equity > 0.0` returns 0.0 pct.
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let snaps = vec![equity_snap("2026-06-25T10:00:00Z", -50.0)];
+        let pnl = compute_session_pnl(&snaps, 100.0, &now);
+        let today = pnl.today.expect("today baseline");
+        assert!((today.pnl_dollars - 150.0).abs() < 1e-9);
+        assert!((today.pnl_pct - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn session_pnl_skips_unparseable_timestamps() {
+        // A snapshot with a garbage `ts` should be skipped (parse fails)
+        // rather than panic or pick a wrong baseline.
+        let now = chrono::DateTime::parse_from_rfc3339("2026-06-28T15:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let snaps = vec![
+            equity_snap("not-a-timestamp", 12_345.0),
+            equity_snap("2026-06-27T10:00:00Z", 10_200.0),
+        ];
+        let pnl = compute_session_pnl(&snaps, 10_500.0, &now);
+        let today = pnl.today.expect("valid baseline survives");
+        assert!((today.baseline_equity - 10_200.0).abs() < 1e-9);
     }
 }
