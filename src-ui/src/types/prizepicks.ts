@@ -207,6 +207,29 @@ export function paperSideLabel(side: string): string {
 }
 
 /**
+ * Per-player performance breakdown. Mirrors `PaperCategoryStats` and
+ * `PaperSideStats` but groups by player name. The `player` field is the
+ * name extracted from the lot's `title` (`"<name> Over|Under <line> <stat>"`
+ * pattern) on the backend, or `"Unknown"` when the title is empty or
+ * doesn't match the expected pattern. Sorted by `realized_pnl` DESC so
+ * the strongest players surface first; ties broken alphabetically. The
+ * per-player view complements per-category, per-side, and per-hold-time
+ * and answers "which players am I actually making money on?".
+ */
+export interface PaperPlayerStats {
+  /** Player name extracted from the lot's `title`. `"Unknown"` when the title is empty / unparseable. */
+  player: string;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+}
+
+/**
  * Per-hold-time-bucket performance breakdown. Mirrors `PaperCategoryStats`
  * and `PaperSideStats` but groups by how long the lot was held
  * (`closed_at - opened_at`) instead of stat category or contract side.
@@ -256,6 +279,8 @@ export interface PaperAnalytics {
   side_stats: PaperSideStats[];
   /** Per-hold-time-bucket performance breakdown. */
   hold_time_stats: PaperHoldTimeStats[];
+  /** Per-player performance breakdown. */
+  player_stats: PaperPlayerStats[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;

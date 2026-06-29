@@ -5,6 +5,7 @@ import type {
   PaperCategoryStats,
   PaperEquitySnapshot,
   PaperHoldTimeStats,
+  PaperPlayerStats,
   PaperSideStats,
   PrizePicksPrediction,
   SessionDelta,
@@ -293,6 +294,70 @@ function HoldTimeBreakdown({ stats }: { stats: PaperHoldTimeStats[] }) {
 }
 
 /**
+ * Per-player performance table. Mirrors the layout of
+ * `CategoryBreakdown` / `SideBreakdown` so all four read as siblings.
+ * The `player` field is the name extracted from the lot's `title`
+ * (`"<name> Over|Under <line> <stat>"` pattern) on the backend. Lots
+ * with unparseable titles are bucketed under "Unknown" so they still
+ * appear in the table.
+ */
+function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
+  if (!stats || stats.length === 0) {
+    return (
+      <div className="playerBreakdown empty">
+        <span className="muted small">
+          No player data yet — place or settle paper trades to populate per-player performance.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="playerBreakdown">
+      <div className="playerBreakdownHeader">
+        <span className="muted small">Per-player performance</span>
+        <span className="muted small">{stats.length} {stats.length === 1 ? 'player' : 'players'}</span>
+      </div>
+      <table className="playerTable">
+        <thead>
+          <tr>
+            <th scope="col">Player</th>
+            <th scope="col">Trades</th>
+            <th scope="col">Win %</th>
+            <th scope="col">PnL</th>
+            <th scope="col">ROI</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stats.map((s) => {
+            const pnlPositive = s.realized_pnl >= 0;
+            return (
+              <tr key={s.player}>
+                <td>
+                  <strong>{s.player}</strong>
+                  {s.open_trades > 0 && (
+                    <span className="muted small playerOpenTag" title={`${s.open_trades} open lot(s)`}>
+                      {' '}+{s.open_trades} open
+                    </span>
+                  )}
+                </td>
+                <td>{s.total_trades}</td>
+                <td>{s.wins + s.losses > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                <td className={pnlPositive ? 'pos' : 'neg'}>
+                  {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                </td>
+                <td className={pnlPositive ? 'pos' : 'neg'}>
+                  {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
  * Compact SVG equity curve. No charting library — pure SVG so the bundle
  * stays lean. Plots equity_dollars over time, marks the starting balance
  * as a dashed baseline, and tints the area between curve and baseline
@@ -501,6 +566,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <CategoryBreakdown stats={analytics.category_stats} />}
       {analytics && <SideBreakdown stats={analytics.side_stats} />}
       {analytics && <HoldTimeBreakdown stats={analytics.hold_time_stats} />}
+      {analytics && <PlayerBreakdown stats={analytics.player_stats} />}
       {message && <p className="muted small">{message}</p>}
       {loading && <p className="muted">Loading predictions…</p>}
       <div className="predList">

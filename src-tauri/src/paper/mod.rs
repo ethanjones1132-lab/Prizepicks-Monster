@@ -160,6 +160,14 @@ pub struct PaperAnalytics {
     /// Buckets with no decided lots are still emitted (zeros) so the table
     /// layout doesn't shift as the user's history grows.
     pub hold_time_stats: Vec<PaperHoldTimeStats>,
+    /// Per-player performance breakdown. The `player` field is the player
+    /// name extracted from the lot's `title` (`"<name> Over|Under <line>
+    /// <stat>"` pattern), or `"Unknown"` when the title is empty /
+    /// unparseable. Sorted by `realized_pnl` DESC so the strongest players
+    /// surface first; ties broken alphabetically. Complements the
+    /// per-category, per-side, and per-hold-time views — per-player answers
+    /// "which players am I actually making money on?".
+    pub player_stats: Vec<PaperPlayerStats>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -252,6 +260,137 @@ impl PaperSideStats {
             roi_pct: 0.0,
         }
     }
+}
+
+/// Extract the player name from a paper-trade `title` field. PrizePicks
+/// titles follow the canonical pattern `"<Player Name> <Over|Under> <line>
+/// <stat>"` (e.g. `"Josh Allen Over 275.5 passing yards"`). We split on
+/// the first `" Over "` or `" Under "` (case-insensitive, with surrounding
+/// whitespace) and return the trimmed prefix. When the title is empty,
+/// contains no separator, or the prefix is empty/whitespace after trimming,
+/// the lot is bucketed under `"Unknown"` so we never silently drop it.
+///
+/// The parser is intentionally defensive — a malformed title routes to
+/// `Unknown` rather than throwing or returning an empty string, so the
+/// breakdown table always renders for the user.
+fn extract_player_name(lot: &PaperLot) -> String {
+    let trimmed = lot.title.trim();
+    if trimmed.is_empty() {
+        return "Unknown".to_string();
+    }
+    let lower = trimmed.to_lowercase();
+    // Find the earliest occurrence of " over " or " under " so the player
+    // name covers any multi-word surname before the side keyword.
+    let over_idx = lower.find(" over ").map(|i| i + 1); // points to the 'o' of "over"
+    let under_idx = lower.find(" under ").map(|i| i + 1);
+    let cut = match (over_idx, under_idx) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => return "Unknown".to_string(),
+    };
+    let prefix = trimmed[..cut.unwrap()].trim();
+    if prefix.is_empty() {
+        "Unknown".to_string()
+    } else {
+        prefix.to_string()
+    }
+}
+
+/// Performance breakdown for a single player. The `player` field is the
+/// extracted name (from the lot's `title`), or `"Unknown"` when the title
+/// is empty / unparseable. Mirrors `PaperCategoryStats` /
+/// `PaperSideStats` but groups by player so the user can see "which
+/// players am I actually making money on?" — the answer is usually not
+/// obvious from the aggregate metrics alone. Sorted by `realized_pnl` DESC
+/// so the strongest players surface first; ties broken alphabetically.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperPlayerStats {
+    /// Player name extracted from the lot's `title`. `"Unknown"` when
+    /// the title is empty or doesn't match the expected `<name> Over|Under
+    /// <line> <stat>` pattern.
+    pub player: String,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperPlayerStats {
+    fn new(player: String) -> Self {
+        Self {
+            player,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
+/// Bucket closed + open lots by extracted player name and compute
+/// per-player stats. Lots with empty / unparseable titles are bucketed
+/// under `"Unknown"` so we never silently drop a lot. Output is sorted by
+/// `realized_pnl` DESC, ties broken alphabetically. This complements the
+/// per-category, per-side, and per-hold-time views — per-player answers
+/// "which players am I making money on?" (most prop users have a strong
+/// opinion on a small set of players they watch more closely than others).
+fn compute_player_stats(lots: &[PaperLot]) -> Vec<PaperPlayerStats> {
+    use std::collections::BTreeMap;
+
+    let mut buckets: BTreeMap<String, PaperPlayerStats> = BTreeMap::new();
+    for l in lots {
+        let key = extract_player_name(l);
+        let entry = buckets
+            .entry(key.clone())
+            .or_insert_with(|| PaperPlayerStats::new(key));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            // Open lots: count exposure but not realized PnL.
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+    }
+
+    let mut out: Vec<PaperPlayerStats> = buckets.into_values().collect();
+    for s in out.iter_mut() {
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+    }
+    // Sort: realized_pnl DESC, then player ASC for ties. Stable so the
+    // BTreeMap-ordering above doesn't matter.
+    out.sort_by(|a, b| {
+        b.realized_pnl
+            .partial_cmp(&a.realized_pnl)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.player.cmp(&b.player))
+    });
+    out
 }
 
 /// Per-window equity change for the paper-trading summary card. `pnl_dollars`
@@ -1387,6 +1526,7 @@ pub async fn get_analytics(
     let category_stats = compute_category_stats(&all);
     let side_stats = compute_side_stats(&all);
     let hold_time_stats = compute_hold_time_stats(&all);
+    let player_stats = compute_player_stats(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -1421,6 +1561,7 @@ pub async fn get_analytics(
         category_stats,
         side_stats,
         hold_time_stats,
+        player_stats,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -2603,5 +2744,205 @@ mod tests {
         let stats = compute_hold_time_stats(&lots);
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].bucket, "multi_day");
+    }
+
+    // ── extract_player_name tests ─────────────────────────────────
+
+    /// Helper: build a `PaperLot` with a free-form title. Most other
+    /// helpers hardcode `title = "T"`, so these tests need to vary the
+    /// title to exercise the player-name parser.
+    fn titled_lot(title: &str) -> PaperLot {
+        PaperLot {
+            id: format!("t-{}", title.len()),
+            ticker: "TEST".to_string(),
+            title: title.to_string(),
+            category: "Points".to_string(),
+            side: "YES".to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: 1.0,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: Some("2026-01-01T01:00:00Z".to_string()),
+            closed_price_cents: Some(100.0),
+            realized_pnl: Some(1.0),
+            status: "Closed".to_string(),
+            settlement_result: Some("Win".to_string()),
+        }
+    }
+
+    #[test]
+    fn extract_player_over_separates_name() {
+        // Canonical "Over" form: player name lives before " Over ".
+        let l = titled_lot("Josh Allen Over 275.5 passing yards");
+        assert_eq!(extract_player_name(&l), "Josh Allen");
+    }
+
+    #[test]
+    fn extract_player_under_separates_name() {
+        // "Under" is also a valid separator.
+        let l = titled_lot("LeBron James Under 25.5 points");
+        assert_eq!(extract_player_name(&l), "LeBron James");
+    }
+
+    #[test]
+    fn extract_player_case_insensitive_side() {
+        // Side keyword can appear in any case.
+        let l = titled_lot("patrick mahomes OVER 285.5 pass yds");
+        assert_eq!(extract_player_name(&l), "patrick mahomes");
+    }
+
+    #[test]
+    fn extract_player_unknown_for_empty_title() {
+        let l = titled_lot("");
+        assert_eq!(extract_player_name(&l), "Unknown");
+    }
+
+    #[test]
+    fn extract_player_unknown_for_whitespace_title() {
+        let l = titled_lot("   ");
+        assert_eq!(extract_player_name(&l), "Unknown");
+    }
+
+    #[test]
+    fn extract_player_unknown_when_no_separator() {
+        // No " Over " / " Under " keyword → fall back to Unknown rather
+        // than returning the whole raw title.
+        let l = titled_lot("Travis Kelce receiving yards");
+        assert_eq!(extract_player_name(&l), "Unknown");
+    }
+
+    #[test]
+    fn extract_player_strips_leading_trailing_whitespace() {
+        let l = titled_lot("  Stephen Curry   Over  4.5 threes ");
+        // The prefix is "  Stephen Curry  " → after trim → "Stephen Curry".
+        assert_eq!(extract_player_name(&l), "Stephen Curry");
+    }
+
+    // ── compute_player_stats tests ────────────────────────────────
+
+    #[test]
+    fn player_stats_empty_input_returns_empty() {
+        let lots: Vec<PaperLot> = vec![];
+        assert!(compute_player_stats(&lots).is_empty());
+    }
+
+    #[test]
+    fn player_stats_buckets_by_extracted_name() {
+        // Two lots for "Josh Allen" and one for "LeBron James". Each
+        // player should be its own bucket with the right totals.
+        let lots = vec![
+            titled_lot("Josh Allen Over 275.5 passing yards"),
+            titled_lot("Josh Allen Under 0.5 interceptions"),
+            titled_lot("LeBron James Over 25.5 points"),
+        ];
+        let stats = compute_player_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        // All three lots are wins (pnl=1.0), so any sort order is fine —
+        // the realized_pnl tiebreaker picks alphabetical. Find each
+        // player and verify the totals.
+        let allen = stats.iter().find(|s| s.player == "Josh Allen").unwrap();
+        assert_eq!(allen.total_trades, 2);
+        assert_eq!(allen.wins, 2);
+        assert_eq!(allen.losses, 0);
+        assert!((allen.win_rate - 100.0).abs() < 1e-9);
+        let lebron = stats.iter().find(|s| s.player == "LeBron James").unwrap();
+        assert_eq!(lebron.total_trades, 1);
+        assert_eq!(lebron.wins, 1);
+    }
+
+    #[test]
+    fn player_stats_sort_by_pnl_desc_with_alphabetical_tiebreak() {
+        // Three players, distinct realized_pnl — sort puts highest first.
+        // Two players share a pnl to verify alphabetical tiebreak.
+        let mut a = titled_lot("Alpha Player Over 1.0");
+        a.realized_pnl = Some(5.0);
+        a.settlement_result = Some("Win".to_string());
+        let mut b = titled_lot("Bravo Player Over 1.0");
+        b.realized_pnl = Some(10.0);
+        b.settlement_result = Some("Win".to_string());
+        let mut c = titled_lot("Charlie Player Over 1.0");
+        c.realized_pnl = Some(5.0);
+        c.settlement_result = Some("Win".to_string());
+        let stats = compute_player_stats(&[a, b, c]);
+        assert_eq!(stats.len(), 3);
+        // Bravo (10) > Alpha/Charlie (5) > ... Alpha < Charlie alphabetically
+        assert_eq!(stats[0].player, "Bravo Player");
+        assert_eq!(stats[1].player, "Alpha Player");
+        assert_eq!(stats[2].player, "Charlie Player");
+    }
+
+    #[test]
+    fn player_stats_unknown_bucket_for_unparseable_titles() {
+        // Lots with no " Over " / " Under " keyword all fall under
+        // "Unknown" so the user can see they exist in the journal.
+        let mut no_sep = titled_lot("Travis Kelce receiving yards");
+        no_sep.realized_pnl = Some(2.0);
+        no_sep.settlement_result = Some("Win".to_string());
+        let stats = compute_player_stats(&[no_sep]);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].player, "Unknown");
+        assert_eq!(stats[0].wins, 1);
+    }
+
+    #[test]
+    fn player_stats_open_lot_routed_to_correct_player_with_zero_pnl() {
+        // Open lots count toward `open_trades` + `total_trades` but
+        // contribute nothing to wins/losses/realized_pnl.
+        let mut open = titled_lot("Josh Allen Over 275.5 passing yards");
+        open.status = "Open".to_string();
+        open.closed_at = None;
+        open.closed_price_cents = None;
+        open.realized_pnl = None;
+        open.settlement_result = None;
+        let stats = compute_player_stats(&[open]);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].player, "Josh Allen");
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].open_trades, 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn player_stats_win_rate_and_roi_computed() {
+        // 2 wins + 1 loss for the same player → win_rate = 2/3 ≈ 66.67%,
+        // realized_pnl = 5 - 3 = 2, roi = 2 / (5+5+5) * 100 ≈ 13.33%.
+        let mut w1 = titled_lot("Player A Over 1.0");
+        w1.realized_pnl = Some(5.0);
+        w1.stake_dollars = 5.0;
+        w1.settlement_result = Some("Win".to_string());
+        let mut w2 = titled_lot("Player A Over 1.0");
+        w2.realized_pnl = Some(5.0);
+        w2.stake_dollars = 5.0;
+        w2.settlement_result = Some("Win".to_string());
+        let mut l1 = titled_lot("Player A Under 1.0");
+        l1.realized_pnl = Some(-3.0);
+        l1.stake_dollars = 5.0;
+        l1.settlement_result = Some("Loss".to_string());
+        let stats = compute_player_stats(&[w1, w2, l1]);
+        assert_eq!(stats.len(), 1);
+        assert!((stats[0].win_rate - (2.0 / 3.0 * 100.0)).abs() < 1e-6);
+        assert!((stats[0].realized_pnl - 7.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 15.0).abs() < 1e-9);
+        assert!((stats[0].roi_pct - (7.0 / 15.0 * 100.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn player_stats_push_contributes_stake_but_not_win_or_loss() {
+        // pnl == 0 → stake counts, win_rate stays 0/0 → 0%, PnL 0.
+        let mut p = titled_lot("Push Player Over 1.0");
+        p.realized_pnl = Some(0.0);
+        p.stake_dollars = 5.0;
+        p.settlement_result = Some("Push".to_string());
+        let stats = compute_player_stats(&[p]);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].win_rate - 0.0).abs() < 1e-9);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 5.0).abs() < 1e-9);
     }
 }
