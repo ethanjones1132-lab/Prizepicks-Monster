@@ -4,6 +4,7 @@ import type {
   PaperAnalytics,
   PaperCategoryStats,
   PaperEquitySnapshot,
+  PaperHoldTimeStats,
   PaperSideStats,
   PrizePicksPrediction,
   SessionDelta,
@@ -196,6 +197,91 @@ function SideBreakdown({ stats }: { stats: PaperSideStats[] }) {
                 </td>
                 <td className={pnlPositive ? 'pos' : 'neg'}>
                   {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Format a hold duration in seconds into a short human-readable string
+ * for the avg/median cells. Hours roll into days for legibility. Sub-second
+ * values render as "0s" rather than "0.0s" to keep the row compact.
+ */
+function formatHoldSeconds(secs: number): string {
+  if (!Number.isFinite(secs) || secs <= 0) return '—';
+  if (secs < 60) return `${secs.toFixed(0)}s`;
+  if (secs < 3600) return `${(secs / 60).toFixed(0)}m`;
+  if (secs < 86_400) return `${(secs / 3600).toFixed(1)}h`;
+  return `${(secs / 86_400).toFixed(1)}d`;
+}
+
+/**
+ * Per-hold-time-bucket performance table. Mirrors the layout of
+ * `CategoryBreakdown` and `SideBreakdown` so all three read as siblings.
+ * Shows the same five metrics (Hold time / Trades / Win % / PnL / ROI) plus
+ * an avg+median hold duration cell. The backend emits buckets in
+ * chronological order (Intraday → SameDay → MultiDay → Long → unknown),
+ * so the table renders as a stable "fastest to slowest" ladder.
+ */
+function HoldTimeBreakdown({ stats }: { stats: PaperHoldTimeStats[] }) {
+  if (!stats || stats.length === 0) {
+    return (
+      <div className="holdTimeBreakdown empty">
+        <span className="muted small">
+          No hold-time data yet — place or settle paper trades to populate per-duration performance.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="holdTimeBreakdown">
+      <div className="holdTimeBreakdownHeader">
+        <span className="muted small">Per-hold-time performance (Intraday → Long)</span>
+        <span className="muted small">{stats.length} {stats.length === 1 ? 'bucket' : 'buckets'}</span>
+      </div>
+      <table className="holdTimeTable">
+        <thead>
+          <tr>
+            <th scope="col">Hold time</th>
+            <th scope="col">Trades</th>
+            <th scope="col">Win %</th>
+            <th scope="col">PnL</th>
+            <th scope="col">ROI</th>
+            <th scope="col">Avg / Median hold</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stats.map((s) => {
+            const pnlPositive = s.realized_pnl >= 0;
+            const decided = s.wins + s.losses;
+            const showHold = s.avg_hold_seconds > 0 || s.median_hold_seconds > 0;
+            return (
+              <tr key={s.bucket}>
+                <td>
+                  <strong>{s.bucket_label}</strong>
+                  {s.open_trades > 0 && (
+                    <span className="muted small holdTimeOpenTag" title={`${s.open_trades} open lot(s)`}>
+                      {' '}+{s.open_trades} open
+                    </span>
+                  )}
+                </td>
+                <td>{s.total_trades}</td>
+                <td>{decided > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                <td className={pnlPositive ? 'pos' : 'neg'}>
+                  {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                </td>
+                <td className={pnlPositive ? 'pos' : 'neg'}>
+                  {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                </td>
+                <td className="muted small">
+                  {showHold
+                    ? `${formatHoldSeconds(s.avg_hold_seconds)} / ${formatHoldSeconds(s.median_hold_seconds)}`
+                    : '—'}
                 </td>
               </tr>
             );
@@ -414,6 +500,7 @@ export function PrizePicksPredictionsPanel() {
       <EquityCurve snapshots={filteredEquity} />
       {analytics && <CategoryBreakdown stats={analytics.category_stats} />}
       {analytics && <SideBreakdown stats={analytics.side_stats} />}
+      {analytics && <HoldTimeBreakdown stats={analytics.hold_time_stats} />}
       {message && <p className="muted small">{message}</p>}
       {loading && <p className="muted">Loading predictions…</p>}
       <div className="predList">

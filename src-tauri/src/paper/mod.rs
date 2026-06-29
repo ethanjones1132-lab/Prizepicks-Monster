@@ -153,6 +153,13 @@ pub struct PaperAnalytics {
     /// `realized_pnl` DESC so the strongest side surfaces first. Empty when
     /// no lots have been placed yet.
     pub side_stats: Vec<PaperSideStats>,
+    /// Per-hold-time-bucket performance breakdown. The 4 fixed buckets
+    /// (Intraday / Same day / Multi-day / Long) always appear in the result
+    /// vector in chronological order — not sorted by PnL — so the UI can
+    /// render a stable "fastest to slowest" ladder without resorting.
+    /// Buckets with no decided lots are still emitted (zeros) so the table
+    /// layout doesn't shift as the user's history grows.
+    pub hold_time_stats: Vec<PaperHoldTimeStats>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -464,6 +471,263 @@ fn compute_side_stats(lots: &[PaperLot]) -> Vec<PaperSideStats> {
             .partial_cmp(&a.realized_pnl)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.side.cmp(&b.side))
+    });
+    out
+}
+
+/// Hold-time bucket for a paper-trade lot. Determines the time window between
+/// `opened_at` and `closed_at`. Buckets are emitted in chronological order
+/// (fastest to slowest) by `compute_hold_time_stats` so the UI can render a
+/// stable "intraday → long" ladder without resorting. `Unknown` is used as
+/// a fallback when timestamps are missing or unparseable; the corresponding
+/// lots are still counted toward `total_trades` so the user can see they
+/// exist, but they contribute zero to win-rate and PnL.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum PaperHoldTimeBucket {
+    Intraday,
+    SameDay,
+    MultiDay,
+    Long,
+    Unknown,
+}
+
+impl PaperHoldTimeBucket {
+    /// All buckets in chronological order — the canonical render order.
+    const ALL: [PaperHoldTimeBucket; 5] = [
+        PaperHoldTimeBucket::Intraday,
+        PaperHoldTimeBucket::SameDay,
+        PaperHoldTimeBucket::MultiDay,
+        PaperHoldTimeBucket::Long,
+        PaperHoldTimeBucket::Unknown,
+    ];
+
+    /// Classify a hold duration in seconds into a bucket.
+    /// - Intraday:    `< 1h`    (≤ 3599s)
+    /// - SameDay:     `1h..24h`
+    /// - MultiDay:    `1d..7d`
+    /// - Long:        `> 7d`
+    /// - Unknown:     negative or NaN
+    fn from_seconds(secs: f64) -> Self {
+        if !secs.is_finite() || secs < 0.0 {
+            return PaperHoldTimeBucket::Unknown;
+        }
+        const ONE_HOUR: f64 = 3600.0;
+        const ONE_DAY: f64 = 86_400.0;
+        const SEVEN_DAYS: f64 = 604_800.0;
+        if secs < ONE_HOUR {
+            PaperHoldTimeBucket::Intraday
+        } else if secs < ONE_DAY {
+            PaperHoldTimeBucket::SameDay
+        } else if secs < SEVEN_DAYS {
+            PaperHoldTimeBucket::MultiDay
+        } else {
+            PaperHoldTimeBucket::Long
+        }
+    }
+
+    /// Human-readable label for the bucket — the value the UI displays.
+    pub fn as_label(&self) -> &'static str {
+        match self {
+            PaperHoldTimeBucket::Intraday => "Intraday (≤1h)",
+            PaperHoldTimeBucket::SameDay => "Same day (1-24h)",
+            PaperHoldTimeBucket::MultiDay => "Multi-day (1-7d)",
+            PaperHoldTimeBucket::Long => "Long (>7d)",
+            PaperHoldTimeBucket::Unknown => "Unknown",
+        }
+    }
+}
+
+/// Performance breakdown for a single hold-time bucket. Mirrors
+/// `PaperCategoryStats` and `PaperSideStats` but groups by how long the lot
+/// was held (from `opened_at` to `closed_at`) instead of stat category or
+/// contract side. Helps users answer "am I better at quick in-game picks
+/// or long-shot futures?" — the answer is usually not obvious from the
+/// aggregate metrics alone. The 4 fixed buckets always appear in the
+/// result vector in chronological order (Intraday → SameDay → MultiDay →
+/// Long), with an optional trailing `Unknown` bucket when unparseable
+/// timestamps exist.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperHoldTimeStats {
+    /// Bucket identifier — matches `PaperHoldTimeBucket` enum tags
+    /// (`"intraday" | "same_day" | "multi_day" | "long" | "unknown"`).
+    pub bucket: String,
+    /// Human-readable label, e.g. `"Intraday (≤1h)"`. Computed from the
+    /// bucket enum so the UI doesn't have to hard-code the mapping.
+    pub bucket_label: String,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+    /// Mean hold duration for decided (closed) lots in this bucket, in
+    /// seconds. `0.0` when no closed lots are in the bucket. Lets the user
+    /// sanity-check the bucket assignment (e.g. a "Same day" bucket
+    /// averaging 30 minutes suggests mostly misclassified intraday lots).
+    pub avg_hold_seconds: f64,
+    /// Median hold duration in seconds, `0.0` when no closed lots. More
+    /// robust than `avg_hold_seconds` to outlier long-held lots. Returns
+    /// `0.0` for empty input (no special `Option` needed; `0.0` is also
+    /// the natural "no data" signal for both metrics).
+    pub median_hold_seconds: f64,
+}
+
+impl PaperHoldTimeStats {
+    fn new(bucket: PaperHoldTimeBucket) -> Self {
+        Self {
+            bucket: bucket.as_label_short(),
+            bucket_label: bucket.as_label().to_string(),
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+            avg_hold_seconds: 0.0,
+            median_hold_seconds: 0.0,
+        }
+    }
+}
+
+/// Short, snake_case identifier for the bucket. Matches the `serde`
+/// representation and is stable across versions.
+trait BucketLabel {
+    fn as_label_short(&self) -> String;
+}
+
+impl BucketLabel for PaperHoldTimeBucket {
+    fn as_label_short(&self) -> String {
+        match self {
+            PaperHoldTimeBucket::Intraday => "intraday".to_string(),
+            PaperHoldTimeBucket::SameDay => "same_day".to_string(),
+            PaperHoldTimeBucket::MultiDay => "multi_day".to_string(),
+            PaperHoldTimeBucket::Long => "long".to_string(),
+            PaperHoldTimeBucket::Unknown => "unknown".to_string(),
+        }
+    }
+}
+
+/// Parse a lot's open/close timestamps into a hold-time duration in seconds.
+/// Returns `None` when either timestamp is missing, unparseable, or the
+/// duration is non-positive. The `None` case is treated as an `Unknown`
+/// bucket by the caller (we still want to count the lot, but not make a
+/// guess at the bucket).
+fn lot_hold_seconds(lot: &PaperLot) -> Option<f64> {
+    let open = chrono::DateTime::parse_from_rfc3339(&lot.opened_at).ok()?;
+    let closed = lot
+        .closed_at
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())?;
+    let dur = closed.signed_duration_since(open);
+    let secs = dur.num_milliseconds() as f64 / 1000.0;
+    if secs.is_finite() && secs >= 0.0 {
+        Some(secs)
+    } else {
+        None
+    }
+}
+
+/// Bucket closed + open lots by how long they were held and compute
+/// per-bucket stats. Lots with unparseable open/close timestamps fall into
+/// the `Unknown` bucket so they are still counted in `total_trades` but
+/// don't pollute the time-bucketed numbers. The result is emitted in
+/// chronological bucket order (Intraday → SameDay → MultiDay → Long →
+/// Unknown) so the UI can render a stable ladder without resorting.
+///
+/// Open lots contribute to `open_trades` and `total_trades` but are
+/// excluded from `wins` / `losses` / `realized_pnl` / `total_staked` /
+/// `avg_hold_seconds` / `median_hold_seconds` (they haven't been decided
+/// yet). Pushes (realized_pnl == 0) contribute to `total_staked` and the
+/// hold-duration averages but not to wins or losses.
+fn compute_hold_time_stats(lots: &[PaperLot]) -> Vec<PaperHoldTimeStats> {
+    use std::collections::BTreeMap;
+
+    let mut buckets: BTreeMap<PaperHoldTimeBucket, PaperHoldTimeStats> = BTreeMap::new();
+    // Per-bucket hold-duration samples for closed lots (used for median).
+    let mut hold_samples: std::collections::BTreeMap<PaperHoldTimeBucket, Vec<f64>> =
+        BTreeMap::new();
+    let mut hold_sum: std::collections::BTreeMap<PaperHoldTimeBucket, f64> = BTreeMap::new();
+    let mut hold_count: std::collections::BTreeMap<PaperHoldTimeBucket, u32> = BTreeMap::new();
+
+    for l in lots {
+        let bucket = match lot_hold_seconds(l) {
+            Some(secs) => PaperHoldTimeBucket::from_seconds(secs),
+            None => PaperHoldTimeBucket::Unknown,
+        };
+        let entry = buckets
+            .entry(bucket)
+            .or_insert_with(|| PaperHoldTimeStats::new(bucket));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            // No realized PnL or hold duration for open lots.
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+
+        // Track hold duration for closed (decided) lots only. Pushed lots
+        // (pnl == 0) still count toward the hold-duration sample — they
+        // were held for some real duration, we just don't know the result.
+        if let Some(secs) = lot_hold_seconds(l) {
+            *hold_sum.entry(bucket).or_insert(0.0) += secs;
+            *hold_count.entry(bucket).or_insert(0) += 1;
+            hold_samples.entry(bucket).or_default().push(secs);
+        }
+    }
+
+    // Finalize the per-bucket aggregates (win_rate, ROI, avg/median).
+    let mut out: Vec<PaperHoldTimeStats> = buckets.into_values().collect();
+    for s in out.iter_mut() {
+        let bucket = PaperHoldTimeBucket::ALL
+            .iter()
+            .copied()
+            .find(|b| b.as_label().to_string() == s.bucket_label)
+            .unwrap_or(PaperHoldTimeBucket::Unknown);
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+        let n = hold_count.get(&bucket).copied().unwrap_or(0);
+        if n > 0 {
+            s.avg_hold_seconds = hold_sum.get(&bucket).copied().unwrap_or(0.0) / n as f64;
+            let mut samples = hold_samples.get(&bucket).cloned().unwrap_or_default();
+            samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            s.median_hold_seconds = if samples.is_empty() {
+                0.0
+            } else if samples.len() % 2 == 0 {
+                (samples[samples.len() / 2 - 1] + samples[samples.len() / 2]) / 2.0
+            } else {
+                samples[samples.len() / 2]
+            };
+        }
+    }
+    // Chronological order. `PaperHoldTimeBucket::ALL` is in canonical order;
+    // sort by the bucket enum's position in that array so the result is
+    // stable regardless of the BTreeMap keying.
+    out.sort_by_key(|s| {
+        PaperHoldTimeBucket::ALL
+            .iter()
+            .position(|b| b.as_label() == s.bucket_label)
+            .unwrap_or(usize::MAX)
     });
     out
 }
@@ -1122,6 +1386,7 @@ pub async fn get_analytics(
     let current_streak = compute_current_streak(&all);
     let category_stats = compute_category_stats(&all);
     let side_stats = compute_side_stats(&all);
+    let hold_time_stats = compute_hold_time_stats(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -1155,6 +1420,7 @@ pub async fn get_analytics(
         current_streak,
         category_stats,
         side_stats,
+        hold_time_stats,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -2055,5 +2321,287 @@ mod tests {
         let pnl = compute_session_pnl(&snaps, 10_500.0, &now);
         let today = pnl.today.expect("valid baseline survives");
         assert!((today.baseline_equity - 10_200.0).abs() < 1e-9);
+    }
+
+    // ── compute_hold_time_stats tests ────────────────────────────
+
+    /// Helper: closed lot with explicit open/close timestamps (RFC 3339) +
+    /// category + side + stake + pnl. Used by hold-time tests where the
+    /// hold duration (closed_at - opened_at) drives the bucketing.
+    fn closed_lot_at(
+        opened_at: &str,
+        closed_at: &str,
+        side: &str,
+        stake: f64,
+        pnl: f64,
+    ) -> PaperLot {
+        PaperLot {
+            id: format!("hold-{side}-{pnl}-{opened_at}"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: "Points".to_string(),
+            side: side.to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: stake,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: opened_at.to_string(),
+            closed_at: Some(closed_at.to_string()),
+            closed_price_cents: Some(if pnl >= 0.0 { 100.0 } else { 0.0 }),
+            realized_pnl: Some(pnl),
+            status: "Closed".to_string(),
+            settlement_result: Some(
+                if pnl > 0.0 {
+                    "Win"
+                } else if pnl < 0.0 {
+                    "Loss"
+                } else {
+                    "Push"
+                }
+                .to_string(),
+            ),
+        }
+    }
+
+    /// Open lot with explicit opened_at, no closed_at. Goes to the bucket
+    /// matching its hold-so-far (which is undefined until close), so we
+    /// pin `opened_at = now` to keep the test deterministic.
+    fn open_lot_at(opened_at: &str) -> PaperLot {
+        PaperLot {
+            id: format!("hold-open-{opened_at}"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: "Points".to_string(),
+            side: "Over".to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: 5.0,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: opened_at.to_string(),
+            closed_at: None,
+            closed_price_cents: None,
+            realized_pnl: None,
+            status: "Open".to_string(),
+            settlement_result: None,
+        }
+    }
+
+    #[test]
+    fn hold_time_stats_empty_input_returns_empty_vec() {
+        let stats = compute_hold_time_stats(&[]);
+        assert!(stats.is_empty());
+    }
+
+    #[test]
+    fn hold_time_stats_classifies_into_four_canonical_buckets() {
+        // One lot in each canonical bucket. closed_at - opened_at drives
+        // the bucket: 30 min → Intraday; 5h → SameDay; 3d → MultiDay; 14d → Long.
+        let lots = vec![
+            closed_lot_at("2026-01-01T10:00:00Z", "2026-01-01T10:30:00Z", "YES", 5.0, 1.0),
+            closed_lot_at("2026-01-01T10:00:00Z", "2026-01-01T15:00:00Z", "YES", 5.0, -1.0),
+            closed_lot_at("2026-01-01T10:00:00Z", "2026-01-04T10:00:00Z", "YES", 5.0, 2.0),
+            closed_lot_at("2026-01-01T10:00:00Z", "2026-01-15T10:00:00Z", "YES", 5.0, -2.0),
+        ];
+        let stats = compute_hold_time_stats(&lots);
+        // 4 buckets, all non-empty
+        assert_eq!(stats.len(), 4);
+        // Chronological order: Intraday → SameDay → MultiDay → Long
+        assert_eq!(stats[0].bucket, "intraday");
+        assert_eq!(stats[1].bucket, "same_day");
+        assert_eq!(stats[2].bucket, "multi_day");
+        assert_eq!(stats[3].bucket, "long");
+        // Bucket labels include the human-readable window
+        assert!(stats[0].bucket_label.contains("1h"));
+        assert!(stats[1].bucket_label.contains("24h"));
+        assert!(stats[2].bucket_label.contains("7d"));
+        assert!(stats[3].bucket_label.contains("7d"));
+        // Win/loss attribution per bucket
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 0);
+        assert_eq!(stats[1].wins, 0);
+        assert_eq!(stats[1].losses, 1);
+        assert_eq!(stats[2].wins, 1);
+        assert_eq!(stats[2].losses, 0);
+        assert_eq!(stats[3].wins, 0);
+        assert_eq!(stats[3].losses, 1);
+        // PnL sums
+        assert!((stats[0].realized_pnl - 1.0).abs() < 1e-9);
+        assert!((stats[1].realized_pnl - -1.0).abs() < 1e-9);
+        assert!((stats[2].realized_pnl - 2.0).abs() < 1e-9);
+        assert!((stats[3].realized_pnl - -2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_bucket_boundaries_are_exclusive_at_upper_end() {
+        // 1h exactly → SameDay (boundary, not Intraday)
+        // 24h exactly → MultiDay (boundary, not SameDay)
+        // 7d exactly → Long (boundary, not MultiDay)
+        let lots = vec![
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z", "YES", 1.0, 1.0),
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", "YES", 1.0, 1.0),
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-08T00:00:00Z", "YES", 1.0, 1.0),
+        ];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].bucket, "same_day");
+        assert_eq!(stats[1].bucket, "multi_day");
+        assert_eq!(stats[2].bucket, "long");
+    }
+
+    #[test]
+    fn hold_time_stats_zero_hold_is_intraday() {
+        // opened_at == closed_at → 0 seconds → Intraday. Sanity check that
+        // zero hold time doesn't accidentally hit the unknown bucket.
+        let lots = vec![closed_lot_at("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "YES", 1.0, 1.0)];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "intraday");
+        assert!((stats[0].avg_hold_seconds - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_negative_hold_falls_into_unknown() {
+        // closed_at < opened_at is impossible in practice, but the helper
+        // must defensively route these to Unknown so the canonical 4 buckets
+        // stay meaningful.
+        let lots = vec![closed_lot_at("2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z", "YES", 1.0, 1.0)];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "unknown");
+        // PnL still recorded (bucket routing is about display, not aggregation)
+        assert!((stats[0].realized_pnl - 1.0).abs() < 1e-9);
+        // No hold-duration stats because the hold is unparseable
+        assert!((stats[0].avg_hold_seconds - 0.0).abs() < 1e-9);
+        assert!((stats[0].median_hold_seconds - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_unparseable_timestamps_fall_into_unknown() {
+        // Garbage timestamps → lot still counted, bucketed under Unknown.
+        // The lot is "Closed" status with realized_pnl = Some, so it should
+        // contribute to wins/losses/PnL/total_staked, but NOT to any
+        // time-bucketed metrics.
+        let mut bad = closed_lot_at("not-a-time", "2026-01-01T10:00:00Z", "YES", 5.0, 3.0);
+        bad.opened_at = "not-a-time".to_string();
+        let stats = compute_hold_time_stats(&[bad]);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "unknown");
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].wins, 1);
+        assert!((stats[0].realized_pnl - 3.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_open_lot_counted_in_open_trades_only() {
+        // Open lot (closed_at = None) → the helper can't compute hold
+        // duration, so it falls into the Unknown bucket. The lot is still
+        // counted in `total_trades` and `open_trades` but is excluded from
+        // wins/losses/PnL/staked/hold-duration. Putting open lots in a
+        // time-bucketed display would be misleading (the hold is still
+        // ticking up) — Unknown is the honest answer.
+        let lots = vec![open_lot_at("2026-01-01T10:00:00Z")];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "unknown");
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].open_trades, 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_push_lot_contributes_stake_but_no_win_or_loss() {
+        // Push: realized_pnl = 0. Stakes toward total_staked (ROI denom)
+        // and hold-duration samples, but does NOT count as win or loss.
+        let lots = vec![closed_lot_at(
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:30:00Z",
+            "YES",
+            10.0,
+            0.0,
+        )];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "intraday");
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 10.0).abs() < 1e-9);
+        // ROI = 0/10 * 100 = 0
+        assert!((stats[0].roi_pct - 0.0).abs() < 1e-9);
+        // Win rate undefined (no decided lots) → 0
+        assert!((stats[0].win_rate - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_avg_and_median_hold_seconds() {
+        // 3 intraday lots with hold durations 600s, 1200s, 1800s.
+        // avg = 1200, median = 1200.
+        let lots = vec![
+            closed_lot_at("2026-01-01T10:00:00Z", "2026-01-01T10:10:00Z", "YES", 1.0, 1.0),
+            closed_lot_at("2026-01-01T10:00:00Z", "2026-01-01T10:20:00Z", "YES", 1.0, 1.0),
+            closed_lot_at("2026-01-01T10:00:00Z", "2026-01-01T10:30:00Z", "YES", 1.0, 1.0),
+        ];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert!((stats[0].avg_hold_seconds - 1200.0).abs() < 1e-9);
+        assert!((stats[0].median_hold_seconds - 1200.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_median_with_even_sample_count() {
+        // 4 intraday lots: 100, 200, 300, 400 → median = (200 + 300) / 2 = 250.
+        let lots = vec![
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-01T00:01:40Z", "YES", 1.0, 1.0),
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-01T00:03:20Z", "YES", 1.0, 1.0),
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-01T00:05:00Z", "YES", 1.0, 1.0),
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-01T00:06:40Z", "YES", 1.0, 1.0),
+        ];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        // 100, 200, 300, 400 → median = (200+300)/2 = 250
+        assert!((stats[0].median_hold_seconds - 250.0).abs() < 1e-9);
+        // avg = (100 + 200 + 300 + 400) / 4 = 250 too
+        assert!((stats[0].avg_hold_seconds - 250.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_win_rate_and_roi_computed_per_bucket() {
+        // 1 win + 1 loss in MultiDay → win_rate 50%, PnL net 0, ROI 0%.
+        let lots = vec![
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-03T00:00:00Z", "YES", 10.0, 5.0),
+            closed_lot_at("2026-01-01T00:00:00Z", "2026-01-03T00:00:00Z", "YES", 10.0, -5.0),
+        ];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "multi_day");
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 1);
+        assert!((stats[0].win_rate - 50.0).abs() < 1e-9);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 20.0).abs() < 1e-9);
+        assert!((stats[0].roi_pct - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hold_time_stats_omits_buckets_with_no_lots() {
+        // Only MultiDay populated → no Intraday / SameDay / Long / Unknown
+        // entries in the result. The result vector only contains buckets
+        // that have at least one lot.
+        let lots = vec![closed_lot_at(
+            "2026-01-01T00:00:00Z",
+            "2026-01-03T00:00:00Z",
+            "YES",
+            1.0,
+            1.0,
+        )];
+        let stats = compute_hold_time_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "multi_day");
     }
 }

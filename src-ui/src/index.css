@@ -1105,6 +1105,76 @@ button {
   margin-left: 4px;
 }
 
+/* Per-hold-time breakdown — mirrors the .sideBreakdown / .categoryBreakdown
+ * styling so all three performance tables read as siblings. Adds an extra
+ * column ("Avg / Median hold") rendered as muted small text. */
+.holdTimeBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.holdTimeBreakdown.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.holdTimeBreakdownHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.holdTimeTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.holdTimeTable th,
+.holdTimeTable td {
+  text-align: left;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.holdTimeTable th {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+}
+
+.holdTimeTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.holdTimeTable td.pos {
+  color: var(--pos, #3fbf7f);
+}
+
+.holdTimeTable td.neg {
+  color: var(--neg, #d04848);
+}
+
+.holdTimeTable td.pos,
+.holdTimeTable td.neg {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.holdTimeTable td:first-child strong {
+  font-size: 0.95rem;
+}
+
+.holdTimeOpenTag {
+  font-weight: 400;
+  margin-left: 4px;
+}
+
 .predList {
   display: grid;
   gap: 12px;

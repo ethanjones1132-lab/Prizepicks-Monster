@@ -206,6 +206,32 @@ export function paperSideLabel(side: string): string {
   return side;
 }
 
+/**
+ * Per-hold-time-bucket performance breakdown. Mirrors `PaperCategoryStats`
+ * and `PaperSideStats` but groups by how long the lot was held
+ * (`closed_at - opened_at`) instead of stat category or contract side.
+ * The backend emits the 4 canonical buckets in chronological order
+ * (Intraday → SameDay → MultiDay → Long) plus a trailing `unknown` bucket
+ * when open lots or unparseable timestamps exist. `avg_hold_seconds` and
+ * `median_hold_seconds` are 0 when the bucket has no closed lots.
+ */
+export interface PaperHoldTimeStats {
+  /** Snake-case bucket identifier: `intraday` | `same_day` | `multi_day` | `long` | `unknown`. */
+  bucket: string;
+  /** Human-readable label, e.g. `"Intraday (≤1h)"`. The UI should prefer this for display. */
+  bucket_label: string;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+  avg_hold_seconds: number;
+  median_hold_seconds: number;
+}
+
 export interface PaperAnalytics {
   starting_balance: number;
   cash_balance: number;
@@ -228,6 +254,8 @@ export interface PaperAnalytics {
   current_streak: PaperStreak;
   category_stats: PaperCategoryStats[];
   side_stats: PaperSideStats[];
+  /** Per-hold-time-bucket performance breakdown. */
+  hold_time_stats: PaperHoldTimeStats[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;
