@@ -6,6 +6,7 @@ import type {
   PaperEquitySnapshot,
   PaperSideStats,
   PrizePicksPrediction,
+  SessionDelta,
 } from '../types/prizepicks';
 import { paperSideLabel } from '../types/prizepicks';
 import { prizepicksBetWon } from '../services/prizepicks';
@@ -32,6 +33,39 @@ function StreakChip({ analytics }: { analytics: PaperAnalytics }) {
     <span className={`streakChip ${tint}`} aria-label={`${label}: ${length}`} title={label}>
       {kind}
       {length}
+    </span>
+  );
+}
+
+/**
+ * Render a single session PnL delta (today / 7d) as a tinted dollar+percent
+ * chip. A `null` delta renders the muted `—` placeholder so the summary
+ * layout doesn't shift when an account is too new to have a baseline.
+ * The tooltip includes the absolute baseline equity + its timestamp so a
+ * user can see exactly which snapshot the delta was computed from.
+ */
+function SessionDeltaChip({ delta }: { delta: SessionDelta | null }) {
+  if (!delta) {
+    return (
+      <span
+        className="sessionDeltaChip muted"
+        aria-label="No baseline snapshot yet"
+        title="No baseline snapshot yet — place a paper trade to seed the equity history."
+      >
+        —
+      </span>
+    );
+  }
+  const sign = delta.pnl_dollars >= 0 ? '+' : '−';
+  const tint = delta.pnl_dollars >= 0 ? 'pos' : 'neg';
+  const dollars = `${sign}$${Math.abs(delta.pnl_dollars).toFixed(2)}`;
+  const pct = `${delta.pnl_pct >= 0 ? '+' : ''}${delta.pnl_pct.toFixed(1)}%`;
+  const tooltip =
+    `Baseline: $${delta.baseline_equity.toFixed(2)} at ${delta.baseline_ts}\n` +
+    `Δ = $${delta.pnl_dollars.toFixed(2)} (${delta.pnl_pct.toFixed(2)}%)`;
+  return (
+    <span className={`sessionDeltaChip ${tint}`} title={tooltip} aria-label={tooltip}>
+      {dollars} <span className="sessionDeltaPct">({pct})</span>
     </span>
   );
 }
@@ -353,6 +387,14 @@ export function PrizePicksPredictionsPanel() {
           <div>
             <span className="muted">Streak</span>
             <StreakChip analytics={analytics} />
+          </div>
+          <div>
+            <span className="muted">Today PnL</span>
+            <SessionDeltaChip delta={analytics.session_pnl?.today ?? null} />
+          </div>
+          <div>
+            <span className="muted">7d PnL</span>
+            <SessionDeltaChip delta={analytics.session_pnl?.this_week ?? null} />
           </div>
         </div>
       )}

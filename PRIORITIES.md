@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-06-28 (afternoon maintenance pass #2; **Per-side paper performance breakdown shipped** — `paper/mod.rs` `compute_side_stats` mirrors `compute_category_stats` but buckets closed + open lots by contract side, computes wins/losses/win_rate/realized_pnl/roi_pct per side, sorts by PnL DESC then side ASC; empty side → "Unknown" bucket; pushes excluded from win/loss counts but stake included in ROI denominator; `PaperAnalytics.side_stats: Vec<PaperSideStats>` exposes the data; UI table in `PrizePicksPredictionsPanel` (`SideBreakdown` component) renders Over/Under rows with `paperSideLabel()` mapping the raw "YES"/"NO" to "Over"/"Under"; 8 new unit tests, 182 lib tests pass, tsc clean)
+Last updated: 2026-06-29 (morning maintenance pass; **Per-window session PnL chips shipped** — backend `PaperAnalytics.session_pnl: SessionPnl` (today + 7d `SessionDelta { pnl_dollars, pnl_pct, baseline_equity, baseline_ts }`) was already populated via `compute_session_pnl` (8 unit tests pass), but the TypeScript types were missing and the summary card didn't render the deltas; closed the loop with `SessionDelta` / `SessionPnl` interfaces in `prizepicks.ts`, a new `SessionDeltaChip` component (pos/neg/muted variants mirroring `.streakChip`) rendering `+$X.XX (+Y.Y%)` with a baseline tooltip, two new "Today PnL" and "7d PnL" cells in the paper summary card, and matching `.sessionDeltaChip*` CSS; 190 lib tests pass, tsc clean, ad-hoc verification 21/21)
 Working copy: `C:\\Projects\\prizepicks-monster`
 Commit: `761784e`
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done · Per-category paper breakdown done · Per-side paper breakdown done**
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 4 startup prefetch done · Per-category paper breakdown done · Per-side paper breakdown done · Per-window session PnL chips done**
 
 ## 2026-06-27 evening pass — Streak indicator
 
@@ -63,7 +63,7 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 
 **Next brainstorm candidates** (in rough ROI order — pick the highest-impact one in a future clean-tree pass):
 1. **Hold-time / per-duration-bucket performance** — bucket closed lots by `closed_at - opened_at` (≤1h intraday, 1-24h, 1-7d, >7d) and report PnL / win-rate per bucket. Helps users see if they make money on quick in-game picks vs. long-shot futures. ~1.5h scope.
-2. **Today's PnL / this-week's PnL in the summary card** — the summary row shows total return, max DD, and streak but not a session-level delta. Walking equity snapshots and computing `equity_at_open_today - equity_at_midnight` is straightforward. ~30min scope.
+2. ~~**Today's PnL / this-week's PnL in the summary card**~~ — ✅ shipped 2026-06-29 (see below).
 3. **Player-level PnL breakdown** — bucket closed lots by player name (extracted from `title` or a new column). Answers "which players am I making money on?" Requires either a parse or a schema change to store `player_name`. ~2-3h scope.
 4. **Per-entry-price-bucket performance** — bucket by entry_price_cents ranges (e.g. 30-50¢, 50-70¢, 70-90¢) to show whether long-shots or favorites are more profitable. ~1h scope.
 
@@ -123,6 +123,15 @@ Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · P
 ## Suggested next target: P1 (1 partial, no plan)
 
 1. **PrizePicks-native correlation engine** — The existing `prizepicks/portfolio_risk.rs` correlation is ticker-prefix heuristics only. A proper implementation would need an event/series/macro graph (player-level correlations, team-level, same-game parlay structure) and a way to fetch it. No concrete plan in place. Most users of the current app have small (≤3 leg) paper positions where the heuristic is sufficient.
+
+## Brainstormed & shipped (2026-06-29)
+
+- **Per-window session PnL chips (today / 7d)** — The `PaperAnalytics` payload already exposed `session_pnl: SessionPnl` from the backend (`compute_session_pnl` walks `paper_equity_snapshots` DESC and finds the most-recent snapshot at-or-before the today-midnight and 7-days-ago cutoffs; 8 unit tests pass), but the TypeScript types were missing and the summary card didn't render the deltas — so a user looking at the panel had no way to see "how am I doing today/this week" without opening the equity-curve chart. Shipped:
+  - `src-ui/src/types/prizepicks.ts` — new `SessionDelta { pnl_dollars, pnl_pct, baseline_equity, baseline_ts }` and `SessionPnl { today, this_week }` interfaces; `PaperAnalytics` gains `session_pnl: SessionPnl`. Both fields are nullable to match the backend (`null` when no qualifying baseline exists, e.g. brand-new account or first snapshot post-dates the cutoff).
+  - `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `SessionDeltaChip` inner component. Renders `+$X.XX (+Y.Y%)` with a pos/neg tint that mirrors `.streakChip`, and includes a baseline tooltip (`Baseline: $X.XX at <ts>\nΔ = $X.XX (Y.YY%)`) so the user can see exactly which snapshot the delta was computed from. `null` delta renders muted `—` so the summary layout doesn't shift for new accounts.
+  - Two new cells added to the `paperSummary` row right after the existing "Streak" cell: **Today PnL** and **7d PnL**, each driven by `analytics.session_pnl.{today,this_week}`. Empty-state copy on the muted fallback guides the user to place a paper trade to seed the equity history.
+  - `src-ui/src/index.css` — added `.sessionDeltaChip`, `.sessionDeltaChip.pos/.neg/.muted`, and `.sessionDeltaChip .sessionDeltaPct` (lighter, smaller percent text inside the chip). Same pill shape + 999px radius + pos/neg tints as `.streakChip` so the two read as siblings.
+  - Ad-hoc verification (focused on the new behavior, NOT canonical suite green): 21/21 grep checks for TS interface fields, React import + component + summary cells, sign/muted branches, and all four CSS class variants.
 
 ## Brainstormed & shipped (2026-06-28)
 

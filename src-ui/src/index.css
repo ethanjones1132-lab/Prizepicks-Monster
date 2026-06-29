@@ -873,6 +873,44 @@ button {
   font-weight: 500;
 }
 
+.sessionDeltaChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sessionDeltaChip .sessionDeltaPct {
+  font-weight: 500;
+  opacity: 0.85;
+  font-size: 0.85rem;
+}
+
+.sessionDeltaChip.pos {
+  color: var(--pos, #3fbf7f);
+  border-color: rgba(63, 191, 127, 0.4);
+  background: rgba(63, 191, 127, 0.12);
+}
+
+.sessionDeltaChip.neg {
+  color: var(--neg, #d04848);
+  border-color: rgba(208, 72, 72, 0.4);
+  background: rgba(208, 72, 72, 0.12);
+}
+
+.sessionDeltaChip.muted {
+  color: var(--muted, rgba(255, 255, 255, 0.45));
+  font-weight: 500;
+  background: transparent;
+}
+
 .equityChartToolbar {
   display: flex;
   align-items: center;

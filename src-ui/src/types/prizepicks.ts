@@ -228,7 +228,33 @@ export interface PaperAnalytics {
   current_streak: PaperStreak;
   category_stats: PaperCategoryStats[];
   side_stats: PaperSideStats[];
+  /** Per-window equity change (today / 7d) for the summary card. */
+  session_pnl: SessionPnl;
   fetched_at: string;
+}
+
+/**
+ * Per-window equity change for the paper-trading summary card. `pnl_dollars`
+ * is the dollar change between the most-recent equity snapshot and the
+ * baseline snapshot; `pnl_pct` is `pnl_dollars / baseline_equity * 100`
+ * (returns 0.0 when `baseline_equity` <= 0). `baseline_ts` is the timestamp
+ * of the baseline snapshot. `null` when no qualifying baseline exists
+ * (e.g. the account is brand-new and no snapshot pre-dates the cutoff).
+ */
+export interface SessionDelta {
+  pnl_dollars: number;
+  pnl_pct: number;
+  baseline_equity: number;
+  baseline_ts: string;
+}
+
+/**
+ * Today and 7-day session PnL deltas for the paper account. Both fields are
+ * `null` when no qualifying baseline snapshot exists.
+ */
+export interface SessionPnl {
+  today: SessionDelta | null;
+  this_week: SessionDelta | null;
 }
 
 /** Historical equity snapshot for the paper-trading account. */
