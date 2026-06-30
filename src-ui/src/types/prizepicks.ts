@@ -318,6 +318,17 @@ export interface PaperAnalytics {
    * `market_price_cents = null`) so the closed-lot count matches.
    */
   calibration_points: CalibrationPoint[];
+  /**
+   * Per-disagreement-bucket performance breakdown. Groups lots by the
+   * `model_disagreement` flag written to each lot's `decision_json` (a
+   * P2 milestone — |fair_probability_pct - market_price_pct| > 12pp at
+   * entry). The three canonical buckets (Disagreement / Consensus /
+   * Unknown) always appear in that fixed order so the UI renders a
+   * stable "disagree → agree → unknown" ladder. Answers the
+   * disagreement-tax question: "am I profitable on the picks where my
+   * model disagrees with the market?"
+   */
+  paper_disagreement_stats: PaperDisagreementStats[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;
@@ -346,6 +357,44 @@ export interface CalibrationPoint {
   won: boolean | null;
   /** Settlement timestamp (RFC 3339). Null only for malformed rows. */
   closed_at: string | null;
+}
+
+/**
+ * Canonical disagreement-bucket identifier. The three buckets always appear
+ * in `paper_disagreement_stats` output, in this fixed order:
+ * `disagreement` (|fair - market| > 12pp at entry), `consensus` (≤ 12pp),
+ * `unknown` (decision_json missing or unparseable). The 12pp threshold
+ * matches the P2 `model_disagreement` flag in `chat/decision_schema.rs`.
+ */
+export type DisagreementBucket = 'disagreement' | 'consensus' | 'unknown';
+
+/**
+ * Performance breakdown for a single model-vs-market disagreement bucket.
+ * Mirrors `PaperCategoryStats` and `PaperSideStats` but groups by the
+ * `model_disagreement` flag written to each lot's `decision_json` (a P2
+ * milestone). The three canonical buckets always appear in the result
+ * vector in a fixed order (disagreement → consensus → unknown) so the UI
+ * renders a stable "disagree → agree → unknown" ladder without resorting.
+ * Empty buckets are still emitted (with zeros) so the table layout
+ * doesn't shift as the user's history grows.
+ *
+ * Complements the other breakdowns by answering the disagreement-tax
+ * question: "am I profitable on the picks where my model disagrees with
+ * the market?" — most prop users find these are net-negative.
+ */
+export interface PaperDisagreementStats {
+  /** Raw bucket identifier. Snake_case to match the Rust enum. */
+  bucket: DisagreementBucket;
+  /** Human-readable label, e.g. `"Disagreement (>12pp)"`. UI should prefer this for display. */
+  bucket_label: string;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
   CalibrationPoint,
   PaperAnalytics,
   PaperCategoryStats,
+  PaperDisagreementStats,
   PaperEntryPriceStats,
   PaperEquitySnapshot,
   PaperHoldTimeStats,
@@ -402,6 +403,83 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
                     <strong>{s.bucket}</strong>
                     {s.open_trades > 0 && (
                       <span className="muted small entryPriceOpenTag" title={`${s.open_trades} open lot(s)`}>
+                        {' '}+{s.open_trades} open
+                      </span>
+                    )}
+                  </td>
+                  <td>{s.total_trades}</td>
+                  <td>{s.wins + s.losses > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                  </td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                  </td>
+                  </tr>
+                  );
+                  })}
+                  </tbody>
+                  </table>
+                  </div>
+                  );
+                  }
+
+  /**
+   * Per-disagreement-bucket performance table. Mirrors the layout of
+   * `CategoryBreakdown` / `SideBreakdown` / `PlayerBreakdown` /
+   * `EntryPriceBreakdown` so all six read as siblings. Shows the same
+   * five metrics (Bucket / Trades / Win % / PnL / ROI) with the same
+   * pos/neg PnL tint.
+   *
+   * The backend always emits the three canonical buckets in a fixed
+   * order (Disagreement → Consensus → Unknown) so the table renders as
+   * a stable "disagree → agree → unknown" ladder without resorting. An
+   * inline `<small>` note explains the 12pp threshold for users who
+   * don't know what "disagreement" means in this context. Empty
+   * buckets render with muted zeros so the table layout doesn't
+   * shift as the user's history grows.
+   */
+  function DisagreementBreakdown({ stats }: { stats: PaperDisagreementStats[] }) {
+    if (!stats || stats.length === 0) {
+      return (
+        <div className="disagreementBreakdown empty">
+          <span className="muted small">
+            No decision data yet — place paper trades through the Analyst chat to populate disagreement-bucket performance.
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="disagreementBreakdown">
+        <div className="disagreementBreakdownHeader">
+          <span className="muted small">
+            Per-disagreement-bucket performance
+            {' '}
+            <span className="muted small" title="Disagreement = |model fair % − market price %| > 12pp at entry">
+              (disagree → agree → unknown)
+            </span>
+          </span>
+          <span className="muted small">{stats.length} buckets</span>
+        </div>
+        <table className="disagreementTable">
+          <thead>
+            <tr>
+              <th scope="col">Disagreement</th>
+              <th scope="col">Trades</th>
+              <th scope="col">Win %</th>
+              <th scope="col">PnL</th>
+              <th scope="col">ROI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((s) => {
+              const pnlPositive = s.realized_pnl >= 0;
+              return (
+                <tr key={s.bucket}>
+                  <td>
+                    <strong>{s.bucket_label}</strong>
+                    {s.open_trades > 0 && (
+                      <span className="muted small disagreementOpenTag" title={`${s.open_trades} open lot(s)`}>
                         {' '}+{s.open_trades} open
                       </span>
                     )}
@@ -868,6 +946,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <HoldTimeBreakdown stats={analytics.hold_time_stats} />}
       {analytics && <PlayerBreakdown stats={analytics.player_stats} />}
       {analytics && <EntryPriceBreakdown stats={analytics.entry_price_stats} />}
+      {analytics && <DisagreementBreakdown stats={analytics.paper_disagreement_stats} />}
       {analytics && <CalibrationScatter points={analytics.calibration_points} />}
       {message && <p className="muted small">{message}</p>}
       {loading && <p className="muted">Loading predictions…</p>}

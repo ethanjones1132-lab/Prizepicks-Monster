@@ -1310,6 +1310,81 @@ button {
   margin-left: 4px;
 }
 
+/* Per-disagreement-bucket performance breakdown. Same visual weight as
+ * the other breakdowns (12px padding, 14px border-radius, subtle border)
+ * so the seven performance views read as siblings. */
+.disagreementBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 14px;
+}
+
+.disagreementBreakdown.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.disagreementBreakdownHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.disagreementTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.disagreementTable th,
+.disagreementTable td {
+  text-align: left;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.disagreementTable th {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.disagreementTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.disagreementTable td.pos {
+  color: var(--pos, #3fbf7f);
+}
+
+.disagreementTable td.neg {
+  color: var(--neg, #d04848);
+}
+
+.disagreementTable td.pos,
+.disagreementTable td.neg {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.disagreementTable td:first-child strong {
+  font-size: 0.95rem;
+}
+
+.disagreementOpenTag {
+  font-weight: 400;
+  margin-left: 4px;
+}
+
 /* Calibration scatter — pure-SVG scatter plot of model fair_probability_pct
  * (X) vs realized PnL in dollars (Y). One bubble per closed paper lot.
  * Same visual weight as the other breakdowns (12px padding, 14px radius,

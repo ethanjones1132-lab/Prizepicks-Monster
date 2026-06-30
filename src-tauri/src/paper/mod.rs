@@ -175,14 +175,22 @@ pub struct PaperAnalytics {
     /// at picking long-shots or favorites?\".
     pub entry_price_stats: Vec<PaperEntryPriceStats>,
     /// Calibration scatter: one point per closed (decided) paper lot, with
-    /// the model's `fair_probability_pct` (X axis) and the realized PnL in
-    /// dollars (Y axis). Useful for visualizing the calibration curve and
-    /// spotting over/under-confident regions. `fair_probability_pct` is
-    /// parsed from the lot's `decision_json`; lots without a parseable
-    /// decision are excluded. Pushed lots (realized_pnl == 0) are included
-    /// as zero-PnL points — they sit on the X axis. Empty when no decided
-    /// lots have a parseable `decision_json`.
+    /// the model's `fair_probability_pct` (X axis) and realized PnL in dollars
+    /// (Y axis). Pushes (`realized_pnl_dollars == 0`) appear with
+    /// `won = null` so the UI can render them on the X axis. `fair_probability_pct`
+    /// is parsed from the lot's `decision_json` — lots with a missing or
+    /// unparseable decision still appear (with `fair_probability_pct = 0` and
+    /// `market_price_cents = null`) so the closed-lot count matches.
     pub calibration_points: Vec<CalibrationPoint>,
+    /// Per-disagreement-bucket performance breakdown. Groups lots by the
+    /// `model_disagreement` flag written to each lot's `decision_json` (a
+    /// P2 milestone — |fair_probability_pct - market_price_pct| > 12pp at
+    /// entry). The three canonical buckets (Disagreement / Consensus /
+    /// Unknown) always appear in that fixed order so the UI renders a
+    /// stable "disagree → agree → unknown" ladder. Answers the
+    /// disagreement-tax question: "am I profitable on the picks where my
+    /// model disagrees with the market?"
+    pub paper_disagreement_stats: Vec<PaperDisagreementStats>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -629,6 +637,195 @@ fn compute_calibration_points(lots: &[PaperLot]) -> Vec<CalibrationPoint> {
             }
         })
         .collect()
+}
+
+/// Canonical disagreement-bucket identifier. The three buckets always appear
+/// in `compute_disagreement_stats` output, in the order: `Disagreement`
+/// (|fair - market| > 12pp at entry), `Consensus` (≤ 12pp), `Unknown`
+/// (decision_json missing or unparseable). The 12pp threshold matches the
+/// P2 `model_disagreement` flag in `chat/decision_schema.rs`. The enum is
+/// serialized in snake_case for stable IPC.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum DisagreementBucket {
+    /// |fair_probability_pct - market_price_pct| > 12pp at entry.
+    Disagreement,
+    /// |fair - market| ≤ 12pp at entry (or the model and market agree within
+    /// the threshold).
+    Consensus,
+    /// `decision_json` was missing or unparseable — bucket by absence
+    /// rather than dropping the lot, so the closed-lot count still matches
+    /// the rest of the analytics.
+    Unknown,
+}
+
+impl DisagreementBucket {
+    /// Human-readable label, e.g. `"Disagreement (>12pp)"`. The UI should
+    /// prefer this over the raw enum variant for display.
+    pub fn as_label(self) -> &'static str {
+        match self {
+            DisagreementBucket::Disagreement => "Disagreement (>12pp)",
+            DisagreementBucket::Consensus => "Consensus (≤12pp)",
+            DisagreementBucket::Unknown => "Unknown",
+        }
+    }
+}
+
+/// Performance breakdown for a single model-vs-market disagreement bucket.
+/// Mirrors `PaperCategoryStats` / `PaperSideStats` but groups by whether
+/// the model disagreed with the market at entry. A user who is profitable
+/// on consensus picks but bleeding on disagreement picks has a clear
+/// actionable signal: skip the disagreement tax. Sorted by
+/// `realized_pnl` DESC so the strongest bucket surfaces first; ties broken
+/// alphabetically by `bucket_label`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperDisagreementStats {
+    /// Raw enum variant (snake_case) for machine-readable comparison. The
+    /// UI should prefer `bucket_label` for display.
+    pub bucket: DisagreementBucket,
+    /// Human-readable label, e.g. `"Disagreement (>12pp)"`. Mirrors
+    /// `PaperHoldTimeStats.bucket_label` so the UI doesn't have to hard-code
+    /// the label mapping.
+    pub bucket_label: String,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperDisagreementStats {
+    fn new(bucket: DisagreementBucket) -> Self {
+        Self {
+            bucket_label: bucket.as_label().to_string(),
+            bucket,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
+/// Canonical 12pp threshold for `model_disagreement` (matches
+/// `chat/decision_schema.rs::compute`).
+const DISAGREEMENT_THRESHOLD_PP: f64 = 12.0;
+
+/// Read `model_disagreement` (bool) and `disagreement_points` (f64) out of
+/// a lot's `decision_json`. Returns `(bucket, parsed_flag)` — `parsed_flag`
+/// is `true` when both fields were present in the JSON so the caller can
+/// distinguish "actually read false" from "field was absent". Used as the
+/// bucketing key in `compute_disagreement_stats`.
+fn lot_disagreement_bucket(lot: &PaperLot) -> DisagreementBucket {
+    match lot.decision_json.as_deref() {
+        Some(json) => match serde_json::from_str::<serde_json::Value>(json) {
+            Ok(v) => {
+                // Prefer the boolean `model_disagreement` flag when present
+                // (matches what the decision pipeline sets); fall back to
+                // comparing `disagreement_points` against the 12pp threshold
+                // for legacy serializations that only wrote the raw delta.
+                if let Some(flag) = v.get("model_disagreement").and_then(|x| x.as_bool()) {
+                    if flag {
+                        DisagreementBucket::Disagreement
+                    } else {
+                        DisagreementBucket::Consensus
+                    }
+                } else if let Some(pts) =
+                    v.get("disagreement_points").and_then(|x| x.as_f64())
+                {
+                    if pts.abs() > DISAGREEMENT_THRESHOLD_PP {
+                        DisagreementBucket::Disagreement
+                    } else {
+                        DisagreementBucket::Consensus
+                    }
+                } else {
+                    DisagreementBucket::Unknown
+                }
+            }
+            Err(_) => DisagreementBucket::Unknown,
+        },
+        None => DisagreementBucket::Unknown,
+    }
+}
+
+/// Bucket closed + open lots by model-vs-market disagreement bucket and
+/// compute per-bucket stats. The three canonical buckets (Disagreement /
+/// Consensus / Unknown) always appear in the result vector in that fixed
+/// order — not sorted by PnL — so the UI renders a stable
+/// "disagree → agree → unknown" ladder without resorting. Empty buckets
+/// are still emitted (with zeros) so the table layout doesn't shift as
+/// the user's history grows.
+///
+/// Win/loss/PnL aggregation semantics match the other breakdown helpers
+/// exactly: closed lots count toward wins/losses/realized_pnl/
+/// total_staked; pushes (pnl == 0) contribute stake but not wins/losses;
+/// open lots count toward total_trades + open_trades but contribute
+/// nothing to the PnL/ROI aggregations. ROI denominator is closed stake
+/// only — open positions are excluded from the per-bucket ROI math.
+fn compute_disagreement_stats(lots: &[PaperLot]) -> Vec<PaperDisagreementStats> {
+    // Fixed bucket order: Disagreement → Consensus → Unknown. The output
+    // is emitted in this exact order so the UI doesn't have to sort.
+    let bucket_order = [
+        DisagreementBucket::Disagreement,
+        DisagreementBucket::Consensus,
+        DisagreementBucket::Unknown,
+    ];
+
+    // Walk the lots once, bucketing each by its disagreement flag.
+    let mut buckets: std::collections::BTreeMap<DisagreementBucket, PaperDisagreementStats> =
+        std::collections::BTreeMap::new();
+    for l in lots {
+        let key = lot_disagreement_bucket(l);
+        let entry = buckets
+            .entry(key)
+            .or_insert_with(|| PaperDisagreementStats::new(key));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+    }
+
+    // Ensure every canonical bucket is present, even if empty. This keeps
+    // the table layout stable for users who have only one type of trade
+    // (e.g. only consensus picks so far).
+    for &b in &bucket_order {
+        buckets.entry(b).or_insert_with(|| PaperDisagreementStats::new(b));
+    }
+
+    // Finalize win-rate + ROI per bucket, then emit in canonical order.
+    let mut out: Vec<PaperDisagreementStats> = Vec::with_capacity(bucket_order.len());
+    for &b in &bucket_order {
+        let mut s = buckets.remove(&b).unwrap_or_else(|| PaperDisagreementStats::new(b));
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+        out.push(s);
+    }
+    out
 }
 
 /// is the dollar change between the most-recent equity snapshot and the
@@ -1766,6 +1963,7 @@ pub async fn get_analytics(
     let player_stats = compute_player_stats(&all);
     let entry_price_stats = compute_entry_price_stats(&all);
     let calibration_points = compute_calibration_points(&all);
+    let paper_disagreement_stats = compute_disagreement_stats(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -1803,6 +2001,7 @@ pub async fn get_analytics(
         player_stats,
         entry_price_stats,
         calibration_points,
+        paper_disagreement_stats,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -3539,5 +3738,201 @@ mod tests {
         let points = compute_calibration_points(&[lot]);
         assert_eq!(points[0].stake_dollars, 42.0);
         assert_eq!(points[0].realized_pnl_dollars, 7.5);
+    }
+
+    // ── compute_disagreement_stats ────────────────────────────────────
+    //
+    // Helper: build a closed lot with a known disagreement flag baked
+    // into the decision JSON. Mirrors `closed_lot_with_decision` but
+    // writes the `model_disagreement` bool directly so the bucketing
+    // logic stays testable without depending on the threshold math.
+    fn disagreement_lot(flag: Option<bool>, stake: f64, pnl: f64) -> PaperLot {
+        let mut lot = closed_lot_price(50.0, stake, pnl);
+        match flag {
+            Some(b) => {
+                lot.decision_json = Some(
+                    serde_json::json!({
+                        "model_disagreement": b,
+                        "disagreement_points": if b { 20.0 } else { 5.0 },
+                    })
+                    .to_string(),
+                );
+            }
+            None => {
+                lot.decision_json = None;
+            }
+        }
+        lot
+    }
+
+    #[test]
+    fn disagreement_stats_empty_input_returns_three_zero_buckets() {
+        // Even with no lots, all three canonical buckets must appear
+        // (with zeros) so the UI table layout is stable.
+        let stats = compute_disagreement_stats(&[]);
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].bucket, DisagreementBucket::Disagreement);
+        assert_eq!(stats[1].bucket, DisagreementBucket::Consensus);
+        assert_eq!(stats[2].bucket, DisagreementBucket::Unknown);
+        for s in &stats {
+            assert_eq!(s.total_trades, 0);
+            assert_eq!(s.wins, 0);
+            assert_eq!(s.losses, 0);
+            assert_eq!(s.realized_pnl, 0.0);
+        }
+    }
+
+    #[test]
+    fn disagreement_stats_buckets_by_model_disagreement_flag() {
+        // Two disagreement lots (one win, one loss) + two consensus lots
+        // (one win, one loss). The Disagreement bucket should aggregate
+        // the flag=true lots, and the Consensus bucket the flag=false
+        // lots. The Unknown bucket should not appear (no unparseable /
+        // missing JSON).
+        let lots = vec![
+            disagreement_lot(Some(true), 10.0, 4.0),  // disagree + win
+            disagreement_lot(Some(true), 10.0, -3.0), // disagree + loss
+            disagreement_lot(Some(false), 10.0, 2.0), // consensus + win
+            disagreement_lot(Some(false), 10.0, -1.0), // consensus + loss
+        ];
+        let stats = compute_disagreement_stats(&lots);
+        // Disagreement bucket
+        assert_eq!(stats[0].bucket, DisagreementBucket::Disagreement);
+        assert_eq!(stats[0].total_trades, 2);
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 1);
+        assert!((stats[0].realized_pnl - 1.0).abs() < 1e-9);
+        assert!((stats[0].win_rate - 50.0).abs() < 1e-9);
+        // ROI = 1.0 / 20.0 * 100 = 5.0%
+        assert!((stats[0].roi_pct - 5.0).abs() < 1e-9);
+        // Consensus bucket
+        assert_eq!(stats[1].bucket, DisagreementBucket::Consensus);
+        assert_eq!(stats[1].total_trades, 2);
+        assert_eq!(stats[1].wins, 1);
+        assert_eq!(stats[1].losses, 1);
+        assert!((stats[1].realized_pnl - 1.0).abs() < 1e-9);
+        // Unknown bucket
+        assert_eq!(stats[2].bucket, DisagreementBucket::Unknown);
+        assert_eq!(stats[2].total_trades, 0);
+    }
+
+    #[test]
+    fn disagreement_stats_missing_decision_json_routes_to_unknown() {
+        // Lots with no `decision_json` (or unparseable JSON) bucket under
+        // Unknown so the closed-lot count still matches the rest of the
+        // analytics.
+        let mut no_json = closed_lot_price(50.0, 5.0, 1.0);
+        no_json.decision_json = None;
+        let mut bad_json = closed_lot_price(50.0, 5.0, 1.0);
+        bad_json.decision_json = Some("{not valid json".to_string());
+        let mut empty_flag = closed_lot_price(50.0, 5.0, 1.0);
+        empty_flag.decision_json = Some(r#"{"some_other_field": 42}"#.to_string());
+        let lots = vec![no_json, bad_json, empty_flag];
+        let stats = compute_disagreement_stats(&lots);
+        assert_eq!(stats[2].bucket, DisagreementBucket::Unknown);
+        assert_eq!(stats[2].total_trades, 3);
+        assert_eq!(stats[2].wins, 3);
+        assert_eq!(stats[2].losses, 0);
+        // Disagreement and Consensus buckets are zero (no parseable flag).
+        assert_eq!(stats[0].total_trades, 0);
+        assert_eq!(stats[1].total_trades, 0);
+    }
+
+    #[test]
+    fn disagreement_stats_open_lot_counted_in_open_trades_only() {
+        // Open lots count toward total_trades + open_trades, but
+        // contribute nothing to wins/losses/PnL/ROI. They still bucket
+        // by their disagreement flag.
+        let lots = vec![
+            {
+                let mut l = open_lot_price(50.0, 5.0);
+                l.decision_json = Some(
+                    serde_json::json!({"model_disagreement": true, "disagreement_points": 20.0})
+                        .to_string(),
+                );
+                l
+            },
+        ];
+        let stats = compute_disagreement_stats(&lots);
+        assert_eq!(stats[0].bucket, DisagreementBucket::Disagreement);
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].open_trades, 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn disagreement_stats_push_lot_contributes_stake_but_not_win_or_loss() {
+        // pnl == 0 (push) → stake counts toward total_staked, but
+        // neither wins nor losses count it.
+        let lots = vec![
+            disagreement_lot(Some(false), 10.0, 0.0), // consensus + push
+        ];
+        let stats = compute_disagreement_stats(&lots);
+        assert_eq!(stats[1].bucket, DisagreementBucket::Consensus);
+        assert_eq!(stats[1].total_trades, 1);
+        assert_eq!(stats[1].wins, 0);
+        assert_eq!(stats[1].losses, 0);
+        assert!((stats[1].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[1].total_staked - 10.0).abs() < 1e-9);
+        // ROI = 0 / 10 * 100 = 0
+        assert!((stats[1].roi_pct - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn disagreement_stats_falls_back_to_threshold_when_flag_absent() {
+        // Legacy serializations may write only `disagreement_points`
+        // (no bool). The helper should compare the absolute value
+        // against the 12pp threshold as a fallback.
+        let mut legacy_disagree = closed_lot_price(50.0, 5.0, 1.0);
+        legacy_disagree.decision_json =
+            Some(r#"{"disagreement_points": 15.0}"#.to_string());
+        let mut legacy_consensus = closed_lot_price(50.0, 5.0, 1.0);
+        legacy_consensus.decision_json =
+            Some(r#"{"disagreement_points": 8.0}"#.to_string());
+        let mut legacy_boundary = closed_lot_price(50.0, 5.0, 1.0);
+        // 12.0 is NOT > 12.0 (the threshold is strictly greater), so
+        // this should bucket as Consensus.
+        legacy_boundary.decision_json =
+            Some(r#"{"disagreement_points": 12.0}"#.to_string());
+        let lots = vec![legacy_disagree, legacy_consensus, legacy_boundary];
+        let stats = compute_disagreement_stats(&lots);
+        assert_eq!(stats[0].bucket, DisagreementBucket::Disagreement);
+        assert_eq!(stats[0].total_trades, 1); // legacy_disagree (15.0pp)
+        assert_eq!(stats[1].bucket, DisagreementBucket::Consensus);
+        assert_eq!(stats[1].total_trades, 2); // legacy_consensus + legacy_boundary
+    }
+
+    #[test]
+    fn disagreement_stats_bucket_label_matches_enum_variant() {
+        // The UI should be able to render `bucket_label` without any
+        // hard-coded mapping. Verify the three canonical labels.
+        let stats = compute_disagreement_stats(&[]);
+        assert_eq!(stats[0].bucket_label, "Disagreement (>12pp)");
+        assert_eq!(stats[1].bucket_label, "Consensus (≤12pp)");
+        assert_eq!(stats[2].bucket_label, "Unknown");
+    }
+
+    #[test]
+    fn disagreement_stats_emits_canonical_order_regardless_of_input() {
+        // Output must always be Disagreement → Consensus → Unknown
+        // (NOT sorted by PnL DESC like the other breakdowns) so the UI
+        // can render a stable "disagree → agree → unknown" ladder.
+        // We mix the input order: lots that would sort "Unknown" first
+        // (no decision_json) before "Disagreement" lots, and verify the
+        // output order is fixed.
+        let mut unknown_first = closed_lot_price(50.0, 5.0, 1.0);
+        unknown_first.decision_json = None;
+        let lots = vec![
+            unknown_first,
+            disagreement_lot(Some(true), 5.0, 1.0),
+            disagreement_lot(Some(false), 5.0, 1.0),
+        ];
+        let stats = compute_disagreement_stats(&lots);
+        assert_eq!(stats[0].bucket, DisagreementBucket::Disagreement);
+        assert_eq!(stats[1].bucket, DisagreementBucket::Consensus);
+        assert_eq!(stats[2].bucket, DisagreementBucket::Unknown);
     }
 }
