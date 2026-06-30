@@ -1310,6 +1310,106 @@ button {
   margin-left: 4px;
 }
 
+/* Calibration scatter — pure-SVG scatter plot of model fair_probability_pct
+ * (X) vs realized PnL in dollars (Y). One bubble per closed paper lot.
+ * Same visual weight as the other breakdowns (12px padding, 14px radius,
+ * subtle border) so the six performance views read as siblings. */
+.calibrationScatter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 14px;
+}
+
+.calibrationScatter.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.calibrationScatterHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+/* The canvas wraps the SVG + the absolutely-positioned tooltip. Set
+ * `position: relative` so the tooltip can anchor against the SVG's
+ * bounding box rather than the panel. */
+.calibrationScatterCanvas {
+  position: relative;
+  width: 100%;
+}
+
+.calibrationScatterSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.calibrationScatterTooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: rgba(20, 20, 24, 0.96);
+  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+
+.calibrationScatterTooltipTitle {
+  font-weight: 600;
+  margin-bottom: 2px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calibrationLegend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+}
+
+.calibrationLegendDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.calibrationLegendDot.pos {
+  background: var(--pos, #3fbf7f);
+}
+
+.calibrationLegendDot.neg {
+  background: var(--neg, #d04848);
+}
+
+.calibrationLegendDot.muted {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.calibrationLegendSep {
+  margin: 0 4px;
+  opacity: 0.6;
+}
+
 .holdTimeTable td.pos,
 .holdTimeTable td.neg {
   font-variant-numeric: tabular-nums;

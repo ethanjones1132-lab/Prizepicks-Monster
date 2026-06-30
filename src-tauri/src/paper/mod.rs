@@ -174,10 +174,52 @@ pub struct PaperAnalytics {
     /// \"cheapest to most expensive\" ladder. Helps users answer \"am I better
     /// at picking long-shots or favorites?\".
     pub entry_price_stats: Vec<PaperEntryPriceStats>,
+    /// Calibration scatter: one point per closed (decided) paper lot, with
+    /// the model's `fair_probability_pct` (X axis) and the realized PnL in
+    /// dollars (Y axis). Useful for visualizing the calibration curve and
+    /// spotting over/under-confident regions. `fair_probability_pct` is
+    /// parsed from the lot's `decision_json`; lots without a parseable
+    /// decision are excluded. Pushed lots (realized_pnl == 0) are included
+    /// as zero-PnL points — they sit on the X axis. Empty when no decided
+    /// lots have a parseable `decision_json`.
+    pub calibration_points: Vec<CalibrationPoint>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
     pub fetched_at: String,
+}
+
+/// One closed (decided) paper lot projected onto a 2-D calibration plane.
+/// `fair_probability_pct` is the model's "true" probability for the selected
+/// side at the moment the lot was opened; `realized_pnl_dollars` is the
+/// realized gain (positive) or loss (negative) when the lot was settled.
+/// Pushes (`realized_pnl == 0.0`) are included with `won = None` so they
+/// render on the X axis instead of being mis-classified as wins or losses.
+/// `market_price_cents` is the implied market line at entry (0-100) so the
+/// UI can compare model vs market at a glance; `None` when the lot's
+/// `decision_json` is missing or unparseable.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CalibrationPoint {
+    pub lot_id: String,
+    pub ticker: String,
+    pub title: String,
+    pub side: String,
+    /// Model's fair probability for the selected side (0.0-100.0). 0.0 when
+    /// the lot's `decision_json` was missing or unparseable.
+    pub fair_probability_pct: f64,
+    /// Market-implied price at entry (0-100 cents). `None` when the lot's
+    /// `decision_json` is missing or unparseable.
+    pub market_price_cents: Option<f64>,
+    /// Realized PnL in dollars at settlement. Always 0.0 for pushes.
+    pub realized_pnl_dollars: f64,
+    /// Stake in dollars (used by the UI to size the scatter bubble).
+    pub stake_dollars: f64,
+    /// `Some(true)` for wins, `Some(false)` for losses, `None` for pushes
+    /// (realized_pnl == 0).
+    pub won: Option<bool>,
+    /// Settlement timestamp (RFC 3339), used by the UI for hover tooltips
+    /// and chronological sorting.
+    pub closed_at: Option<String>,
 }
 
 /// A run of consecutive wins or losses ending on the most-recent closed lot.
@@ -516,9 +558,82 @@ impl PaperEntryPriceStats {
     }
 }
 
+/// One closed (decided) paper lot, projected onto a calibration scatter plane.
+/// Walks the lot list and emits one `CalibrationPoint` per closed lot. Open
+/// lots are skipped (they have no realized PnL yet). Lots whose
+/// `decision_json` is missing or unparseable still produce a point — but with
+/// `fair_probability_pct = 0.0` and `market_price_cents = None` — so the
+/// scatter preserves the closed-lot count even when an older lot predates
+/// the decision-JSON migration. Pushes (realized_pnl == 0) produce a point
+/// with `won = None` so they sit on the X axis without being mis-classified
+/// as wins or losses. Output order matches input order so the UI can render
+/// the most-recently-closed lot on top (the caller can reverse if needed).
+///
+/// The function is pure (no DB access) so it is trivially testable.
+fn compute_calibration_points(lots: &[PaperLot]) -> Vec<CalibrationPoint> {
+    lots.iter()
+        .filter(|l| l.status == "Closed")
+        .map(|l| {
+            // Realized PnL — closed lots always have `realized_pnl` set, but
+            // be defensive: treat `None` as 0.0 (effectively a push).
+            let pnl = l.realized_pnl.unwrap_or(0.0);
+            let won = if pnl > 0.0 {
+                Some(true)
+            } else if pnl < 0.0 {
+                Some(false)
+            } else {
+                None
+            };
+
+            // Try to parse `fair_probability_pct` and `market_price_pct` from
+            // the lot's `decision_json`. Both fields default to neutral
+            // values when the JSON is missing, unparseable, or the fields
+            // are absent. `market_price_pct` lives on a 0-1 scale in the
+            // decision schema (per `chat/decision_schema.rs`); multiply by
+            // 100 to convert to the cents-style 0-100 scale the rest of the
+            // analytics use. Out-of-range values are clamped rather than
+            // dropped so a stray 1.2 doesn't poison the X axis.
+            let (fair_prob, market_cents) = match l.decision_json.as_deref() {
+                Some(json) => match serde_json::from_str::<serde_json::Value>(json) {
+                    Ok(v) => {
+                        let fair = v
+                            .get("fair_probability_pct")
+                            .and_then(|x| x.as_f64())
+                            .unwrap_or(0.0)
+                            .clamp(0.0, 100.0);
+                        let market = v.get("market_price_pct").and_then(|x| x.as_f64()).map(|m| {
+                            // Schema stores market_price_pct on 0-1, but
+                            // some older serializations wrote 0-100. Detect
+                            // the scale by magnitude and normalize.
+                            let normalized = if m <= 1.0 { m * 100.0 } else { m };
+                            normalized.clamp(0.0, 100.0)
+                        });
+                        (fair, market)
+                    }
+                    Err(_) => (0.0, None),
+                },
+                None => (0.0, None),
+            };
+
+            CalibrationPoint {
+                lot_id: l.id.clone(),
+                ticker: l.ticker.clone(),
+                title: l.title.clone(),
+                side: l.side.clone(),
+                fair_probability_pct: fair_prob,
+                market_price_cents: market_cents,
+                realized_pnl_dollars: pnl,
+                stake_dollars: l.stake_dollars,
+                won,
+                closed_at: l.closed_at.clone(),
+            }
+        })
+        .collect()
+}
+
 /// is the dollar change between the most-recent equity snapshot and the
 /// baseline snapshot; `pnl_pct` is `pnl_dollars / baseline_equity * 100`
-/// (returns 0.0 when `baseline_equity` <= 0). `baseline_ts` is the timestamp
+/// (returns 0.0 when `baseline_equity <= 0`). `baseline_ts` is the timestamp
 /// of the baseline snapshot (the snapshot at-or-before the cutoff). Returns
 /// `None` from `compute_session_pnl` when no qualifying baseline snapshot
 /// exists (e.g. the account is brand-new and the cutoff predates the first
@@ -1650,6 +1765,7 @@ pub async fn get_analytics(
     let hold_time_stats = compute_hold_time_stats(&all);
     let player_stats = compute_player_stats(&all);
     let entry_price_stats = compute_entry_price_stats(&all);
+    let calibration_points = compute_calibration_points(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -1686,6 +1802,7 @@ pub async fn get_analytics(
         hold_time_stats,
         player_stats,
         entry_price_stats,
+        calibration_points,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -3271,5 +3388,156 @@ mod tests {
         let stats = compute_entry_price_stats(&lots);
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].bucket, "80-100¢");
+    }
+
+    // ── compute_calibration_points ──────────────────────────────────────
+    //
+    // Helper: build a closed lot with a known `decision_json` so we can
+    // exercise the JSON parser paths. Mirrors `closed_lot_price` but adds
+    // a serialized `PrizePicksTradeDecision` snippet.
+    fn closed_lot_with_decision(
+        entry_cents: f64,
+        stake: f64,
+        pnl: f64,
+        fair_pct: f64,
+        market_pct: f64,
+    ) -> PaperLot {
+        let mut lot = closed_lot_price(entry_cents, stake, pnl);
+        // Build a minimal `PrizePicksTradeDecision`-shaped JSON. We use a
+        // raw `serde_json::json!` instead of the struct to keep the test
+        // self-contained and avoid depending on optional fields the
+        // parser doesn't care about.
+        lot.decision_json = Some(
+            serde_json::json!({
+                "fair_probability_pct": fair_pct,
+                "market_price_pct": market_pct,
+            })
+            .to_string(),
+        );
+        lot
+    }
+
+    #[test]
+    fn calibration_points_empty_input_returns_empty_vec() {
+        let points = compute_calibration_points(&[]);
+        assert!(points.is_empty());
+    }
+
+    #[test]
+    fn calibration_points_skips_open_lots() {
+        // Open lots have no realized_pnl yet, so they should be excluded
+        // from the scatter — the X axis would otherwise be misleading.
+        let open = open_lot_price(50.0, 5.0);
+        let points = compute_calibration_points(&[open]);
+        assert!(points.is_empty());
+    }
+
+    #[test]
+    fn calibration_points_emits_one_per_closed_lot_in_input_order() {
+        let lots = vec![
+            closed_lot_with_decision(50.0, 10.0, 2.0, 65.0, 0.55),
+            closed_lot_with_decision(40.0, 8.0, -1.5, 45.0, 0.50),
+            closed_lot_with_decision(60.0, 12.0, 3.5, 70.0, 0.58),
+        ];
+        let points = compute_calibration_points(&lots);
+        assert_eq!(points.len(), 3);
+        // Order preserved (input → output).
+        assert_eq!(points[0].lot_id, "p50-2");
+        assert_eq!(points[1].lot_id, "p40--1.5");
+        assert_eq!(points[2].lot_id, "p60-3.5");
+    }
+
+    #[test]
+    fn calibration_points_won_true_for_positive_pnl_false_for_negative() {
+        let win = closed_lot_with_decision(50.0, 10.0, 5.0, 65.0, 0.55);
+        let loss = closed_lot_with_decision(40.0, 8.0, -5.0, 45.0, 0.50);
+        let points = compute_calibration_points(&[win, loss]);
+        assert_eq!(points[0].won, Some(true));
+        assert_eq!(points[1].won, Some(false));
+    }
+
+    #[test]
+    fn calibration_points_push_produces_won_none_and_zero_pnl() {
+        // pnl == 0 → push → `won = None` (not Some(true) or Some(false))
+        // so the UI can render the point on the X axis without
+        // mis-classifying it as a win or loss.
+        let push = closed_lot_with_decision(50.0, 10.0, 0.0, 60.0, 0.50);
+        let points = compute_calibration_points(&[push]);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].won, None);
+        assert_eq!(points[0].realized_pnl_dollars, 0.0);
+        assert_eq!(points[0].fair_probability_pct, 60.0);
+    }
+
+    #[test]
+    fn calibration_points_missing_decision_json_routes_to_zero_fair() {
+        // Lots without `decision_json` (e.g. placed before the JSON
+        // migration) still produce a point so the closed-lot count
+        // matches, but `fair_probability_pct = 0.0` and
+        // `market_price_cents = None` so the UI can flag them as
+        // "no-decision" if it wants.
+        let plain = closed_lot_price(50.0, 10.0, 2.0);
+        // closed_lot_price() sets `decision_json = None` by default.
+        assert!(plain.decision_json.is_none());
+        let points = compute_calibration_points(&[plain]);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].fair_probability_pct, 0.0);
+        assert_eq!(points[0].market_price_cents, None);
+        // PnL is still recorded.
+        assert_eq!(points[0].realized_pnl_dollars, 2.0);
+    }
+
+    #[test]
+    fn calibration_points_unparseable_decision_json_routes_to_zero_fair() {
+        // Malformed JSON should not crash; treat as a missing-decision lot.
+        let mut bad = closed_lot_price(50.0, 10.0, 1.0);
+        bad.decision_json = Some("{not valid json".to_string());
+        let points = compute_calibration_points(&[bad]);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].fair_probability_pct, 0.0);
+        assert_eq!(points[0].market_price_cents, None);
+    }
+
+    #[test]
+    fn calibration_points_market_price_pct_normalizes_0_1_to_cents() {
+        // Schema stores `market_price_pct` on a 0-1 scale, but the rest
+        // of the analytics use 0-100 (cents). Verify the scale
+        // normalization works. (Use approximate equality — `0.55 * 100.0`
+        // produces `55.00000000000001` from floating-point math.)
+        let lot = closed_lot_with_decision(50.0, 10.0, 2.0, 65.0, 0.55);
+        let points = compute_calibration_points(&[lot]);
+        let market = points[0].market_price_cents.expect("market_price_cents parsed");
+        assert!((market - 55.0).abs() < 1e-9, "got {market}");
+    }
+
+    #[test]
+    fn calibration_points_market_price_pct_preserves_0_100_scale() {
+        // Some older serializations may have written 0-100 directly. If
+        // the value is already > 1.0, we treat it as cents and don't
+        // multiply by 100.
+        let lot = closed_lot_with_decision(50.0, 10.0, 2.0, 65.0, 55.0);
+        let points = compute_calibration_points(&[lot]);
+        assert_eq!(points[0].market_price_cents, Some(55.0));
+    }
+
+    #[test]
+    fn calibration_points_out_of_range_fair_clamped_to_0_100() {
+        // A stray negative or > 100 value should be clamped so a rogue
+        // 1.2 doesn't poison the X axis.
+        let neg = closed_lot_with_decision(50.0, 10.0, 1.0, -10.0, 0.50);
+        let over = closed_lot_with_decision(50.0, 10.0, 1.0, 150.0, 0.50);
+        let points = compute_calibration_points(&[neg, over]);
+        assert_eq!(points[0].fair_probability_pct, 0.0);
+        assert_eq!(points[1].fair_probability_pct, 100.0);
+    }
+
+    #[test]
+    fn calibration_points_stake_and_pnl_propagated() {
+        // The UI sizes the bubble by `stake_dollars` and positions it by
+        // PnL — both must round-trip exactly.
+        let lot = closed_lot_with_decision(50.0, 42.0, 7.5, 65.0, 0.55);
+        let points = compute_calibration_points(&[lot]);
+        assert_eq!(points[0].stake_dollars, 42.0);
+        assert_eq!(points[0].realized_pnl_dollars, 7.5);
     }
 }

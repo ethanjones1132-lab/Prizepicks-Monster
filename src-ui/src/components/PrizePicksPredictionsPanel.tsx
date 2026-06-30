@@ -3,6 +3,7 @@ import { prizepicksApi } from '../services/prizepicks';
 import { paperSideLabel } from '../types/prizepicks';
 import { prizepicksBetWon } from '../services/prizepicks';
 import type {
+  CalibrationPoint,
   PaperAnalytics,
   PaperCategoryStats,
   PaperEntryPriceStats,
@@ -423,6 +424,240 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
   }
 
   /**
+   * Pure-SVG scatter of model `fair_probability_pct` (X axis, 0-100) vs
+   * realized PnL in dollars (Y axis). One circle per closed paper lot;
+   * bubble radius is scaled by `stake_dollars` (clamped to a sensible
+   * range so a $5 lot and a $5,000 lot don't render at extremes). Color
+   * is green for wins, red for losses, muted gray for pushes. The zero-PnL
+   * baseline is drawn as a horizontal dashed line. A vertical reference
+   * line at 50% (the break-even implied probability for a 50¢ line) makes
+   * over/under-confident regions easy to spot.
+   *
+   * Hovering a point surfaces the lot title + fair_probability_pct + PnL +
+   * stake. Hovering is implemented with a single absolutely-positioned
+   * `<div>` that gets re-rendered with the active point's text — no chart
+   * lib required.
+   */
+  function CalibrationScatter({ points }: { points: CalibrationPoint[] }) {
+    const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+    if (!points || points.length === 0) {
+      return (
+        <div className="calibrationScatter empty">
+          <span className="muted small">
+            No calibration data yet — settle paper trades (with a recorded
+            decision) to populate the model-vs-result scatter.
+          </span>
+        </div>
+      );
+    }
+
+    // Layout — same proportions as the equity curve so the panel stays
+    // visually consistent. 360x180 gives a 2:1 aspect ratio that's wide
+    // enough to read horizontal scatter without dominating the panel.
+    const w = 360;
+    const h = 180;
+    const padL = 44; // room for Y-axis labels
+    const padR = 12;
+    const padT = 12;
+    const padB = 28; // room for X-axis labels
+    const innerW = w - padL - padR;
+    const innerH = h - padT - padB;
+
+    // Y range: symmetric around the largest-magnitude PnL so the zero
+    // baseline is always in the middle. Clamp to ±$20 minimum so a single
+    // tiny lot doesn't compress the plot to a flat line.
+    const pnlExtent = Math.max(
+      20,
+      ...points.map((p) => Math.abs(p.realized_pnl_dollars)),
+    );
+    const minPnl = -pnlExtent;
+    const maxPnl = pnlExtent;
+
+    // X range is always 0-100 (% probability). The fair_probability_pct
+    // is the model's "true" probability for the selected side, so it
+    // lives in [0, 100] (clamped on the backend).
+
+    const xFor = (pct: number) => padL + (pct / 100) * innerW;
+    const yFor = (pnl: number) =>
+      padT + innerH - ((pnl - minPnl) / (maxPnl - minPnl)) * innerH;
+
+    // Bubble radius: clamped between 3 and 12 px so the smallest and
+    // largest stakes are still readable. We use a sqrt scale so the
+    // bubble AREA (not radius) scales linearly with stake — this is
+    // the standard "perceptually accurate" bubble chart.
+    const stakes = points.map((p) => p.stake_dollars);
+    const minStake = Math.min(...stakes);
+    const maxStake = Math.max(...stakes);
+    const stakeRange = Math.max(maxStake - minStake, 0.01);
+    const rFor = (stake: number) => {
+      const t = (stake - minStake) / stakeRange; // 0..1
+      return 3 + Math.sqrt(t) * 9; // 3..12 px
+    };
+
+    // Y axis tick lines at -pnlExtent, 0, +pnlExtent. X axis tick lines
+    // at 0%, 25%, 50%, 75%, 100% (so the 50% reference line is one of
+    // them). Render in a single pass.
+    const yTicks = [minPnl, 0, maxPnl];
+    const xTicks = [0, 25, 50, 75, 100];
+
+    // Counts for the header — useful at a glance.
+    const wins = points.filter((p) => p.won === true).length;
+    const losses = points.filter((p) => p.won === false).length;
+    const pushes = points.filter((p) => p.won === null).length;
+    const noDecision = points.filter((p) => p.market_price_cents == null && p.fair_probability_pct === 0).length;
+
+    const hover = hoverIdx != null ? points[hoverIdx] : null;
+
+    return (
+      <div className="calibrationScatter">
+        <div className="calibrationScatterHeader">
+          <span className="muted small">
+            Calibration scatter (model fair % → realized PnL)
+          </span>
+          <span className="muted small">
+            {points.length} {points.length === 1 ? 'lot' : 'lots'}
+            {wins > 0 && ` · ${wins}W`}
+            {losses > 0 && ` · ${losses}L`}
+            {pushes > 0 && ` · ${pushes} push`}
+            {noDecision > 0 && ` · ${noDecision} no-decision`}
+          </span>
+        </div>
+        <div className="calibrationScatterCanvas">
+          <svg
+            className="calibrationScatterSvg"
+            viewBox={`0 0 ${w} ${h}`}
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="Calibration scatter: model fair probability vs realized PnL"
+          >
+            {/* Y grid + axis labels. */}
+            {yTicks.map((p) => (
+              <g key={`y-${p}`}>
+                <line
+                  x1={padL}
+                  x2={w - padR}
+                  y1={yFor(p)}
+                  y2={yFor(p)}
+                  stroke="rgba(255,255,255,0.08)"
+                  strokeWidth={1}
+                />
+                <text
+                  x={padL - 6}
+                  y={yFor(p) + 3}
+                  textAnchor="end"
+                  fontSize={9}
+                  fill="rgba(255,255,255,0.55)"
+                >
+                  {p >= 0 ? `+$${p.toFixed(0)}` : `-$${Math.abs(p).toFixed(0)}`}
+                </text>
+              </g>
+            ))}
+            {/* X grid + axis labels. */}
+            {xTicks.map((p) => (
+              <g key={`x-${p}`}>
+                <line
+                  x1={xFor(p)}
+                  x2={xFor(p)}
+                  y1={padT}
+                  y2={h - padB}
+                  stroke={p === 50 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.05)'}
+                  strokeWidth={p === 50 ? 1 : 0.5}
+                  strokeDasharray={p === 50 ? '3 3' : undefined}
+                />
+                <text
+                  x={xFor(p)}
+                  y={h - padB + 14}
+                  textAnchor="middle"
+                  fontSize={9}
+                  fill="rgba(255,255,255,0.55)"
+                >
+                  {p}%
+                </text>
+              </g>
+            ))}
+            {/* Zero baseline (more visible than the gridlines). */}
+            <line
+              x1={padL}
+              x2={w - padR}
+              y1={yFor(0)}
+              y2={yFor(0)}
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth={1}
+            />
+            {/* Points. */}
+            {points.map((p, i) => {
+              const fill =
+                p.won === true
+                  ? 'var(--pos, #3fbf7f)'
+                  : p.won === false
+                  ? 'var(--neg, #d04848)'
+                  : 'rgba(255,255,255,0.45)';
+              return (
+                <circle
+                  key={p.lot_id || i}
+                  cx={xFor(p.fair_probability_pct)}
+                  cy={yFor(p.realized_pnl_dollars)}
+                  r={rFor(p.stake_dollars)}
+                  fill={fill}
+                  fillOpacity={0.55}
+                  stroke={fill}
+                  strokeWidth={hoverIdx === i ? 1.5 : 0.5}
+                  onMouseEnter={() => setHoverIdx(i)}
+                  onMouseLeave={() => setHoverIdx(null)}
+                  style={{ cursor: 'pointer' }}
+                />
+              );
+            })}
+          </svg>
+          {hover && (
+            <div
+              className="calibrationScatterTooltip"
+              style={{
+                left: `${(xFor(hover.fair_probability_pct) / w) * 100}%`,
+                top: `${(yFor(hover.realized_pnl_dollars) / h) * 100}%`,
+              }}
+            >
+              <div className="calibrationScatterTooltipTitle">
+                {hover.title || hover.ticker}
+              </div>
+              <div className="muted small">
+                Fair {hover.fair_probability_pct.toFixed(1)}%
+                {hover.market_price_cents != null
+                  ? ` · Market ${hover.market_price_cents.toFixed(0)}¢`
+                  : ' · no market price'}
+              </div>
+              <div
+                className={
+                  hover.realized_pnl_dollars > 0
+                    ? 'pos'
+                    : hover.realized_pnl_dollars < 0
+                    ? 'neg'
+                    : 'muted'
+                }
+              >
+                {hover.realized_pnl_dollars >= 0 ? '+' : ''}${hover.realized_pnl_dollars.toFixed(2)}
+                {' · '}
+                ${hover.stake_dollars.toFixed(0)} stake
+                {hover.won === true && ' · Win'}
+                {hover.won === false && ' · Loss'}
+                {hover.won === null && ' · Push'}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="calibrationLegend muted small">
+          <span className="calibrationLegendDot pos" /> Win
+          <span className="calibrationLegendDot neg" /> Loss
+          <span className="calibrationLegendDot muted" /> Push
+          <span className="calibrationLegendSep">·</span>
+          Bubble size ∝ stake
+        </div>
+      </div>
+    );
+  }
+
+  /**
    * Compact SVG equity curve. No charting library — pure SVG so the bundle
    * stays lean. Plots equity_dollars over time, marks the starting balance
    * as a dashed baseline, and tints the area between curve and baseline
@@ -633,6 +868,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <HoldTimeBreakdown stats={analytics.hold_time_stats} />}
       {analytics && <PlayerBreakdown stats={analytics.player_stats} />}
       {analytics && <EntryPriceBreakdown stats={analytics.entry_price_stats} />}
+      {analytics && <CalibrationScatter points={analytics.calibration_points} />}
       {message && <p className="muted small">{message}</p>}
       {loading && <p className="muted">Loading predictions…</p>}
       <div className="predList">

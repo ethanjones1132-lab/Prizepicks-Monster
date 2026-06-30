@@ -308,9 +308,44 @@ export interface PaperAnalytics {
   player_stats: PaperPlayerStats[];
   /** Per-entry-price-bucket performance breakdown (cheapest → most expensive). */
   entry_price_stats: PaperEntryPriceStats[];
+  /**
+   * Calibration scatter: one point per closed (decided) paper lot, with
+   * the model's `fair_probability_pct` (X axis) and realized PnL in dollars
+   * (Y axis). Pushes (`realized_pnl_dollars == 0`) appear with
+   * `won = null` so the UI can render them on the X axis. `fair_probability_pct`
+   * is parsed from the lot's `decision_json` — lots with a missing or
+   * unparseable decision still appear (with `fair_probability_pct = 0` and
+   * `market_price_cents = null`) so the closed-lot count matches.
+   */
+  calibration_points: CalibrationPoint[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;
+}
+
+/**
+ * One closed (decided) paper lot projected onto a 2-D calibration plane.
+ * The UI renders `fair_probability_pct` on the X axis and
+ * `realized_pnl_dollars` on the Y axis; bubble size is driven by
+ * `stake_dollars`; color by `won` (`null` = push, render as neutral).
+ */
+export interface CalibrationPoint {
+  lot_id: string;
+  ticker: string;
+  title: string;
+  side: string;
+  /** Model's fair probability for the selected side (0.0-100.0). */
+  fair_probability_pct: number;
+  /** Market-implied price at entry (0-100 cents). Null when the lot's decision_json was missing/unparseable. */
+  market_price_cents: number | null;
+  /** Realized PnL in dollars. Always 0 for pushes. */
+  realized_pnl_dollars: number;
+  /** Stake in dollars (used by the UI to size the scatter bubble). */
+  stake_dollars: number;
+  /** `true` for wins, `false` for losses, `null` for pushes (pnl == 0). */
+  won: boolean | null;
+  /** Settlement timestamp (RFC 3339). Null only for malformed rows. */
+  closed_at: string | null;
 }
 
 /**
