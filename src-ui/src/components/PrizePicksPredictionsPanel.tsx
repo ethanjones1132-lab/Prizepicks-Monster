@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { prizepicksApi } from '../services/prizepicks';
+import { paperSideLabel } from '../types/prizepicks';
+import { prizepicksBetWon } from '../services/prizepicks';
 import type {
   PaperAnalytics,
   PaperCategoryStats,
+  PaperEntryPriceStats,
   PaperEquitySnapshot,
   PaperHoldTimeStats,
   PaperPlayerStats,
@@ -10,8 +13,6 @@ import type {
   PrizePicksPrediction,
   SessionDelta,
 } from '../types/prizepicks';
-import { paperSideLabel } from '../types/prizepicks';
-import { prizepicksBetWon } from '../services/prizepicks';
 
 /**
  * Render the current streak as a short chip. Wins use the `pos` tint, losses
@@ -355,15 +356,79 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
       </table>
     </div>
   );
-}
+  }
 
-/**
- * Compact SVG equity curve. No charting library — pure SVG so the bundle
- * stays lean. Plots equity_dollars over time, marks the starting balance
- * as a dashed baseline, and tints the area between curve and baseline
- * green (above) or red (below) to make the trajectory obvious at a glance.
- */
-function EquityCurve({ snapshots }: { snapshots: PaperEquitySnapshot[] }) {
+  /**
+   * Per-entry-price-bucket performance table. Mirrors the layout of
+   * `CategoryBreakdown` / `SideBreakdown` / `PlayerBreakdown` so all five
+   * read as siblings. Shows the same five metrics (Bucket / Trades / Win % /
+   * PnL / ROI) with the same pos/neg PnL tint. The backend emits 20-cent-wide
+   * buckets (0-20¢, 20-40¢, 40-60¢, 60-80¢, 80-100¢) in ascending order so the
+   * table renders as a stable "long-shot to favorite" ladder.
+   */
+  function EntryPriceBreakdown({ stats }: { stats: PaperEntryPriceStats[] }) {
+    if (!stats || stats.length === 0) {
+      return (
+        <div className="entryPriceBreakdown empty">
+          <span className="muted small">
+            No entry-price data yet — place or settle paper trades to populate per-price performance.
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="entryPriceBreakdown">
+        <div className="entryPriceBreakdownHeader">
+          <span className="muted small">Per-entry-price performance (long-shot → favorite)</span>
+          <span className="muted small">{stats.length} {stats.length === 1 ? 'bucket' : 'buckets'}</span>
+        </div>
+        <table className="entryPriceTable">
+          <thead>
+            <tr>
+              <th scope="col">Entry price</th>
+              <th scope="col">Trades</th>
+              <th scope="col">Win %</th>
+              <th scope="col">PnL</th>
+              <th scope="col">ROI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((s) => {
+              const pnlPositive = s.realized_pnl >= 0;
+              return (
+                <tr key={s.bucket}>
+                  <td>
+                    <strong>{s.bucket}</strong>
+                    {s.open_trades > 0 && (
+                      <span className="muted small entryPriceOpenTag" title={`${s.open_trades} open lot(s)`}>
+                        {' '}+{s.open_trades} open
+                      </span>
+                    )}
+                  </td>
+                  <td>{s.total_trades}</td>
+                  <td>{s.wins + s.losses > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                  </td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  /**
+   * Compact SVG equity curve. No charting library — pure SVG so the bundle
+   * stays lean. Plots equity_dollars over time, marks the starting balance
+   * as a dashed baseline, and tints the area between curve and baseline
+   * green (above) or red (below) to make the trajectory obvious at a glance.
+   */
+  function EquityCurve({ snapshots }: { snapshots: PaperEquitySnapshot[] }) {
   const points = useMemo(() => {
     if (snapshots.length === 0) return null;
     // Snapshots arrive most-recent-first; flip to chronological.
@@ -567,6 +632,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <SideBreakdown stats={analytics.side_stats} />}
       {analytics && <HoldTimeBreakdown stats={analytics.hold_time_stats} />}
       {analytics && <PlayerBreakdown stats={analytics.player_stats} />}
+      {analytics && <EntryPriceBreakdown stats={analytics.entry_price_stats} />}
       {message && <p className="muted small">{message}</p>}
       {loading && <p className="muted">Loading predictions…</p>}
       <div className="predList">

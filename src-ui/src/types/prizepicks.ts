@@ -207,6 +207,31 @@ export function paperSideLabel(side: string): string {
 }
 
 /**
+ * Per-entry-price-bucket performance breakdown. Mirrors `PaperCategoryStats`
+ * and `PaperSideStats` but groups by the lot's `entry_price_cents` at trade
+ * time. The backend emits 20-cent-wide buckets (0-20¢, 20-40¢, 40-60¢,
+ * 60-80¢, 80-100¢) — only populated buckets appear in the result. Sorted by
+ * `min_cents` ASC so the UI renders a stable "cheapest to most expensive"
+ * ladder. Helps users answer "am I better at picking long-shots or favorites?".
+ */
+export interface PaperEntryPriceStats {
+  /** Human-readable bucket label, e.g. "0-20¢", "40-60¢", "80-100¢". */
+  bucket: string;
+  /** Lower bound of the bucket in cents (inclusive). */
+  min_cents: number;
+  /** Upper bound of the bucket in cents (exclusive). */
+  max_cents: number;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+}
+
+/**
  * Per-player performance breakdown. Mirrors `PaperCategoryStats` and
  * `PaperSideStats` but groups by player name. The `player` field is the
  * name extracted from the lot's `title` (`"<name> Over|Under <line> <stat>"`
@@ -281,6 +306,8 @@ export interface PaperAnalytics {
   hold_time_stats: PaperHoldTimeStats[];
   /** Per-player performance breakdown. */
   player_stats: PaperPlayerStats[];
+  /** Per-entry-price-bucket performance breakdown (cheapest → most expensive). */
+  entry_price_stats: PaperEntryPriceStats[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;

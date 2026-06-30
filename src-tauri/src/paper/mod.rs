@@ -168,6 +168,12 @@ pub struct PaperAnalytics {
     /// per-category, per-side, and per-hold-time views — per-player answers
     /// "which players am I actually making money on?".
     pub player_stats: Vec<PaperPlayerStats>,
+    /// Per-entry-price-bucket performance breakdown. Buckets are 20-cent
+    /// wide (0-20¢, 20-40¢, 40-60¢, 60-80¢, 80-100¢) and only populated
+    /// buckets appear. Sorted by `min_cents` ASC so the UI renders a stable
+    /// \"cheapest to most expensive\" ladder. Helps users answer \"am I better
+    /// at picking long-shots or favorites?\".
+    pub entry_price_stats: Vec<PaperEntryPriceStats>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -393,7 +399,123 @@ fn compute_player_stats(lots: &[PaperLot]) -> Vec<PaperPlayerStats> {
     out
 }
 
-/// Per-window equity change for the paper-trading summary card. `pnl_dollars`
+/// Bucket closed + open lots by entry price (in cents) and compute
+/// per-bucket stats. Buckets are 20-cent wide: 0-20, 20-40, 40-60, 60-80,
+/// 80-100 (the valid range for PrizePicks binary prices). Only buckets with
+/// at least one lot are emitted. Output is sorted by `min_cents` ASC so the
+/// UI renders a stable "cheapest to most expensive" ladder.
+///
+/// Open lots contribute to `total_trades` and `open_trades` but not to
+/// realized PnL, wins/losses, or the ROI denominator (only closed stake
+/// counts for ROI). Pushes (pnl == 0) contribute stake but not wins/losses.
+fn compute_entry_price_stats(lots: &[PaperLot]) -> Vec<PaperEntryPriceStats> {
+    use std::collections::BTreeMap;
+
+    // Define the canonical bucket boundaries (in cents).
+    const BUCKETS: &[(f64, f64, &str)] = &[
+        (0.0, 20.0, "0-20¢"),
+        (20.0, 40.0, "20-40¢"),
+        (40.0, 60.0, "40-60¢"),
+        (60.0, 80.0, "60-80¢"),
+        (80.0, 100.0, "80-100¢"),
+    ];
+
+    // Use BTreeMap keyed by bucket *index* (0..BUCKETS.len()) so iteration
+    // is naturally sorted. Keying by `min_cents` (f64) would not compile —
+    // `BTreeMap` requires `K: Ord`, and `f64` only implements `PartialOrd`.
+    // The 5 canonical buckets are stored as static f64 tuples so the bucket
+    // boundaries stay readable; the index is the map key.
+    let mut buckets: BTreeMap<usize, PaperEntryPriceStats> = BTreeMap::new();
+    for l in lots {
+        let price = l.entry_price_cents;
+        // Find the matching bucket (linear scan over 5 items is trivial).
+        // The default `(80.0, 100.0, "80-100¢")` is the last bucket so any
+        // price >= 100.0 lands there (defensive — valid PrizePicks prices
+        // are 0-100¢ exclusive of the upper bound, but we never want a panic).
+        let idx = BUCKETS
+            .iter()
+            .position(|(lo, hi, _)| price >= *lo && price < *hi)
+            .unwrap_or(BUCKETS.len() - 1);
+        let (min_c, max_c, label) = BUCKETS[idx];
+        let entry = buckets
+            .entry(idx)
+            .or_insert_with(|| PaperEntryPriceStats::new(label.to_string(), min_c, max_c));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+    }
+
+    let mut out: Vec<PaperEntryPriceStats> = buckets.into_values().collect();
+    for s in out.iter_mut() {
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+    }
+    // Already sorted by min_cents via BTreeMap iteration order.
+    out
+}
+
+/// Performance breakdown for a single entry-price bucket (e.g. "0-20¢",
+/// "20-40¢", ..., "80-100¢"). Mirrors `PaperCategoryStats` / `PaperSideStats`
+/// but groups by the lot's `entry_price_cents` at trade time. Helps users
+/// answer "am I better at picking long-shots or favorites?" — the answer
+/// is usually not obvious from aggregate metrics alone. Buckets are emitted
+/// in ascending order (cheapest → most expensive) so the UI can render a
+/// stable "long-shot to favorite" ladder. Only populated buckets appear.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperEntryPriceStats {
+    /// Human-readable bucket label, e.g. "0-20¢", "20-40¢", "80-100¢".
+    pub bucket: String,
+    /// Lower bound of the bucket in cents (inclusive).
+    pub min_cents: f64,
+    /// Upper bound of the bucket in cents (exclusive).
+    pub max_cents: f64,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperEntryPriceStats {
+    fn new(bucket: String, min_cents: f64, max_cents: f64) -> Self {
+        Self {
+            bucket,
+            min_cents,
+            max_cents,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
 /// is the dollar change between the most-recent equity snapshot and the
 /// baseline snapshot; `pnl_pct` is `pnl_dollars / baseline_equity * 100`
 /// (returns 0.0 when `baseline_equity` <= 0). `baseline_ts` is the timestamp
@@ -1527,6 +1649,7 @@ pub async fn get_analytics(
     let side_stats = compute_side_stats(&all);
     let hold_time_stats = compute_hold_time_stats(&all);
     let player_stats = compute_player_stats(&all);
+    let entry_price_stats = compute_entry_price_stats(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -1562,6 +1685,7 @@ pub async fn get_analytics(
         side_stats,
         hold_time_stats,
         player_stats,
+        entry_price_stats,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -2944,5 +3068,208 @@ mod tests {
         assert!((stats[0].win_rate - 0.0).abs() < 1e-9);
         assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
         assert!((stats[0].total_staked - 5.0).abs() < 1e-9);
+    }
+
+    // ── compute_entry_price_stats tests ─────────────────────────
+
+    /// Helper: closed lot parameterized by entry price (cents) so we can
+    /// drive the entry-price bucket math directly. Other fields (title,
+    /// category, side, etc.) are placeholders — the entry-price test path
+    /// only reads `entry_price_cents`, `stake_dollars`, `realized_pnl`,
+    /// and `status`.
+    fn closed_lot_price(entry_cents: f64, stake: f64, pnl: f64) -> PaperLot {
+        PaperLot {
+            id: format!("p{entry_cents}-{pnl}"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: "Points".to_string(),
+            side: "Over".to_string(),
+            entry_price_cents: entry_cents,
+            qty: 1.0,
+            stake_dollars: stake,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: Some("2026-01-01T01:00:00Z".to_string()),
+            closed_price_cents: Some(if pnl >= 0.0 { 100.0 } else { 0.0 }),
+            realized_pnl: Some(pnl),
+            status: "Closed".to_string(),
+            settlement_result: Some(
+                if pnl > 0.0 {
+                    "Win"
+                } else if pnl < 0.0 {
+                    "Loss"
+                } else {
+                    "Push"
+                }
+                .to_string(),
+            ),
+        }
+    }
+
+    fn open_lot_price(entry_cents: f64, stake: f64) -> PaperLot {
+        PaperLot {
+            id: format!("p{entry_cents}-open"),
+            ticker: "TEST".to_string(),
+            title: "T".to_string(),
+            category: "Points".to_string(),
+            side: "Over".to_string(),
+            entry_price_cents: entry_cents,
+            qty: 1.0,
+            stake_dollars: stake,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: None,
+            closed_price_cents: None,
+            realized_pnl: None,
+            status: "Open".to_string(),
+            settlement_result: None,
+        }
+    }
+
+    #[test]
+    fn entry_price_stats_empty_input_returns_empty_vec() {
+        let stats = compute_entry_price_stats(&[]);
+        assert!(stats.is_empty());
+    }
+
+    #[test]
+    fn entry_price_stats_buckets_lots_into_20_cent_bands() {
+        // 5¢ → 0-20¢, 25¢ → 20-40¢, 45¢ → 40-60¢, 65¢ → 60-80¢, 85¢ → 80-100¢
+        let lots = vec![
+            closed_lot_price(5.0, 5.0, 1.0),
+            closed_lot_price(25.0, 5.0, 1.0),
+            closed_lot_price(45.0, 5.0, 1.0),
+            closed_lot_price(65.0, 5.0, 1.0),
+            closed_lot_price(85.0, 5.0, 1.0),
+        ];
+        let stats = compute_entry_price_stats(&lots);
+        assert_eq!(stats.len(), 5);
+        // Output is sorted by min_cents ASC (BTreeMap iteration order).
+        assert_eq!(stats[0].bucket, "0-20¢");
+        assert_eq!(stats[1].bucket, "20-40¢");
+        assert_eq!(stats[2].bucket, "40-60¢");
+        assert_eq!(stats[3].bucket, "60-80¢");
+        assert_eq!(stats[4].bucket, "80-100¢");
+        // Each bucket has exactly one winning closed lot.
+        for s in &stats {
+            assert_eq!(s.total_trades, 1);
+            assert_eq!(s.wins, 1);
+            assert_eq!(s.losses, 0);
+        }
+    }
+
+    #[test]
+    fn entry_price_stats_omits_empty_buckets() {
+        // Only lots in two bands — the other three should NOT appear.
+        let lots = vec![
+            closed_lot_price(10.0, 5.0, 1.0),
+            closed_lot_price(30.0, 5.0, -1.0),
+        ];
+        let stats = compute_entry_price_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        assert_eq!(stats[0].bucket, "0-20¢");
+        assert_eq!(stats[1].bucket, "20-40¢");
+    }
+
+    #[test]
+    fn entry_price_stats_open_lot_counted_in_open_trades_only() {
+        // Open lots count toward total_trades + open_trades, but contribute
+        // zero realized PnL, zero wins/losses, and no stake to the ROI
+        // denominator (only closed stake counts for ROI per the doc).
+        let lots = vec![
+            open_lot_price(15.0, 5.0),
+            closed_lot_price(75.0, 5.0, 1.0),
+        ];
+        let stats = compute_entry_price_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        let open_bucket = stats.iter().find(|s| s.bucket == "0-20¢").unwrap();
+        assert_eq!(open_bucket.total_trades, 1);
+        assert_eq!(open_bucket.open_trades, 1);
+        assert_eq!(open_bucket.wins, 0);
+        assert_eq!(open_bucket.losses, 0);
+        assert!((open_bucket.realized_pnl - 0.0).abs() < 1e-9);
+        assert!((open_bucket.total_staked - 0.0).abs() < 1e-9);
+        // Closed bucket: 1 trade, 1 win, +$1, $5 staked → 20% ROI.
+        let closed_bucket = stats.iter().find(|s| s.bucket == "60-80¢").unwrap();
+        assert_eq!(closed_bucket.total_trades, 1);
+        assert_eq!(closed_bucket.wins, 1);
+        assert!((closed_bucket.realized_pnl - 1.0).abs() < 1e-9);
+        assert!((closed_bucket.total_staked - 5.0).abs() < 1e-9);
+        assert!((closed_bucket.roi_pct - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn entry_price_stats_push_lot_contributes_stake_but_not_win_or_loss() {
+        // pnl == 0 → stake counts for ROI, win_rate stays 0/0 → 0%.
+        let mut p = closed_lot_price(35.0, 5.0, 0.0);
+        p.settlement_result = Some("Push".to_string());
+        let stats = compute_entry_price_stats(&[p]);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].win_rate - 0.0).abs() < 1e-9);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 5.0).abs() < 1e-9);
+        assert!((stats[0].roi_pct - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn entry_price_stats_win_rate_and_roi_computed_per_bucket() {
+        // 0-20¢ bucket: 2 wins / 0 losses, +$6 on $10 → 60% ROI, 100% win
+        // 60-80¢ bucket: 1 win / 1 loss, -$2 on $10 → -20% ROI, 50% win
+        let lots = vec![
+            closed_lot_price(10.0, 5.0, 3.0),  // 0-20¢ win
+            closed_lot_price(15.0, 5.0, 3.0),  // 0-20¢ win
+            closed_lot_price(70.0, 5.0, 2.0),  // 60-80¢ win
+            closed_lot_price(75.0, 5.0, -4.0), // 60-80¢ loss
+        ];
+        let stats = compute_entry_price_stats(&lots);
+        let cheap = stats.iter().find(|s| s.bucket == "0-20¢").unwrap();
+        assert_eq!(cheap.total_trades, 2);
+        assert_eq!(cheap.wins, 2);
+        assert_eq!(cheap.losses, 0);
+        assert!((cheap.win_rate - 100.0).abs() < 1e-6);
+        assert!((cheap.realized_pnl - 6.0).abs() < 1e-9);
+        assert!((cheap.total_staked - 10.0).abs() < 1e-9);
+        assert!((cheap.roi_pct - 60.0).abs() < 1e-6);
+
+        let pricey = stats.iter().find(|s| s.bucket == "60-80¢").unwrap();
+        assert_eq!(pricey.total_trades, 2);
+        assert_eq!(pricey.wins, 1);
+        assert_eq!(pricey.losses, 1);
+        assert!((pricey.win_rate - 50.0).abs() < 1e-6);
+        assert!((pricey.realized_pnl - -2.0).abs() < 1e-9);
+        assert!((pricey.total_staked - 10.0).abs() < 1e-9);
+        assert!((pricey.roi_pct - -20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn entry_price_stats_price_at_upper_bound_routes_to_next_bucket() {
+        // entry_price_cents = 20.0 falls into the 20-40¢ band (lower inclusive,
+        // upper exclusive). The `find((lo, hi, _) => price >= *lo && price < *hi)`
+        // check sends 20.0 into 20-40¢, not 0-20¢. 19.99 stays in 0-20¢.
+        let lots = vec![
+            closed_lot_price(19.99, 5.0, 1.0),
+            closed_lot_price(20.0, 5.0, 1.0),
+        ];
+        let stats = compute_entry_price_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        let low = stats.iter().find(|s| s.bucket == "0-20¢").unwrap();
+        let mid = stats.iter().find(|s| s.bucket == "20-40¢").unwrap();
+        assert_eq!(low.total_trades, 1);
+        assert_eq!(mid.total_trades, 1);
+    }
+
+    #[test]
+    fn entry_price_stats_out_of_range_price_falls_into_top_bucket() {
+        // Defensive: a price >= 100.0 should land in 80-100¢ (the unwrap_or
+        // fallback) rather than panic. Valid PrizePicks prices are strictly
+        // 0-100¢ exclusive, but we never want a panic on bad data.
+        let lots = vec![closed_lot_price(150.0, 5.0, 1.0)];
+        let stats = compute_entry_price_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].bucket, "80-100¢");
     }
 }
