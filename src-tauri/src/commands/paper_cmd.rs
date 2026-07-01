@@ -58,3 +58,17 @@ pub async fn paper_update_lot_notes(
 ) -> Result<crate::paper::PaperLot, String> {
     crate::paper::update_lot_notes(&db_pool, &lot_id, notes, tags).await
 }
+
+/// Fetch paper lots (trade fills), most recent first.
+/// `status_filter` is optional — when Some, restricts the result to lots whose
+/// `status` column matches (e.g. Some("Open") to show only open positions).
+/// `limit` is optional — when None, returns every lot; the SQL `ORDER BY
+/// opened_at DESC` keeps the newest fills on top either way.
+#[tauri::command]
+pub async fn paper_get_lots(
+    db_pool: State<'_, Pool<Sqlite>>,
+    status_filter: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<crate::paper::PaperLot>, String> {
+    crate::paper::list_lots(&db_pool, status_filter.as_deref(), limit).await
+}

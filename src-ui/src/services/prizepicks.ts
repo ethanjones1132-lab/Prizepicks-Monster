@@ -159,6 +159,17 @@ export const prizepicksApi = {
     updatePaperLotNotes: (lotId: string, notes?: string, tags?: string) =>
       invoke<PaperLot>('paper_update_lot_notes', { lotId, notes, tags }),
 
+    /**
+     * List paper lots (trade fills) for the journal view.
+     * `statusFilter` is optional — pass e.g. "Open" to only see open positions.
+     * `limit` is optional — when omitted, returns every lot (most recent first).
+     */
+    getPaperLots: (statusFilter?: string, limit?: number) =>
+      invoke<PaperLot[]>('paper_get_lots', {
+        statusFilter: statusFilter ?? null,
+        limit: limit ?? null,
+      }),
+
     // ── ML Predictor ──
 
   mlTrainModel: (outputPath?: string) =>

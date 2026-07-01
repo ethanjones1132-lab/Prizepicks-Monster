@@ -1771,3 +1771,179 @@ button {
   background: rgba(201, 168, 76, 0.18);
   color: #c9a84c;
 }
+
+/* Paper journal — inline notes/tags editor for paper lots.
+ * Same visual weight as the other breakdowns (12px padding, 14px radius,
+ * subtle border) so the eight performance views read as siblings. */
+.paperJournal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 14px;
+}
+
+.paperJournal.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.paperJournalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.paperJournalFilters {
+  display: flex;
+  gap: 4px;
+}
+
+.paperJournalList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paperJournalRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.paperJournalRow.open {
+  border-left: 3px solid rgba(110, 200, 163, 0.6);
+}
+
+.paperJournalRow.closed {
+  border-left: 3px solid rgba(255, 255, 255, 0.12);
+}
+
+.paperJournalRowHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.paperJournalRowTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.paperJournalRowTitle strong {
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paperJournalRowMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.paperJournalStatus {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.paperJournalStatus.open {
+  background: rgba(110, 200, 163, 0.18);
+  color: #6ec8a3;
+}
+
+.paperJournalStatus.closed {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.paperJournalReadonly {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.paperJournalNotes {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.paperJournalTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.paperJournalTag {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(110, 200, 163, 0.12);
+  color: #6ec8a3;
+  font-weight: 500;
+}
+
+.paperJournalEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.paperJournalTextarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.88rem;
+  resize: vertical;
+}
+
+.paperJournalTextarea:focus,
+.paperJournalTagInput:focus {
+  outline: none;
+  border-color: rgba(110, 200, 163, 0.5);
+}
+
+.paperJournalTagInput {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.paperJournalEditorActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

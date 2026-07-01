@@ -10,6 +10,7 @@ import type {
   PaperEntryPriceStats,
   PaperEquitySnapshot,
   PaperHoldTimeStats,
+  PaperLot,
   PaperPlayerStats,
   PaperSideStats,
   PrizePicksPrediction,
@@ -816,10 +817,194 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
   );
 }
 
+/**
+ * Paper Journal — inline notes/tags editor for recent paper lots.
+ * Each row exposes a one-line summary (title, side, stake, status, PnL) plus
+ * a notes textarea and a tags input. The Save button calls
+ * `prizepicksApi.updatePaperLotNotes` with both fields and reflects the
+ * server-confirmed values back into local state. A status filter (All /
+ * Open / Closed) sits in the header so the user can focus on actionable
+ * positions vs. settled history. Empty state guides the user toward placing
+ * paper trades.
+ */
+function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: PaperLot) => void }) {
+  const [filter, setFilter] = useState<'All' | 'Open' | 'Closed'>('All');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [editTags, setEditTags] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const filtered = useMemo(() => {
+    if (filter === 'All') return lots;
+    return lots.filter((l) => l.status === filter);
+  }, [lots, filter]);
+
+  const beginEdit = (lot: PaperLot) => {
+    setEditingId(lot.id);
+    setEditNotes(lot.notes ?? '');
+    setEditTags(lot.tags ?? '');
+    setSaveError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditNotes('');
+    setEditTags('');
+    setSaveError(null);
+  };
+
+  const saveEdit = async (lot: PaperLot) => {
+    setSavingId(lot.id);
+    setSaveError(null);
+    try {
+      const updated = await prizepicksApi.updatePaperLotNotes(
+        lot.id,
+        editNotes,
+        editTags,
+      );
+      onUpdated(updated);
+      setEditingId(null);
+      setEditNotes('');
+      setEditTags('');
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  if (lots.length === 0) {
+    return (
+      <div className="paperJournal empty">
+        <span className="muted small">
+          No paper lots yet — place or settle paper trades to start journaling your reasoning.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="paperJournal">
+      <div className="paperJournalHeader">
+        <span className="muted small">📝 Paper journal</span>
+        <div className="paperJournalFilters">
+          {(['All', 'Open', 'Closed'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`ghostBtn small ${filter === f ? 'active' : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+        <span className="muted small">
+          {filtered.length} of {lots.length}
+        </span>
+      </div>
+      <div className="paperJournalList">
+        {filtered.map((lot) => {
+          const isOpen = lot.status === 'Open';
+          const pnlPositive = (lot.realized_pnl ?? 0) >= 0;
+          const isEditing = editingId === lot.id;
+          const isSaving = savingId === lot.id;
+          const hasNotes = !!(lot.notes || lot.tags);
+          return (
+            <article key={lot.id} className={`paperJournalRow ${isOpen ? 'open' : 'closed'}`}>
+              <div className="paperJournalRowHeader">
+                <div className="paperJournalRowTitle">
+                  <strong>{lot.title || '(untitled)'}</strong>
+                  <span className="muted small">
+                    {paperSideLabel(lot.side)} · ${lot.stake_dollars.toFixed(2)} @ {lot.entry_price_cents.toFixed(0)}¢
+                  </span>
+                </div>
+                <div className="paperJournalRowMeta">
+                  <span className={`paperJournalStatus ${isOpen ? 'open' : 'closed'}`}>
+                    {lot.status}
+                  </span>
+                  {lot.realized_pnl != null && (
+                    <span className={pnlPositive ? 'pos' : 'neg'}>
+                      {pnlPositive ? '+' : ''}${lot.realized_pnl.toFixed(2)}
+                    </span>
+                  )}
+                  {!isEditing && (
+                    <button
+                      type="button"
+                      className="ghostBtn small"
+                      onClick={() => beginEdit(lot)}
+                      title={hasNotes ? 'Edit notes/tags' : 'Add notes/tags'}
+                    >
+                      {hasNotes ? '✏️ Edit' : '＋ Note'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {hasNotes && !isEditing && (
+                <div className="paperJournalReadonly">
+                  {lot.notes && <div className="paperJournalNotes">{lot.notes}</div>}
+                  {lot.tags && (
+                    <div className="paperJournalTags">
+                      {lot.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
+                        <span key={t} className="paperJournalTag">{t}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {isEditing && (
+                <div className="paperJournalEditor">
+                  <textarea
+                    className="paperJournalTextarea"
+                    rows={2}
+                    placeholder="Notes — e.g. 'injury-watch, line moved 1.5pts'"
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                  />
+                  <input
+                    className="paperJournalTagInput"
+                    type="text"
+                    placeholder="Tags — comma-separated, e.g. injury,regression,underdog"
+                    value={editTags}
+                    onChange={(e) => setEditTags(e.target.value)}
+                  />
+                  <div className="paperJournalEditorActions">
+                    <button
+                      type="button"
+                      className="primaryBtn small"
+                      onClick={() => void saveEdit(lot)}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghostBtn small"
+                      onClick={cancelEdit}
+                      disabled={isSaving}
+                    >
+                      Cancel
+                    </button>
+                    {saveError && (
+                      <span className="neg small">{saveError}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function PrizePicksPredictionsPanel() {
   const [predictions, setPredictions] = useState<PrizePicksPrediction[]>([]);
   const [analytics, setAnalytics] = useState<PaperAnalytics | null>(null);
   const [equityHistory, setEquityHistory] = useState<PaperEquitySnapshot[]>([]);
+  const [paperLots, setPaperLots] = useState<PaperLot[]>([]);
   const [range, setRange] = useState<EquityRange>('30d');
   const [loading, setLoading] = useState(true);
   const [grading, setGrading] = useState(false);
@@ -828,14 +1013,16 @@ export function PrizePicksPredictionsPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [data, paper, equity] = await Promise.all([
+      const [data, paper, equity, lots] = await Promise.all([
         prizepicksApi.getPredictions(),
         prizepicksApi.getPaperAnalytics().catch(() => null),
         prizepicksApi.getPaperEquityHistory(500).catch(() => []),
+        prizepicksApi.getPaperLots(undefined, 200).catch(() => []),
       ]);
       setPredictions(data);
       setAnalytics(paper);
       setEquityHistory(equity);
+      setPaperLots(lots);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -875,6 +1062,13 @@ export function PrizePicksPredictionsPanel() {
       setGrading(false);
     }
   };
+
+  // Reflect an updated paper lot (notes/tags save) back into the journal
+  // state without a full reload — keeps the editor responsive and avoids
+  // a network round-trip on every Save.
+  const handleLotUpdated = useCallback((updated: PaperLot) => {
+    setPaperLots((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+  }, []);
 
   return (
     <section className="predictionsPanel">
@@ -948,6 +1142,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <EntryPriceBreakdown stats={analytics.entry_price_stats} />}
       {analytics && <DisagreementBreakdown stats={analytics.paper_disagreement_stats} />}
       {analytics && <CalibrationScatter points={analytics.calibration_points} />}
+      <PaperJournal lots={paperLots} onUpdated={handleLotUpdated} />
       {message && <p className="muted small">{message}</p>}
       {loading && <p className="muted">Loading predictions…</p>}
       <div className="predList">

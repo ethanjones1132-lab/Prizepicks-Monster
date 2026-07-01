@@ -1722,6 +1722,58 @@ pub async fn get_open_lots(pool: &Pool<Sqlite>) -> Result<Vec<PaperLot>, String>
     Ok(rows.iter().map(row_to_lot).collect())
 }
 
+/// Flexible lot listing for the UI's journal view. Supports an optional
+/// `status_filter` (e.g. `Some("Open")` to only see open positions) and an
+/// optional `limit` (most recent first). Both are passed through to the SQL
+/// `WHERE` / `LIMIT` clauses; a `None` value for either disables the filter
+/// (returns every lot, in `opened_at DESC` order). All 18 columns — including
+/// the newly-added `notes` and `tags` — are projected so the journal editor
+/// can read both fields back from the same row.
+pub async fn list_lots(
+    pool: &Pool<Sqlite>,
+    status_filter: Option<&str>,
+    limit: Option<i64>,
+) -> Result<Vec<PaperLot>, String> {
+    // Build the optional WHERE clause. Using a static `"1=1"` prefix lets us
+    // unconditionally `AND` the status filter without branching the SQL
+    // syntax — simpler than two `match` arms with different query strings.
+    let where_clause = match status_filter {
+        Some(_) => "WHERE status = ?",
+        None => "WHERE 1=1",
+    };
+    let limit_clause = match limit {
+        Some(_) => "LIMIT ?",
+        None => "",
+    };
+    let sql = format!(
+        r#"
+        SELECT id, ticker, title, category, side, entry_price_cents, qty, stake_dollars,
+               source, decision_json, opened_at, closed_at, closed_price_cents,
+               realized_pnl, status, settlement_result, notes, tags
+        FROM paper_lots
+        {}
+        ORDER BY opened_at DESC
+        {}
+        "#,
+        where_clause, limit_clause
+    );
+
+    let mut q = sqlx::query(&sql);
+    if let Some(s) = status_filter {
+        q = q.bind(s);
+    }
+    if let Some(n) = limit {
+        q = q.bind(n);
+    }
+
+    let rows = q
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to list paper lots: {}", e))?;
+
+    Ok(rows.iter().map(row_to_lot).collect())
+}
+
 /// Update notes and/or tags on a paper lot.
 pub async fn update_lot_notes(
     pool: &Pool<Sqlite>,
@@ -4149,5 +4201,120 @@ mod tests {
         .unwrap();
         assert_eq!(updated.notes.as_deref(), Some("second draft"));
         assert_eq!(updated.tags.as_deref(), Some("c"));
+    }
+
+    /// Insert a paper lot with a chosen status and opened_at. Mirrors the
+    /// `insert_test_lot` schema but lets the tests vary the status (Open vs
+    /// Closed) and the timestamp (so we can assert DESC ordering). The
+    /// `opened_at` is RFC 3339 — sqlite stores it as TEXT and ORDER BY uses
+    /// lexicographic comparison, which is correct for ISO 8601.
+    async fn insert_test_lot_with_status(
+        pool: &Pool<Sqlite>,
+        id: &str,
+        status: &str,
+        opened_at: &str,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO paper_lots
+                (id, ticker, title, category, side, entry_price_cents, qty,
+                 stake_dollars, source, decision_json, opened_at, closed_at,
+                 closed_price_cents, realized_pnl, status, settlement_result)
+            VALUES
+                (?1, 'TEST', 'T', 'Points', 'Over', 50.0, 1.0, 1.0, 'Manual',
+                 NULL, ?2, NULL, NULL, NULL, ?3, NULL)
+            "#,
+        )
+        .bind(id)
+        .bind(opened_at)
+        .bind(status)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// No filter, no limit — every lot in insertion order (which is
+    /// `opened_at DESC` since we set later timestamps on later inserts).
+    #[tokio::test]
+    async fn list_lots_no_filters_returns_all_lots() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot_with_status(&pool, "a", "Open", "2026-01-01T00:00:00Z").await;
+        insert_test_lot_with_status(&pool, "b", "Closed", "2026-01-02T00:00:00Z").await;
+        insert_test_lot_with_status(&pool, "c", "Open", "2026-01-03T00:00:00Z").await;
+        let all = list_lots(&pool, None, None).await.unwrap();
+        assert_eq!(all.len(), 3);
+        // DESC by opened_at: c (Jan 3) → b (Jan 2) → a (Jan 1).
+        assert_eq!(all[0].id, "c");
+        assert_eq!(all[1].id, "b");
+        assert_eq!(all[2].id, "a");
+    }
+
+    /// Status filter restricts the result to lots whose `status` column
+    /// matches exactly (case-sensitive SQL equality).
+    #[tokio::test]
+    async fn list_lots_with_status_filter_returns_only_matching() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot_with_status(&pool, "open-1", "Open", "2026-01-01T00:00:00Z").await;
+        insert_test_lot_with_status(&pool, "closed-1", "Closed", "2026-01-02T00:00:00Z").await;
+        insert_test_lot_with_status(&pool, "open-2", "Open", "2026-01-03T00:00:00Z").await;
+        insert_test_lot_with_status(&pool, "closed-2", "Closed", "2026-01-04T00:00:00Z").await;
+        let open_only = list_lots(&pool, Some("Open"), None).await.unwrap();
+        assert_eq!(open_only.len(), 2);
+        assert!(open_only.iter().all(|l| l.status == "Open"));
+        assert_eq!(open_only[0].id, "open-2");
+        assert_eq!(open_only[1].id, "open-1");
+    }
+
+    /// Limit is honored: passing Some(2) on a 3-lot table returns only 2.
+    /// Combined with a status filter to make sure the WHERE still applies
+    /// before the LIMIT (otherwise an empty-filter+limit could mask a bug).
+    #[tokio::test]
+    async fn list_lots_with_limit_caps_result_size() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot_with_status(&pool, "a", "Open", "2026-01-01T00:00:00Z").await;
+        insert_test_lot_with_status(&pool, "b", "Open", "2026-01-02T00:00:00Z").await;
+        insert_test_lot_with_status(&pool, "c", "Open", "2026-01-03T00:00:00Z").await;
+        let capped = list_lots(&pool, Some("Open"), Some(2)).await.unwrap();
+        assert_eq!(capped.len(), 2);
+        // Newest two first: c, b.
+        assert_eq!(capped[0].id, "c");
+        assert_eq!(capped[1].id, "b");
+    }
+
+    /// The 18 columns (including the newly-added `notes` and `tags`) all
+    /// survive the round-trip — protects against the same SELECT-list
+    /// omission that broke `update_lot_notes` initially. Inserts a lot,
+    /// sets non-null notes + tags, then reads it back via list_lots.
+    #[tokio::test]
+    async fn list_lots_round_trips_notes_and_tags() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot_with_status(&pool, "rt", "Closed", "2026-01-05T00:00:00Z").await;
+        let _ = update_lot_notes(
+            &pool,
+            "rt",
+            Some("regression play, line moved 1.5pts".to_string()),
+            Some("regression,line-move".to_string()),
+        )
+        .await
+        .unwrap();
+        let listed = list_lots(&pool, None, None).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            listed[0].notes.as_deref(),
+            Some("regression play, line moved 1.5pts")
+        );
+        assert_eq!(listed[0].tags.as_deref(), Some("regression,line-move"));
+    }
+
+    /// Empty pool — no lots, no filter, no limit. Result is an empty Vec
+    /// (not an error). The journal UI relies on this for the empty state.
+    #[tokio::test]
+    async fn list_lots_empty_pool_returns_empty_vec() {
+        let pool = fresh_paper_pool().await;
+        let result = list_lots(&pool, None, None).await.unwrap();
+        assert!(result.is_empty());
+        // Status filter that matches nothing is also empty, not an error.
+        let no_open = list_lots(&pool, Some("Open"), None).await.unwrap();
+        assert!(no_open.is_empty());
     }
 }
