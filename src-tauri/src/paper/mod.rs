@@ -72,6 +72,10 @@ pub struct PaperLot {
     pub realized_pnl: Option<f64>,
     pub status: String,
     pub settlement_result: Option<String>,
+    /// Optional user notes for this paper lot.
+    pub notes: Option<String>,
+    /// Optional comma-separated tags for categorization (e.g., "injury,regression,underdog").
+    pub tags: Option<String>,
 }
 
 /// Input used to open a new paper position.
@@ -1394,30 +1398,42 @@ pub async fn init_paper_tables(pool: &Pool<Sqlite>) -> Result<(), String> {
     .map_err(|e| format!("Failed to create paper_account table: {}", e))?;
 
     sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS paper_lots (
-            id TEXT PRIMARY KEY,
-            ticker TEXT NOT NULL,
-            title TEXT NOT NULL DEFAULT '',
-            category TEXT NOT NULL DEFAULT 'Other',
-            side TEXT NOT NULL,
-            entry_price_cents REAL NOT NULL,
-            qty REAL NOT NULL,
-            stake_dollars REAL NOT NULL,
-            source TEXT NOT NULL DEFAULT 'Manual',
-            decision_json TEXT,
-            opened_at TEXT NOT NULL,
-            closed_at TEXT,
-            closed_price_cents REAL,
-            realized_pnl REAL,
-            status TEXT NOT NULL DEFAULT 'Open',
-            settlement_result TEXT
+            r#"
+            CREATE TABLE IF NOT EXISTS paper_lots (
+                id TEXT PRIMARY KEY,
+                ticker TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT 'Other',
+                side TEXT NOT NULL,
+                entry_price_cents REAL NOT NULL,
+                qty REAL NOT NULL,
+                stake_dollars REAL NOT NULL,
+                source TEXT NOT NULL DEFAULT 'Manual',
+                decision_json TEXT,
+                opened_at TEXT NOT NULL,
+                closed_at TEXT,
+                closed_price_cents REAL,
+                realized_pnl REAL,
+                status TEXT NOT NULL DEFAULT 'Open',
+                settlement_result TEXT,
+                notes TEXT,
+                tags TEXT
+            )
+            "#,
         )
-        "#,
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| format!("Failed to create paper_lots table: {}", e))?;
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to create paper_lots table: {}", e))?;
+
+        // Migration: add notes and tags columns if they don't exist (for existing DBs)
+        sqlx::query("ALTER TABLE paper_lots ADD COLUMN notes TEXT")
+            .execute(pool)
+            .await
+            .ok();
+        sqlx::query("ALTER TABLE paper_lots ADD COLUMN tags TEXT")
+            .execute(pool)
+            .await
+            .ok();
 
     sqlx::query(
         r#"
@@ -1662,7 +1678,7 @@ pub async fn get_lot(pool: &Pool<Sqlite>, lot_id: &str) -> Result<PaperLot, Stri
         r#"
         SELECT id, ticker, title, category, side, entry_price_cents, qty, stake_dollars,
                source, decision_json, opened_at, closed_at, closed_price_cents,
-               realized_pnl, status, settlement_result
+               realized_pnl, status, settlement_result, notes, tags
         FROM paper_lots WHERE id = ?1
         "#,
     )
@@ -1679,7 +1695,7 @@ pub async fn get_all_lots(pool: &Pool<Sqlite>) -> Result<Vec<PaperLot>, String> 
         r#"
         SELECT id, ticker, title, category, side, entry_price_cents, qty, stake_dollars,
                source, decision_json, opened_at, closed_at, closed_price_cents,
-               realized_pnl, status, settlement_result
+               realized_pnl, status, settlement_result, notes, tags
         FROM paper_lots ORDER BY opened_at DESC
         "#,
     )
@@ -1695,7 +1711,7 @@ pub async fn get_open_lots(pool: &Pool<Sqlite>) -> Result<Vec<PaperLot>, String>
         r#"
         SELECT id, ticker, title, category, side, entry_price_cents, qty, stake_dollars,
                source, decision_json, opened_at, closed_at, closed_price_cents,
-               realized_pnl, status, settlement_result
+               realized_pnl, status, settlement_result, notes, tags
         FROM paper_lots WHERE status = 'Open' ORDER BY opened_at DESC
         "#,
     )
@@ -1704,6 +1720,50 @@ pub async fn get_open_lots(pool: &Pool<Sqlite>) -> Result<Vec<PaperLot>, String>
     .map_err(|e| format!("Failed to fetch open paper lots: {}", e))?;
 
     Ok(rows.iter().map(row_to_lot).collect())
+}
+
+/// Update notes and/or tags on a paper lot.
+pub async fn update_lot_notes(
+    pool: &Pool<Sqlite>,
+    lot_id: &str,
+    notes: Option<String>,
+    tags: Option<String>,
+) -> Result<PaperLot, String> {
+    // Validate that at least one field is provided
+    if notes.is_none() && tags.is_none() {
+        return Err("At least one of notes or tags must be provided".into());
+    }
+
+    let mut query = "UPDATE paper_lots SET ".to_string();
+    let mut bindings: Vec<String> = Vec::new();
+    let mut param_idx = 1;
+
+    if let Some(ref n) = notes {
+        query.push_str(&format!("notes = ?{}, ", param_idx));
+        bindings.push(n.clone());
+        param_idx += 1;
+    }
+    if let Some(ref t) = tags {
+        query.push_str(&format!("tags = ?{}, ", param_idx));
+        bindings.push(t.clone());
+        param_idx += 1;
+    }
+
+    // Remove trailing comma and space
+    query = query.trim_end_matches(", ").to_string();
+    query.push_str(&format!(" WHERE id = ?{}", param_idx));
+
+    let mut q = sqlx::query(&query);
+    for b in bindings {
+        q = q.bind(b);
+    }
+    q = q.bind(lot_id);
+
+    q.execute(pool)
+        .await
+        .map_err(|e| format!("Failed to update paper lot notes/tags: {}", e))?;
+
+    get_lot(pool, lot_id).await
 }
 
 fn row_to_lot(r: &sqlx::sqlite::SqliteRow) -> PaperLot {
@@ -1725,6 +1785,8 @@ fn row_to_lot(r: &sqlx::sqlite::SqliteRow) -> PaperLot {
         realized_pnl: r.get("realized_pnl"),
         status: r.get("status"),
         settlement_result: r.get("settlement_result"),
+        notes: r.get("notes"),
+        tags: r.get("tags"),
     }
 }
 
@@ -2252,6 +2314,8 @@ mod tests {
             realized_pnl: Some(pnl),
             status: "Closed".to_string(),
             settlement_result: Some(if pnl > 0.0 { "Win" } else if pnl < 0.0 { "Loss" } else { "Push" }.to_string()),
+            notes: None,
+            tags: None,
         }
     }
 
@@ -2378,6 +2442,9 @@ mod tests {
                 }
                 .to_string(),
             ),
+
+            notes: None,
+            tags: None,
         }
     }
 
@@ -2399,6 +2466,8 @@ mod tests {
             realized_pnl: None,
             status: "Open".to_string(),
             settlement_result: None,
+            notes: None,
+            tags: None,
         }
     }
 
@@ -2555,6 +2624,9 @@ mod tests {
                 }
                 .to_string(),
             ),
+
+            notes: None,
+            tags: None,
         }
     }
 
@@ -2576,6 +2648,8 @@ mod tests {
             realized_pnl: None,
             status: "Open".to_string(),
             settlement_result: None,
+            notes: None,
+            tags: None,
         }
     }
 
@@ -2942,6 +3016,9 @@ mod tests {
                 }
                 .to_string(),
             ),
+
+            notes: None,
+            tags: None,
         }
     }
 
@@ -2966,6 +3043,8 @@ mod tests {
             realized_pnl: None,
             status: "Open".to_string(),
             settlement_result: None,
+            notes: None,
+            tags: None,
         }
     }
 
@@ -3209,6 +3288,8 @@ mod tests {
             realized_pnl: Some(1.0),
             status: "Closed".to_string(),
             settlement_result: Some("Win".to_string()),
+            notes: None,
+            tags: None,
         }
     }
 
@@ -3420,6 +3501,9 @@ mod tests {
                 }
                 .to_string(),
             ),
+
+            notes: None,
+            tags: None,
         }
     }
 
@@ -3441,6 +3525,8 @@ mod tests {
             realized_pnl: None,
             status: "Open".to_string(),
             settlement_result: None,
+            notes: None,
+            tags: None,
         }
     }
 
@@ -3934,5 +4020,134 @@ mod tests {
         assert_eq!(stats[0].bucket, DisagreementBucket::Disagreement);
         assert_eq!(stats[1].bucket, DisagreementBucket::Consensus);
         assert_eq!(stats[2].bucket, DisagreementBucket::Unknown);
+    }
+
+    // ── update_lot_notes tests ─────────────────────────────────────
+
+    /// Build an in-memory pool with the production paper schema so the
+    /// full update roundtrip can be exercised end-to-end.
+    async fn fresh_paper_pool() -> Pool<Sqlite> {
+        use sqlx::sqlite::SqlitePoolOptions;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        init_paper_tables(&pool).await.unwrap();
+        // `init_paper_tables` already bootstraps the singleton paper_account
+        // row with DEFAULT_STARTING_BALANCE — no need to seed it here.
+        pool
+    }
+
+    /// Insert a minimal paper_lot row and return its id. Mirrors the
+    /// production schema used by `place_trade` — title is empty so the
+    /// analytics extractors default to "Unknown" buckets.
+    async fn insert_test_lot(pool: &Pool<Sqlite>, id: &str) {
+        sqlx::query(
+            r#"
+            INSERT INTO paper_lots
+                (id, ticker, title, category, side, entry_price_cents, qty,
+                 stake_dollars, source, decision_json, opened_at, closed_at,
+                 closed_price_cents, realized_pnl, status, settlement_result)
+            VALUES
+                (?1, 'TEST', 'T', 'Points', 'Over', 50.0, 1.0, 1.0, 'Manual',
+                 NULL, '2026-01-01T00:00:00Z', NULL, NULL, NULL, 'Open', NULL)
+            "#,
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Validation: passing both fields as `None` must short-circuit with
+    /// the documented error before touching the DB.
+    #[tokio::test]
+    async fn update_lot_notes_rejects_both_none() {
+        let pool = fresh_paper_pool().await;
+        let err = update_lot_notes(&pool, "any-id", None, None).await.unwrap_err();
+        // Case-insensitive check: the source-of-truth string starts with
+        // "At least one" (capital A); we just want to confirm the user
+        // got a meaningful validation error before any DB write.
+        assert!(err.to_lowercase().contains("at least one"), "unexpected error: {err}");
+    }
+
+    /// Roundtrip: updating notes only persists the new value and leaves
+    /// tags unchanged.
+    #[tokio::test]
+    async fn update_lot_notes_writes_notes_only() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot(&pool, "lot-notes-only").await;
+        let updated = update_lot_notes(
+            &pool,
+            "lot-notes-only",
+            Some("injury watch — late scratch risk".to_string()),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.notes.as_deref(), Some("injury watch — late scratch risk"));
+        assert!(updated.tags.is_none(), "tags should remain untouched");
+    }
+
+    /// Roundtrip: updating tags only persists the new value and leaves
+    /// notes unchanged.
+    #[tokio::test]
+    async fn update_lot_notes_writes_tags_only() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot(&pool, "lot-tags-only").await;
+        let updated = update_lot_notes(
+            &pool,
+            "lot-tags-only",
+            None,
+            Some("regression,underdog".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.tags.as_deref(), Some("regression,underdog"));
+        assert!(updated.notes.is_none(), "notes should remain untouched");
+    }
+
+    /// Roundtrip: updating both fields writes both, with the new values
+    /// reflected in the returned `PaperLot`.
+    #[tokio::test]
+    async fn update_lot_notes_writes_both_fields() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot(&pool, "lot-both").await;
+        let updated = update_lot_notes(
+            &pool,
+            "lot-both",
+            Some("sharp money, value play".to_string()),
+            Some("value,sharp".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.notes.as_deref(), Some("sharp money, value play"));
+        assert_eq!(updated.tags.as_deref(), Some("value,sharp"));
+    }
+
+    /// Roundtrip: a second update should overwrite the first, not append.
+    #[tokio::test]
+    async fn update_lot_notes_overwrites_previous_values() {
+        let pool = fresh_paper_pool().await;
+        insert_test_lot(&pool, "lot-overwrite").await;
+        let _ = update_lot_notes(
+            &pool,
+            "lot-overwrite",
+            Some("first draft".to_string()),
+            Some("a,b".to_string()),
+        )
+        .await
+        .unwrap();
+        let updated = update_lot_notes(
+            &pool,
+            "lot-overwrite",
+            Some("second draft".to_string()),
+            Some("c".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.notes.as_deref(), Some("second draft"));
+        assert_eq!(updated.tags.as_deref(), Some("c"));
     }
 }

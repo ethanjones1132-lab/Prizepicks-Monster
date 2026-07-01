@@ -47,3 +47,14 @@ pub async fn paper_get_equity_history(
 ) -> Result<Vec<crate::paper::PaperEquitySnapshot>, String> {
     crate::paper::get_equity_snapshots(&db_pool, limit.unwrap_or(200)).await
 }
+
+/// Update notes and/or tags on a paper lot.
+#[tauri::command]
+pub async fn paper_update_lot_notes(
+    db_pool: State<'_, Pool<Sqlite>>,
+    lot_id: String,
+    notes: Option<String>,
+    tags: Option<String>,
+) -> Result<crate::paper::PaperLot, String> {
+    crate::paper::update_lot_notes(&db_pool, &lot_id, notes, tags).await
+}

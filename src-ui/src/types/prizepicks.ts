@@ -431,6 +431,30 @@ export interface PaperEquitySnapshot {
   unrealized_pnl: number;
 }
 
+/** A single paper-trading lot (immutable fill). Mirrors the Rust `PaperLot` struct. */
+export interface PaperLot {
+  id: string;
+  ticker: string;
+  title: string;
+  category: string;
+  side: string;
+  entry_price_cents: number;
+  qty: number;
+  stake_dollars: number;
+  source: 'AiDecision' | 'Manual' | string;
+  decision_json: string | null;
+  opened_at: string;
+  closed_at: string | null;
+  closed_price_cents: number | null;
+  realized_pnl: number | null;
+  status: string;
+  settlement_result: string | null;
+  /** Optional user notes for journaling, reasoning, post-mortem. */
+  notes: string | null;
+  /** Optional comma-separated tags for categorization and filtering. */
+  tags: string | null;
+}
+
 // ── ML Predictor types (mirrors src-tauri/src/ml_predictor.rs) ──
 
 export interface MLFeatureImportance {

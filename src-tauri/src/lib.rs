@@ -278,6 +278,7 @@ pub fn run() {
             commands::paper_settle_pending,
             commands::paper_reset_account,
             commands::paper_get_equity_history,
+            commands::paper_update_lot_notes,
             // Player Prop commands
             commands::prizepicks_get_props,
             commands::prizepicks_get_top_props,

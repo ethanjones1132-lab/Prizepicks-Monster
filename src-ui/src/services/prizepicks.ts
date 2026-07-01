@@ -1,6 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   KellyShrinkageReport,
+  PaperAnalytics,
+  PaperEquitySnapshot,
+  PaperLot,
   PrizePicksCacheStatus,
   PrizePicksCategoryStat,
   PrizePicksDashboardBootstrap,
@@ -8,8 +11,6 @@ import type {
   PrizePicksPrediction,
   PrizePicksPriceHistory,
   PrizePicksTradeDecision,
-  PaperAnalytics,
-  PaperEquitySnapshot,
   StakeAdjustment,
   MLCategoryModelList,
   MLCategoryTrainResult,
@@ -147,11 +148,18 @@ export const prizepicksApi = {
     invoke<PaperEquitySnapshot[]>('paper_get_equity_history', { limit: limit ?? 200 }),
 
   settlePaperPositions: () =>
-    invoke<{ settled: number; wins: number; losses: number; total_pnl: number }>(
-      'paper_settle_pending',
-    ),
+      invoke<{ settled: number; wins: number; losses: number; total_pnl: number }>(
+        'paper_settle_pending',
+      ),
 
-  // ── ML Predictor ──
+    /**
+     * Update notes and/or tags on a paper lot.
+     * At least one of `notes` or `tags` must be provided.
+     */
+    updatePaperLotNotes: (lotId: string, notes?: string, tags?: string) =>
+      invoke<PaperLot>('paper_update_lot_notes', { lotId, notes, tags }),
+
+    // ── ML Predictor ──
 
   mlTrainModel: (outputPath?: string) =>
     invoke<MLTrainingResult>('ml_train_model', { outputPath }),
