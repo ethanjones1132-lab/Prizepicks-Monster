@@ -2,7 +2,7 @@
 name = "prizepicks-monster"
 version = "1.0.0"
 description = "PrizePicks Monster — AI-powered DFS player prop engine"
-authors = ["Ethan"]
+authors = ["JonesinSRC"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.85.0"

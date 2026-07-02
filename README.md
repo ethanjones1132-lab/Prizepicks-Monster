@@ -10,7 +10,7 @@
 [![Rust](https://img.shields.io/badge/built%20with-Rust-orange)]()
 [![React](https://img.shields.io/badge/UI-React-61DAFB)]()
 
-[Buy Now](https://coppercreekcoffee.myshopify.com/) · [Issues](https://github.com/ethan/prizepicks-monster/issues)
+[Buy Now](https://coppercreekcoffee.myshopify.com/) · [Issues](https://github.com/JonesinSRC/prizepicks-monster/issues)
 
 </div>
 
@@ -91,13 +91,13 @@ Real-time sports data → [Multi-source fetcher] → [AI analyst (OpenRouter)] �
 
 ### Download
 
-Grab the latest installer for your platform from the [releases page](https://github.com/ethan/prizepicks-monster/releases) or purchase a license at [coppercreekcoffee.myshopify.com](https://coppercreekcoffee.myshopify.com/).
+Grab the latest installer for your platform from the [releases page](https://github.com/JonesinSRC/prizepicks-monster/releases) or purchase a license at [coppercreekcoffee.myshopify.com](https://coppercreekcoffee.myshopify.com/).
 
 ### From Source (developers)
 
 ```bash
 # Prerequisites: Rust 1.85+, Node.js 18+, Tauri prerequisites
-git clone https://github.com/ethan/prizepicks-monster.git
+git clone https://github.com/JonesinSRC/prizepicks-monster.git
 cd prizepicks-monster
 npm install --prefix src-ui
 npm run tauri dev
@@ -246,7 +246,7 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 ```bash
 # Set up dev environment
-git clone https://github.com/ethan/prizepicks-monster.git
+git clone https://github.com/JonesinSRC/prizepicks-monster.git
 cd prizepicks-monster
 npm install --prefix src-ui
 npm run tauri dev
@@ -259,7 +259,7 @@ cd src-tauri && cargo test
 
 ## License
 
-MIT. (LICENSE file pending — add a `LICENSE` file at the repo root with the MIT license text before the public release.)
+MIT — see [LICENSE](LICENSE).
 
 ---
 
@@ -267,7 +267,7 @@ MIT. (LICENSE file pending — add a `LICENSE` file at the repo root with the MI
 
 **PrizePicks Monster** — Built with ❤️ by [JonesinSRC](https://coppercreekcoffee.myshopify.com/)
 
-[Buy PrizePicks Monster](https://coppercreekcoffee.myshopify.com/) · [Report an Issue](https://github.com/ethan/prizepicks-monster/issues)
+[Buy PrizePicks Monster](https://coppercreekcoffee.myshopify.com/) · [Report an Issue](https://github.com/JonesinSRC/prizepicks-monster/issues)
 
 **Analytics and research only. Not affiliated with PrizePicks. Never place real wagers through this software.**
 

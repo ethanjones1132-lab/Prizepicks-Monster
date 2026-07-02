@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 src-tauri/target/
+src-ui/dist/
 
 # IDE
 .vscode/
