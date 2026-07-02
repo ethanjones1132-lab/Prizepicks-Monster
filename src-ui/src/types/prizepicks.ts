@@ -341,6 +341,23 @@ export interface PaperAnalytics {
    * notes/tags journaling system.
    */
   tag_stats: PaperTagStats[];
+  /**
+   * Per-confidence-tier performance breakdown. Groups lots by the
+   * `confidence_tier` field written to each lot's `decision_json`
+   * (a chat/decision_schema.rs field, PascalCase string: "High" /
+   * "Medium" / "Low" / "None"). The four canonical tiers always
+   * appear in the result vector in the order High → Medium → Low →
+   * None (highest conviction to lowest) so the UI renders a stable
+   * "conviction ladder" without resorting. Empty tiers are still
+   * emitted (with zeros) so the table layout doesn't shift as the
+   * user's history grows.
+   *
+   * The companion to `paper_disagreement_stats` — together they
+   * answer the question "is the model self-aware?" (i.e. are the
+   * high-confidence picks actually the profitable ones, and are the
+   * disagreement picks the ones I'm losing on?).
+   */
+  confidence_tier_stats: PaperConfidenceTierStats[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;
@@ -428,6 +445,50 @@ export interface PaperTagStats {
   /** Canonical tag name (lowercased + trimmed). */
   tag: string;
   /** Number of lots that carried this tag (a multi-tag lot counts toward each). */
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+}
+
+/**
+ * Canonical confidence-tier identifier. The four tiers always appear
+ * in `confidence_tier_stats` output, in this fixed order:
+ * `high` (strong conviction + excellent data) → `medium` (moderate
+ * conviction + good data) → `low` (weak conviction or incomplete
+ * data) → `none` (default for PASS decisions or missing/unparseable
+ * `decision_json`). The serialized strings come from
+ * `chat::decision_schema::ConfidenceTier` (PascalCase "High" /
+ * "Medium" / "Low" / "None"), emitted to JSON in snake_case via
+ * `#[serde(rename_all = "snake_case")]`.
+ */
+export type ConfidenceTier = 'high' | 'medium' | 'low' | 'none';
+
+/**
+ * Performance breakdown for a single model-confidence tier. Mirrors
+ * `PaperCategoryStats` and `PaperDisagreementStats` but groups by
+ * the model's stated conviction at entry (parsed from
+ * `decision_json.confidence_tier`). The four canonical tiers always
+ * appear in the result vector in the fixed order
+ * High → Medium → Low → None (highest conviction to lowest) so the
+ * UI renders a stable "conviction ladder" without resorting. Empty
+ * tiers are still emitted (with zeros) so the table layout doesn't
+ * shift as the user's history grows.
+ *
+ * The companion to `paper_disagreement_stats` — together they
+ * answer the question "is the model self-aware?" (i.e. are the
+ * high-confidence picks actually the profitable ones, and are the
+ * disagreement picks the ones I'm losing on?).
+ */
+export interface PaperConfidenceTierStats {
+  /** Raw tier identifier. Snake_case to match the Rust enum. */
+  bucket: ConfidenceTier;
+  /** Human-readable label, e.g. `"High"`. UI should prefer this for display. */
+  bucket_label: string;
   total_trades: number;
   open_trades: number;
   wins: number;

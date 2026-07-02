@@ -6,6 +6,7 @@ import type {
   CalibrationPoint,
   PaperAnalytics,
   PaperCategoryStats,
+  PaperConfidenceTierStats,
   PaperDisagreementStats,
   PaperEntryPriceStats,
   PaperEquitySnapshot,
@@ -482,6 +483,89 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
                     <strong>{s.bucket_label}</strong>
                     {s.open_trades > 0 && (
                       <span className="muted small disagreementOpenTag" title={`${s.open_trades} open lot(s)`}>
+                        {' '}+{s.open_trades} open
+                      </span>
+                    )}
+                  </td>
+                  <td>{s.total_trades}</td>
+                  <td>{s.wins + s.losses > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                  </td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  /**
+   * Per-confidence-tier performance table. Mirrors the layout of
+   * `DisagreementBreakdown` and the other breakdowns so the views
+   * read as siblings. Shows the same five metrics (Tier / Trades /
+   * Win % / PnL / ROI) with the same pos/neg PnL tint.
+   *
+   * The backend always emits the four canonical tiers in a fixed
+   * order (High → Medium → Low → None, highest conviction to lowest)
+   * so the table renders as a stable "conviction ladder" without
+   * resorting. The `bucket_label` (e.g. `"High"`, `"None"`) is what
+   * the table actually displays — the raw `bucket` enum is for
+   * machine-readable comparison. An inline `<small>` note explains
+   * the four-tier meaning for users who don't know what confidence
+   * tier means in this context. Empty tiers render with muted
+   * zeros so the table layout doesn't shift as the user's history
+   * grows.
+   *
+   * The companion to `DisagreementBreakdown` — together they answer
+   * the question "is the model self-aware?" (i.e. are the
+   * high-confidence picks actually the profitable ones?).
+   */
+  function ConfidenceTierBreakdown({ stats }: { stats: PaperConfidenceTierStats[] }) {
+    if (!stats || stats.length === 0) {
+      return (
+        <div className="confidenceTierBreakdown empty">
+          <span className="muted small">
+            No decision data yet — place paper trades through the Analyst chat to populate confidence-tier performance.
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="confidenceTierBreakdown">
+        <div className="confidenceTierBreakdownHeader">
+          <span className="muted small">
+            Per-confidence-tier performance
+            {' '}
+            <span className="muted small" title="Confidence tier is the model's stated conviction at entry (from decision_json.confidence_tier).">
+              (high → medium → low → none)
+            </span>
+          </span>
+          <span className="muted small">{stats.length} tiers</span>
+        </div>
+        <table className="confidenceTierTable">
+          <thead>
+            <tr>
+              <th scope="col">Confidence</th>
+              <th scope="col">Trades</th>
+              <th scope="col">Win %</th>
+              <th scope="col">PnL</th>
+              <th scope="col">ROI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((s) => {
+              const pnlPositive = s.realized_pnl >= 0;
+              return (
+                <tr key={s.bucket}>
+                  <td>
+                    <strong>{s.bucket_label}</strong>
+                    {s.open_trades > 0 && (
+                      <span className="muted small confidenceTierOpenTag" title={`${s.open_trades} open lot(s)`}>
                         {' '}+{s.open_trades} open
                       </span>
                     )}
@@ -1223,6 +1307,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <PlayerBreakdown stats={analytics.player_stats} />}
       {analytics && <EntryPriceBreakdown stats={analytics.entry_price_stats} />}
       {analytics && <DisagreementBreakdown stats={analytics.paper_disagreement_stats} />}
+      {analytics && <ConfidenceTierBreakdown stats={analytics.confidence_tier_stats} />}
       {analytics && <TagBreakdown stats={analytics.tag_stats} />}
       {analytics && <CalibrationScatter points={analytics.calibration_points} />}
       <PaperJournal lots={paperLots} onUpdated={handleLotUpdated} />

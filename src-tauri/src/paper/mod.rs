@@ -204,6 +204,19 @@ pub struct PaperAnalytics {
     /// Answers "which journaled play styles am I actually making money
     /// on?" — the natural follow-on to the notes/tags journaling system.
     pub tag_stats: Vec<PaperTagStats>,
+    /// Per-confidence-tier performance breakdown. Confidence is parsed
+    /// from the lot's `decision_json.confidence_tier` field (PascalCase
+    /// string: "High" / "Medium" / "Low" / "None" — see
+    /// `chat::decision_schema::ConfidenceTier`). The four canonical
+    /// tiers always appear in the result vector in the order
+    /// High → Medium → Low → None (highest conviction to lowest) so the
+    /// UI renders a stable conviction ladder without resorting. Empty
+    /// tiers are still emitted (with zeros) so the table layout doesn't
+    /// shift as the user's history grows. The companion to
+    /// `paper_disagreement_stats` — answers "am I profitable on the
+    /// picks where the model was most confident?" (and conversely
+    /// "should I skip Low/None confidence picks?").
+    pub confidence_tier_stats: Vec<PaperConfidenceTierStats>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -825,6 +838,196 @@ fn compute_disagreement_stats(lots: &[PaperLot]) -> Vec<PaperDisagreementStats> 
     let mut out: Vec<PaperDisagreementStats> = Vec::with_capacity(bucket_order.len());
     for &b in &bucket_order {
         let mut s = buckets.remove(&b).unwrap_or_else(|| PaperDisagreementStats::new(b));
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+        out.push(s);
+    }
+    out
+}
+
+/// Canonical confidence-tier identifier. The four tiers always appear
+/// in `compute_confidence_tier_stats` output, in the order:
+/// `High` → `Medium` → `Low` → `None`. Serialized in snake_case for
+/// stable IPC; the human-readable label is exposed via `bucket_label`
+/// on the companion stats struct.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfidenceTier {
+    /// Strong conviction + excellent data quality.
+    High,
+    /// Moderate conviction + good data quality.
+    Medium,
+    /// Weak conviction or incomplete data.
+    Low,
+    /// No confidence — default for PASS decisions, or for lots whose
+    /// `decision_json` was missing/unparseable.
+    None,
+}
+
+impl ConfidenceTier {
+    /// Human-readable label, e.g. `"High"`. The UI should prefer this
+    /// over the raw enum variant for display.
+    pub fn as_label(self) -> &'static str {
+        match self {
+            ConfidenceTier::High => "High",
+            ConfidenceTier::Medium => "Medium",
+            ConfidenceTier::Low => "Low",
+            ConfidenceTier::None => "None",
+        }
+    }
+}
+
+/// Performance breakdown for a single model-confidence tier. Mirrors
+/// `PaperCategoryStats` / `PaperSideStats` / `PaperDisagreementStats`
+/// but groups by the model's stated confidence at entry
+/// (parsed from `decision_json.confidence_tier`). The four canonical
+/// tiers always appear in the result vector in the fixed order
+/// High → Medium → Low → None (highest conviction to lowest) so the
+/// UI renders a stable "conviction ladder" without resorting. Empty
+/// tiers are still emitted (zeros when empty) so the table layout
+/// doesn't shift as the user's history grows. The companion to
+/// `paper_disagreement_stats` — together they answer the question
+/// "is the model self-aware?" (i.e. are the high-confidence picks
+/// actually the profitable ones, and are the disagreement picks the
+/// ones I'm losing on?).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperConfidenceTierStats {
+    /// Raw enum variant (snake_case) for machine-readable comparison.
+    /// The UI should prefer `bucket_label` for display.
+    pub bucket: ConfidenceTier,
+    /// Human-readable label, e.g. `"High"`. Mirrors
+    /// `PaperDisagreementStats.bucket_label` so the UI doesn't have
+    /// to hard-code the label mapping.
+    pub bucket_label: String,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperConfidenceTierStats {
+    fn new(bucket: ConfidenceTier) -> Self {
+        Self {
+            bucket_label: bucket.as_label().to_string(),
+            bucket,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
+/// Read `confidence_tier` (PascalCase string: "High" / "Medium" / "Low" /
+/// "None") out of a lot's `decision_json` and map it to a
+/// `ConfidenceTier`. Returns `ConfidenceTier::None` for missing or
+/// unparseable JSON (defensively routes legacy lots that pre-date
+/// the confidence_tier field to the None bucket so the closed-lot
+/// count still matches the rest of the analytics).
+fn lot_confidence_tier(lot: &PaperLot) -> ConfidenceTier {
+    match lot.decision_json.as_deref() {
+        Some(json) => match serde_json::from_str::<serde_json::Value>(json) {
+            Ok(v) => {
+                if let Some(s) = v.get("confidence_tier").and_then(|x| x.as_str()) {
+                    match s {
+                        "High" => ConfidenceTier::High,
+                        "Medium" => ConfidenceTier::Medium,
+                        "Low" => ConfidenceTier::Low,
+                        // "None", or any unrecognized value (e.g. "pass",
+                        // legacy "Skip"), routes to the None bucket.
+                        _ => ConfidenceTier::None,
+                    }
+                } else {
+                    ConfidenceTier::None
+                }
+            }
+            Err(_) => ConfidenceTier::None,
+        },
+        None => ConfidenceTier::None,
+    }
+}
+
+/// Bucket closed + open lots by model-stated confidence tier and
+/// compute per-bucket stats. The four canonical tiers (High / Medium /
+/// Low / None) always appear in the result vector in that fixed order
+/// — not sorted by PnL — so the UI renders a stable
+/// "high → medium → low → none" conviction ladder without resorting.
+/// Empty tiers are still emitted (with zeros) so the table layout
+/// doesn't shift as the user's history grows.
+///
+/// Win/loss/PnL aggregation semantics match the other breakdown
+/// helpers exactly: closed lots count toward wins/losses/
+/// realized_pnl/total_staked; pushes (pnl == 0) contribute stake but
+/// not wins/losses; open lots count toward total_trades + open_trades
+/// but contribute nothing to the PnL/ROI aggregations. ROI denominator
+/// is closed stake only — open positions are excluded from the
+/// per-bucket ROI math.
+fn compute_confidence_tier_stats(lots: &[PaperLot]) -> Vec<PaperConfidenceTierStats> {
+    // Fixed tier order: High → Medium → Low → None. The output is
+    // emitted in this exact order so the UI doesn't have to sort.
+    let tier_order = [
+        ConfidenceTier::High,
+        ConfidenceTier::Medium,
+        ConfidenceTier::Low,
+        ConfidenceTier::None,
+    ];
+
+    // Walk the lots once, bucketing each by its confidence tier.
+    let mut buckets: std::collections::BTreeMap<ConfidenceTier, PaperConfidenceTierStats> =
+        std::collections::BTreeMap::new();
+    for l in lots {
+        let key = lot_confidence_tier(l);
+        let entry = buckets
+            .entry(key)
+            .or_insert_with(|| PaperConfidenceTierStats::new(key));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+    }
+
+    // Ensure every canonical tier is present, even if empty. This
+    // keeps the table layout stable for users who have only one tier
+    // in their history (e.g. only High picks so far).
+    for &t in &tier_order {
+        buckets.entry(t).or_insert_with(|| PaperConfidenceTierStats::new(t));
+    }
+
+    // Finalize win-rate + ROI per bucket, then emit in canonical
+    // order. The tier order uses serde_json order... but the actual
+    // ordinal is alphabetical (High < Low < Medium < None) so we
+    // iterate the explicit `tier_order` array rather than the map.
+    let mut out: Vec<PaperConfidenceTierStats> = Vec::with_capacity(tier_order.len());
+    for &t in &tier_order {
+        let mut s = buckets
+            .remove(&t)
+            .unwrap_or_else(|| PaperConfidenceTierStats::new(t));
         let decided = s.wins + s.losses;
         s.win_rate = if decided > 0 {
             (s.wins as f64 / decided as f64) * 100.0
@@ -2236,6 +2439,7 @@ pub async fn get_analytics(
     let calibration_points = compute_calibration_points(&all);
     let paper_disagreement_stats = compute_disagreement_stats(&all);
     let tag_stats = compute_tag_stats(&all);
+    let confidence_tier_stats = compute_confidence_tier_stats(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -2275,6 +2479,7 @@ pub async fn get_analytics(
         calibration_points,
         paper_disagreement_stats,
         tag_stats,
+        confidence_tier_stats,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -4742,5 +4947,183 @@ mod tests {
         let mut lot = closed_lot_price(50.0, stake, pnl);
         lot.tags = tags.map(|s| s.to_string());
         lot
+    }
+
+    // ── compute_confidence_tier_stats ──────────────────────────────
+    //
+    // Helper: build a closed lot with a known confidence_tier baked
+    // into the decision JSON. Mirrors `disagreement_lot` so the
+    // bucketing logic stays testable without depending on the
+    // upstream `compute()` method.
+    fn confidence_lot(tier: Option<&str>, stake: f64, pnl: f64) -> PaperLot {
+        let mut lot = closed_lot_price(50.0, stake, pnl);
+        match tier {
+            Some(t) => {
+                lot.decision_json = Some(
+                    serde_json::json!({
+                        "confidence_tier": t,
+                    })
+                    .to_string(),
+                );
+            }
+            None => {
+                lot.decision_json = None;
+            }
+        }
+        lot
+    }
+
+    #[test]
+    fn confidence_tier_stats_empty_input_returns_four_zero_tiers() {
+        // Even with no lots, all four canonical tiers must appear (with
+        // zeros) so the UI table layout is stable. Order is
+        // High → Medium → Low → None (highest conviction to lowest).
+        let stats = compute_confidence_tier_stats(&[]);
+        assert_eq!(stats.len(), 4);
+        assert_eq!(stats[0].bucket, ConfidenceTier::High);
+        assert_eq!(stats[1].bucket, ConfidenceTier::Medium);
+        assert_eq!(stats[2].bucket, ConfidenceTier::Low);
+        assert_eq!(stats[3].bucket, ConfidenceTier::None);
+        for s in &stats {
+            assert_eq!(s.total_trades, 0);
+            assert_eq!(s.wins, 0);
+            assert_eq!(s.losses, 0);
+            assert_eq!(s.realized_pnl, 0.0);
+        }
+    }
+
+    #[test]
+    fn confidence_tier_stats_buckets_by_confidence_tier_field() {
+        // Two High lots (one win, one loss) + two Medium lots
+        // (one win, one loss). The High bucket should aggregate
+        // the "High" lots, the Medium bucket the "Medium" lots.
+        // Low and None buckets should be zero.
+        let lots = vec![
+            confidence_lot(Some("High"), 10.0, 4.0),    // High + win
+            confidence_lot(Some("High"), 10.0, -3.0),   // High + loss
+            confidence_lot(Some("Medium"), 10.0, 2.0),  // Medium + win
+            confidence_lot(Some("Medium"), 10.0, -1.0), // Medium + loss
+        ];
+        let stats = compute_confidence_tier_stats(&lots);
+        // High bucket
+        assert_eq!(stats[0].bucket, ConfidenceTier::High);
+        assert_eq!(stats[0].total_trades, 2);
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 1);
+        assert!((stats[0].realized_pnl - 1.0).abs() < 1e-9);
+        assert!((stats[0].win_rate - 50.0).abs() < 1e-9);
+        // ROI = 1.0 / 20.0 * 100 = 5.0%
+        assert!((stats[0].roi_pct - 5.0).abs() < 1e-9);
+        // Medium bucket
+        assert_eq!(stats[1].bucket, ConfidenceTier::Medium);
+        assert_eq!(stats[1].total_trades, 2);
+        assert_eq!(stats[1].wins, 1);
+        assert_eq!(stats[1].losses, 1);
+        assert!((stats[1].realized_pnl - 1.0).abs() < 1e-9);
+        // Low + None buckets are zero
+        assert_eq!(stats[2].bucket, ConfidenceTier::Low);
+        assert_eq!(stats[2].total_trades, 0);
+        assert_eq!(stats[3].bucket, ConfidenceTier::None);
+        assert_eq!(stats[3].total_trades, 0);
+    }
+
+    #[test]
+    fn confidence_tier_stats_missing_decision_json_routes_to_none() {
+        // Lots with no `decision_json` (or unparseable JSON) bucket
+        // under None so the closed-lot count still matches the rest
+        // of the analytics.
+        let mut no_json = closed_lot_price(50.0, 5.0, 1.0);
+        no_json.decision_json = None;
+        let mut bad_json = closed_lot_price(50.0, 5.0, 1.0);
+        bad_json.decision_json = Some("{not valid json".to_string());
+        let mut no_tier = closed_lot_price(50.0, 5.0, 1.0);
+        no_tier.decision_json = Some(r#"{"some_other_field": 42}"#.to_string());
+        let lots = vec![no_json, bad_json, no_tier];
+        let stats = compute_confidence_tier_stats(&lots);
+        assert_eq!(stats[3].bucket, ConfidenceTier::None);
+        assert_eq!(stats[3].total_trades, 3);
+        assert_eq!(stats[3].wins, 3);
+        assert_eq!(stats[3].losses, 0);
+        // High, Medium, Low buckets are zero.
+        assert_eq!(stats[0].total_trades, 0);
+        assert_eq!(stats[1].total_trades, 0);
+        assert_eq!(stats[2].total_trades, 0);
+    }
+
+    #[test]
+    fn confidence_tier_stats_unrecognized_value_routes_to_none() {
+        // Defensive: a value that doesn't match any of the four
+        // canonical tier strings routes to None (rather than
+        // panicking or being silently dropped). This protects
+        // against forward-compat: if a future schema adds a
+        // "VeryHigh" tier, old code still produces a valid
+        // (None-bucketed) result instead of dropping the lot.
+        let lots = vec![confidence_lot(Some("VeryHigh"), 5.0, 1.0)];
+        let stats = compute_confidence_tier_stats(&lots);
+        assert_eq!(stats[3].bucket, ConfidenceTier::None);
+        assert_eq!(stats[3].total_trades, 1);
+        assert_eq!(stats[3].wins, 1);
+    }
+
+    #[test]
+    fn confidence_tier_stats_open_lot_counted_in_open_trades_only() {
+        // Open lots count toward total_trades + open_trades, but
+        // contribute nothing to wins/losses/PnL/ROI. They still
+        // bucket by their confidence tier.
+        let mut open = open_lot_price(50.0, 5.0);
+        open.decision_json = Some(r#"{"confidence_tier": "High"}"#.to_string());
+        let stats = compute_confidence_tier_stats(&[open]);
+        assert_eq!(stats[0].bucket, ConfidenceTier::High);
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].open_trades, 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert_eq!(stats[0].realized_pnl, 0.0);
+        assert_eq!(stats[0].total_staked, 0.0);
+    }
+
+    #[test]
+    fn confidence_tier_stats_push_lot_contributes_stake_but_not_win_or_loss() {
+        // pnl == 0 (push) → stake counts toward total_staked, but
+        // neither wins nor losses count it.
+        let lots = vec![confidence_lot(Some("Medium"), 10.0, 0.0)];
+        let stats = compute_confidence_tier_stats(&lots);
+        assert_eq!(stats[1].bucket, ConfidenceTier::Medium);
+        assert_eq!(stats[1].total_trades, 1);
+        assert_eq!(stats[1].wins, 0);
+        assert_eq!(stats[1].losses, 0);
+        assert_eq!(stats[1].realized_pnl, 0.0);
+        assert!((stats[1].total_staked - 10.0).abs() < 1e-9);
+        // ROI = 0 / 10 * 100 = 0
+        assert_eq!(stats[1].roi_pct, 0.0);
+    }
+
+    #[test]
+    fn confidence_tier_stats_bucket_label_matches_enum_variant() {
+        // The `bucket_label` is what the UI displays. Verify each
+        // canonical tier has the expected human-readable label.
+        let stats = compute_confidence_tier_stats(&[]);
+        assert_eq!(stats[0].bucket_label, "High");
+        assert_eq!(stats[1].bucket_label, "Medium");
+        assert_eq!(stats[2].bucket_label, "Low");
+        assert_eq!(stats[3].bucket_label, "None");
+    }
+
+    #[test]
+    fn confidence_tier_stats_canonical_output_order_preserved() {
+        // The output order must be High → Medium → Low → None
+        // regardless of the input order. (Insert lots in reverse
+        // tier order and verify the output is still canonical.)
+        let lots = vec![
+            confidence_lot(Some("None"), 5.0, 1.0),
+            confidence_lot(Some("Low"), 5.0, 1.0),
+            confidence_lot(Some("Medium"), 5.0, 1.0),
+            confidence_lot(Some("High"), 5.0, 1.0),
+        ];
+        let stats = compute_confidence_tier_stats(&lots);
+        assert_eq!(stats[0].bucket, ConfidenceTier::High);
+        assert_eq!(stats[1].bucket, ConfidenceTier::Medium);
+        assert_eq!(stats[2].bucket, ConfidenceTier::Low);
+        assert_eq!(stats[3].bucket, ConfidenceTier::None);
     }
 }
