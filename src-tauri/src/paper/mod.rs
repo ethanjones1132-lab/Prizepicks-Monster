@@ -195,6 +195,15 @@ pub struct PaperAnalytics {
     /// disagreement-tax question: "am I profitable on the picks where my
     /// model disagrees with the market?"
     pub paper_disagreement_stats: Vec<PaperDisagreementStats>,
+    /// Per-tag performance breakdown. Tags are parsed from the lot's
+    /// `tags` field (comma-separated, lowercased + trimmed), and a lot
+    /// with multiple tags contributes to each tag bucket (so the
+    /// `total_trades` sums across all tag buckets will exceed the unique
+    /// closed-lot count). Lots with no tags are skipped (no "Untagged"
+    /// bucket). Sorted by `realized_pnl` DESC with alphabetical tiebreak.
+    /// Answers "which journaled play styles am I actually making money
+    /// on?" — the natural follow-on to the notes/tags journaling system.
+    pub tag_stats: Vec<PaperTagStats>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -845,6 +854,154 @@ pub struct SessionDelta {
     pub pnl_pct: f64,
     pub baseline_equity: f64,
     pub baseline_ts: String,
+}
+
+/// Performance breakdown for a single user-supplied tag. Mirrors
+/// `PaperCategoryStats` / `PaperSideStats` but groups by tag rather than
+/// by structural property. Tags are pulled from the lot's `tags` field
+/// (comma-separated, e.g. `"injury,regression,underdog"`) and are
+/// lowercased + trimmed so capitalization differences don't fragment
+/// the data. A lot with multiple tags contributes to *each* tag bucket
+/// (so the tag totals don't sum to `total_trades`). Lots with no tags
+/// are skipped — an "Untagged" bucket would dwarf everything for users
+/// who only journal a fraction of their trades.
+///
+/// Sorted by `realized_pnl` DESC so the strongest tags surface first;
+/// ties broken alphabetically for deterministic output. The
+/// `total_trades` count is the number of *lots* in the bucket (which
+/// can exceed the number of *unique* closed lots when a lot carries
+/// multiple tags), and `open_trades` only counts lots whose status is
+/// `"Open"`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperTagStats {
+    /// Canonical tag name (lowercased + trimmed). The UI should prefer
+    /// this for display and for chip coloring.
+    pub tag: String,
+    /// Number of lots that carried this tag (a lot with two tags counts
+    /// toward both). Note this can exceed the number of unique closed
+    /// lots for the same reason.
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperTagStats {
+    fn new(tag: String) -> Self {
+        Self {
+            tag,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
+/// Split a lot's `tags` field into individual canonical tag names.
+/// Returns an empty `Vec` for `None`, empty, or whitespace-only inputs.
+/// Each non-empty comma-separated segment is trimmed; empty segments
+/// (from `"a,,b"` or trailing commas) are dropped. Output is
+/// lowercased so `"Injury"` and `"injury"` collapse to the same
+/// bucket. Order is preserved (so a test can assert on the resulting
+/// list) but the bucketing logic itself is order-independent.
+fn split_tags(tags: Option<&str>) -> Vec<String> {
+    let raw = match tags {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => return Vec::new(),
+    };
+    raw.split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Bucket closed + open lots by their user-supplied tags and compute
+/// per-tag stats. A lot with tags `"injury,regression"` contributes
+/// to both the `injury` and `regression` buckets. Lots with no tags
+/// are skipped — the UI surfaces this as an empty state ("tag your
+/// trades to see per-tag performance"). Win/loss/PnL aggregation
+/// semantics match the other breakdown helpers exactly: closed lots
+/// count toward wins/losses/realized_pnl/total_staked; pushes (pnl ==
+/// 0) contribute stake but not wins/losses; open lots count toward
+/// `total_trades + open_trades` but contribute nothing to the PnL/ROI
+/// aggregations. ROI denominator is closed stake only — open positions
+/// are excluded from the per-tag ROI math.
+///
+/// Output is sorted by `realized_pnl` DESC with alphabetical tiebreak,
+/// so the strongest tags surface first. Empty tags (`None`,
+/// whitespace-only, or only commas) are silently dropped — no
+/// "Untagged" bucket — because for users who only journal a small
+/// fraction of their trades that bucket would dwarf everything else
+/// and provide a misleading signal.
+fn compute_tag_stats(lots: &[PaperLot]) -> Vec<PaperTagStats> {
+    use std::collections::BTreeMap;
+
+    let mut buckets: BTreeMap<String, PaperTagStats> = BTreeMap::new();
+    for l in lots {
+        let tags = split_tags(l.tags.as_deref());
+        if tags.is_empty() {
+            continue;
+        }
+        let pnl = if l.status == "Closed" {
+            l.realized_pnl.unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let is_push = l.status == "Closed" && pnl == 0.0;
+        for tag in tags {
+            let entry = buckets
+                .entry(tag.clone())
+                .or_insert_with(|| PaperTagStats::new(tag));
+            entry.total_trades += 1;
+            if l.status == "Open" {
+                entry.open_trades += 1;
+                continue;
+            }
+            if !is_push {
+                if pnl > 0.0 {
+                    entry.wins += 1;
+                } else if pnl < 0.0 {
+                    entry.losses += 1;
+                }
+            }
+            entry.realized_pnl += pnl;
+            entry.total_staked += l.stake_dollars;
+        }
+    }
+
+    // Finalize win-rate + ROI per bucket, then sort by PnL DESC with
+    // alphabetical tiebreak (matches `compute_category_stats` and
+    // `compute_side_stats`).
+    let mut out: Vec<PaperTagStats> = buckets.into_values().collect();
+    for s in &mut out {
+        let decided = s.wins + s.losses;
+        s.win_rate = if decided > 0 {
+            (s.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        s.roi_pct = if s.total_staked > 0.0 {
+            (s.realized_pnl / s.total_staked) * 100.0
+        } else {
+            0.0
+        };
+    }
+    out.sort_by(|a, b| {
+        b.realized_pnl
+            .partial_cmp(&a.realized_pnl)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.tag.cmp(&b.tag))
+    });
+    out
 }
 
 /// Today and 7-day session PnL deltas for the paper account. Both fields are
@@ -2078,6 +2235,7 @@ pub async fn get_analytics(
     let entry_price_stats = compute_entry_price_stats(&all);
     let calibration_points = compute_calibration_points(&all);
     let paper_disagreement_stats = compute_disagreement_stats(&all);
+    let tag_stats = compute_tag_stats(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -2116,6 +2274,7 @@ pub async fn get_analytics(
         entry_price_stats,
         calibration_points,
         paper_disagreement_stats,
+        tag_stats,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -4316,5 +4475,272 @@ mod tests {
         // Status filter that matches nothing is also empty, not an error.
         let no_open = list_lots(&pool, Some("Open"), None).await.unwrap();
         assert!(no_open.is_empty());
+    }
+
+    // ── split_tags + compute_tag_stats ──────────────────────────────
+    //
+    // These tests cover the per-tag breakdown helper. `split_tags` is
+    // extracted as its own pure function so the parser edge cases can be
+    // tested in isolation; `compute_tag_stats` then exercises the
+    // bucketing + aggregation.
+
+    /// `split_tags` on a basic comma-separated string returns each
+    /// segment in order, lowercased + trimmed. Empty segments from
+    /// trailing/leading commas are dropped.
+    #[test]
+    fn split_tags_basic_comma_separated() {
+        assert_eq!(
+            split_tags(Some("injury,regression,underdog")),
+            vec!["injury", "regression", "underdog"],
+        );
+    }
+
+    /// `split_tags` lowercases capital letters so `"Injury"` and
+    /// `"injury"` collapse to the same bucket when the analytics layer
+    /// groups them.
+    #[test]
+    fn split_tags_lowercases_segments() {
+        assert_eq!(
+            split_tags(Some("Injury,Sharp,Mixed-Case")),
+            vec!["injury", "sharp", "mixed-case"],
+        );
+    }
+
+    /// `split_tags` trims surrounding whitespace around each segment
+    /// (common when the user types `"a , b , c"` in the journal UI).
+    #[test]
+    fn split_tags_trims_whitespace_around_segments() {
+        assert_eq!(
+            split_tags(Some("  a , b ,  c  ")),
+            vec!["a", "b", "c"],
+        );
+    }
+
+    /// `split_tags` drops empty segments that result from a trailing
+    /// comma, a leading comma, or `"a,,b"`. These would otherwise create
+    /// a noisy empty-string bucket.
+    #[test]
+    fn split_tags_drops_empty_segments() {
+        assert_eq!(split_tags(Some("a,,b")), vec!["a", "b"]);
+        assert_eq!(split_tags(Some(",a,b,")), vec!["a", "b"]);
+        assert_eq!(split_tags(Some(",,")), Vec::<String>::new());
+    }
+
+    /// `split_tags` returns an empty `Vec` for `None`, empty, or
+    /// whitespace-only inputs. The bucketing logic uses this to skip
+    /// untagged lots.
+    #[test]
+    fn split_tags_returns_empty_for_blank_inputs() {
+        assert!(split_tags(None).is_empty());
+        assert!(split_tags(Some("")).is_empty());
+        assert!(split_tags(Some("   ")).is_empty());
+        assert!(split_tags(Some(", , ,")).is_empty());
+    }
+
+    /// `compute_tag_stats` on an empty input returns an empty `Vec` (no
+    /// spurious "Untagged" bucket — that was a deliberate design choice
+    /// to avoid dwarfing every other bucket for users who only journal
+    /// a fraction of their trades).
+    #[test]
+    fn tag_stats_empty_input_returns_empty_vec() {
+        let stats = compute_tag_stats(&[]);
+        assert!(stats.is_empty());
+    }
+
+    /// Single tag, single win — bucket should have 1 trade, 1 win,
+    /// 100% win rate, full stake as staked, and the positive PnL.
+    #[test]
+    fn tag_stats_single_tag_single_win() {
+        let lots = vec![tagged_closed_lot("injury", 10.0, 4.0)];
+        let stats = compute_tag_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].tag, "injury");
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].win_rate - 100.0).abs() < 1e-9);
+        assert!((stats[0].realized_pnl - 4.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 10.0).abs() < 1e-9);
+        assert!((stats[0].roi_pct - 40.0).abs() < 1e-9);
+    }
+
+    /// A lot with two tags contributes to *both* buckets. This is the
+    /// most important correctness property — the helper exists
+    /// specifically because the user might journal a single trade
+    /// under multiple categories. The `total_trades` for each tag
+    /// reflects that lot, so the sum of `total_trades` across tag
+    /// buckets can exceed the number of unique closed lots.
+    #[test]
+    fn tag_stats_lot_with_two_tags_contributes_to_both_buckets() {
+        let lots = vec![tagged_closed_lot("injury,regression", 10.0, 2.0)];
+        let stats = compute_tag_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        // Sorted by PnL DESC; both are 2.0 → alphabetical tiebreak.
+        assert_eq!(stats[0].tag, "injury");
+        assert_eq!(stats[1].tag, "regression");
+        for s in &stats {
+            assert_eq!(s.total_trades, 1);
+            assert_eq!(s.wins, 1);
+            assert!((s.realized_pnl - 2.0).abs() < 1e-9);
+            assert!((s.total_staked - 10.0).abs() < 1e-9);
+        }
+    }
+
+    /// Sort by PnL DESC with alphabetical tiebreak. Two tags, one wins
+    /// big, one wins small. The big winner must come first; the
+    /// tiebreak is only relevant for equal-PnL buckets.
+    #[test]
+    fn tag_stats_sorted_by_pnl_desc_with_alphabetical_tiebreak() {
+        let lots = vec![
+            tagged_closed_lot("regression", 10.0, -2.0), // loss
+            tagged_closed_lot("sharp", 10.0, 5.0),       // big win
+            tagged_closed_lot("value", 10.0, 1.0),       // small win
+        ];
+        let stats = compute_tag_stats(&lots);
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].tag, "sharp");   // +5.0
+        assert_eq!(stats[1].tag, "value");    // +1.0
+        assert_eq!(stats[2].tag, "regression"); // -2.0
+    }
+
+    /// Tags differing only by case collapse to the same bucket
+    /// (lowercased canonicalization). Two lots with `"Injury"` and
+    /// `"injury"` should land in a single `injury` bucket.
+    #[test]
+    fn tag_stats_case_insensitive_bucketing() {
+        let lots = vec![
+            tagged_closed_lot("Injury", 10.0, 2.0),
+            tagged_closed_lot("injury", 10.0, 1.0),
+            tagged_closed_lot("INJURY", 10.0, -1.0),
+        ];
+        let stats = compute_tag_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].tag, "injury");
+        assert_eq!(stats[0].total_trades, 3);
+        assert_eq!(stats[0].wins, 2);
+        assert_eq!(stats[0].losses, 1);
+        assert!((stats[0].realized_pnl - 2.0).abs() < 1e-9);
+    }
+
+    /// Untagged lots (None, empty, or whitespace-only `tags`) are
+    /// silently skipped — no "Untagged" bucket is emitted. This is the
+    /// documented behavior; if it ever changes, the UI's empty-state
+    /// copy will need to be updated too.
+    #[test]
+    fn tag_stats_untagged_lots_are_skipped() {
+        let lots = vec![
+            untagged_closed_lot(None, 10.0, 2.0),
+            untagged_closed_lot(Some(""), 10.0, 1.0),
+            untagged_closed_lot(Some("   "), 10.0, -1.0),
+            untagged_closed_lot(Some(",,,"), 10.0, 3.0),
+        ];
+        let stats = compute_tag_stats(&lots);
+        assert!(stats.is_empty());
+    }
+
+    /// Open lots count toward `total_trades` and `open_trades` for
+    /// their tag, but contribute nothing to wins/losses/PnL/ROI
+    /// (matches the other breakdown helpers' semantics).
+    #[test]
+    fn tag_stats_open_lot_counted_in_open_trades_only() {
+        let lots = vec![tagged_open_lot("injury", 5.0)];
+        let stats = compute_tag_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].tag, "injury");
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].open_trades, 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 0.0).abs() < 1e-9);
+    }
+
+    /// Push (pnl == 0) contributes stake to the bucket but does not
+    /// count as a win or loss. ROI = 0/10 = 0%, win rate = 0/0 = 0%.
+    /// This protects the same `is_push` edge case that bit the other
+    /// breakdown helpers when re-implemented here.
+    #[test]
+    fn tag_stats_push_lot_contributes_stake_but_not_win_or_loss() {
+        let lots = vec![tagged_closed_lot("push-test", 10.0, 0.0)];
+        let stats = compute_tag_stats(&lots);
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].total_trades, 1);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert!((stats[0].win_rate - 0.0).abs() < 1e-9);
+        assert!((stats[0].realized_pnl - 0.0).abs() < 1e-9);
+        assert!((stats[0].total_staked - 10.0).abs() < 1e-9);
+        assert!((stats[0].roi_pct - 0.0).abs() < 1e-9);
+    }
+
+    /// End-to-end: mixed multi-tag lots, multi-bucket aggregation.
+    /// Verifies the math on a non-trivial input: 4 lots, 3 distinct
+    /// tags (with one tag shared across two lots), pushing ROI math
+    /// through the aggregator. This is the closest test to a real
+    /// user dataset and guards the bookkeeping against off-by-one bugs.
+    #[test]
+    fn tag_stats_mixed_multi_tag_aggregation() {
+        let lots = vec![
+            // "injury,regression" → +3 on both tags, $10 stake each
+            tagged_closed_lot("injury,regression", 10.0, 3.0),
+            // "injury" → -2 on injury, $10 stake
+            tagged_closed_lot("injury", 10.0, -2.0),
+            // "value" → +1 on value, $20 stake
+            tagged_closed_lot("value", 20.0, 1.0),
+            // "regression" → -1 on regression, $5 stake (push → 0/0)
+            tagged_closed_lot("regression", 5.0, 0.0),
+        ];
+        let stats = compute_tag_stats(&lots);
+        assert_eq!(stats.len(), 3);
+        // injury: 2 lots, 1 win, 1 loss, +1 pnl, $20 staked, 50% WR, 5% ROI
+        let injury = stats.iter().find(|s| s.tag == "injury").unwrap();
+        assert_eq!(injury.total_trades, 2);
+        assert_eq!(injury.wins, 1);
+        assert_eq!(injury.losses, 1);
+        assert!((injury.realized_pnl - 1.0).abs() < 1e-9);
+        assert!((injury.total_staked - 20.0).abs() < 1e-9);
+        assert!((injury.win_rate - 50.0).abs() < 1e-9);
+        assert!((injury.roi_pct - 5.0).abs() < 1e-9);
+        // value: 1 lot, 1 win, +1, $20 staked, 100% WR, 5% ROI
+        let value = stats.iter().find(|s| s.tag == "value").unwrap();
+        assert_eq!(value.total_trades, 1);
+        assert_eq!(value.wins, 1);
+        assert!((value.realized_pnl - 1.0).abs() < 1e-9);
+        assert!((value.total_staked - 20.0).abs() < 1e-9);
+        // regression: 2 lots, 1 win, 1 push, +3, $15 staked, 100% WR (1W/0L)
+        let regression = stats.iter().find(|s| s.tag == "regression").unwrap();
+        assert_eq!(regression.total_trades, 2);
+        assert_eq!(regression.wins, 1);
+        assert_eq!(regression.losses, 0);
+        assert!((regression.realized_pnl - 3.0).abs() < 1e-9);
+        assert!((regression.total_staked - 15.0).abs() < 1e-9);
+    }
+
+    // ── Test helpers for tag stats ─────────────────────────────────
+
+    /// Build a closed paper lot with the given `tags_string` (raw,
+    /// comma-separated) and (stake, pnl). The lot's other fields
+    /// are placeholders — the tag-stats tests only read `tags`,
+    /// `stake_dollars`, `realized_pnl`, and `status`.
+    fn tagged_closed_lot(tags_string: &str, stake: f64, pnl: f64) -> PaperLot {
+        let mut lot = closed_lot_price(50.0, stake, pnl);
+        lot.tags = Some(tags_string.to_string());
+        lot
+    }
+
+    /// Build an open paper lot with the given `tags_string`. Open lots
+    /// have no `realized_pnl` yet.
+    fn tagged_open_lot(tags_string: &str, stake: f64) -> PaperLot {
+        let mut lot = open_lot_price(50.0, stake);
+        lot.tags = Some(tags_string.to_string());
+        lot
+    }
+
+    /// Build a closed lot with the given `tags` (Option<String>), used
+    /// to exercise the untagged-lot routing (None, empty, whitespace).
+    fn untagged_closed_lot(tags: Option<&str>, stake: f64, pnl: f64) -> PaperLot {
+        let mut lot = closed_lot_price(50.0, stake, pnl);
+        lot.tags = tags.map(|s| s.to_string());
+        lot
     }
 }

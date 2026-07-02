@@ -13,6 +13,7 @@ import type {
   PaperLot,
   PaperPlayerStats,
   PaperSideStats,
+  PaperTagStats,
   PrizePicksPrediction,
   SessionDelta,
 } from '../types/prizepicks';
@@ -481,6 +482,87 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
                     <strong>{s.bucket_label}</strong>
                     {s.open_trades > 0 && (
                       <span className="muted small disagreementOpenTag" title={`${s.open_trades} open lot(s)`}>
+                        {' '}+{s.open_trades} open
+                      </span>
+                    )}
+                  </td>
+                  <td>{s.total_trades}</td>
+                  <td>{s.wins + s.losses > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                  </td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  /**
+   * Per-tag performance breakdown. Renders a five-column table
+   * (Tag / Trades / Win % / PnL / ROI) for the tags parsed out of the
+   * `paper_lots.tags` field. The Rust side splits each lot's tags on
+   * commas, lowercases + trims, and a lot with multiple tags
+   * contributes to *each* tag bucket. Lots with no tags are silently
+   * skipped — no "Untagged" bucket — so the empty state copy
+   * ("tag your trades to see per-tag performance") guides the user
+   * toward the journal editor. Sorted by `realized_pnl` DESC with
+   * alphabetical tiebreak, so the strongest tag surfaces first.
+   *
+   * Mirrors the `CategoryBreakdown` / `SideBreakdown` / `DisagreementBreakdown`
+   * table style so all of the per-axis performance views read as siblings.
+   * Open lot count surfaces as a `+N open` muted tag next to the tag name.
+   */
+  function TagBreakdown({ stats }: { stats: PaperTagStats[] }) {
+    if (!stats || stats.length === 0) {
+      return (
+        <div className="tagBreakdown empty">
+          <span className="muted small">
+            No tagged trades yet — use the paper-journal editor (📝 Journal below) to add tags like
+            <code> injury, regression, value, sharp</code> and the breakdown will populate.
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="tagBreakdown">
+        <div className="tagBreakdownHeader">
+          <span className="muted small">
+            Per-tag performance
+            {' '}
+            <span
+              className="muted small"
+              title="Tags come from paper_lots.tags (comma-separated, lowercased). Lots with multiple tags contribute to each."
+            >
+              (a lot with N tags counts toward N buckets)
+            </span>
+          </span>
+          <span className="muted small">{stats.length} tags</span>
+        </div>
+        <table className="tagTable">
+          <thead>
+            <tr>
+              <th scope="col">Tag</th>
+              <th scope="col">Trades</th>
+              <th scope="col">Win %</th>
+              <th scope="col">PnL</th>
+              <th scope="col">ROI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((s) => {
+              const pnlPositive = s.realized_pnl >= 0;
+              return (
+                <tr key={s.tag}>
+                  <td>
+                    <span className="tagChip">#{s.tag}</span>
+                    {s.open_trades > 0 && (
+                      <span className="muted small tagOpenTag" title={`${s.open_trades} open lot(s)`}>
                         {' '}+{s.open_trades} open
                       </span>
                     )}
@@ -1141,6 +1223,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <PlayerBreakdown stats={analytics.player_stats} />}
       {analytics && <EntryPriceBreakdown stats={analytics.entry_price_stats} />}
       {analytics && <DisagreementBreakdown stats={analytics.paper_disagreement_stats} />}
+      {analytics && <TagBreakdown stats={analytics.tag_stats} />}
       {analytics && <CalibrationScatter points={analytics.calibration_points} />}
       <PaperJournal lots={paperLots} onUpdated={handleLotUpdated} />
       {message && <p className="muted small">{message}</p>}

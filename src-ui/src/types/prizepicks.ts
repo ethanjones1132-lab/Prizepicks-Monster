@@ -329,6 +329,18 @@ export interface PaperAnalytics {
    * model disagrees with the market?"
    */
   paper_disagreement_stats: PaperDisagreementStats[];
+  /**
+   * Per-tag performance breakdown. Tags are parsed from each lot's
+   * `tags` field (comma-separated, lowercased + trimmed), and a lot
+   * with multiple tags contributes to each tag bucket (so the
+   * `total_trades` sums across all tag buckets can exceed the unique
+   * closed-lot count). Lots with no tags are silently skipped — no
+   * "Untagged" bucket. Sorted by `realized_pnl` DESC with
+   * alphabetical tiebreak. Answers "which journaled play styles am I
+   * actually making money on?" — the natural follow-on to the
+   * notes/tags journaling system.
+   */
+  tag_stats: PaperTagStats[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;
@@ -387,6 +399,35 @@ export interface PaperDisagreementStats {
   bucket: DisagreementBucket;
   /** Human-readable label, e.g. `"Disagreement (>12pp)"`. UI should prefer this for display. */
   bucket_label: string;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+}
+
+/**
+ * Performance breakdown for a single user-supplied tag. Mirrors
+ * `PaperCategoryStats` and `PaperSideStats` but groups by tag rather
+ * than by structural property. Tags are parsed from each lot's
+ * `tags` field (comma-separated, lowercased + trimmed) and a lot
+ * with multiple tags contributes to *each* tag bucket (so the
+ * `total_trades` sums across all tag buckets can exceed the unique
+ * closed-lot count). Lots with no tags are skipped — no "Untagged"
+ * bucket.
+ *
+ * Sorted by `realized_pnl` DESC with alphabetical tiebreak so the
+ * strongest tags surface first. Answers "which journaled play
+ * styles am I actually making money on?" — the natural follow-on
+ * to the notes/tags journaling system.
+ */
+export interface PaperTagStats {
+  /** Canonical tag name (lowercased + trimmed). */
+  tag: string;
+  /** Number of lots that carried this tag (a multi-tag lot counts toward each). */
   total_trades: number;
   open_trades: number;
   wins: number;

@@ -1385,6 +1385,90 @@ button {
   margin-left: 4px;
 }
 
+/* Per-tag breakdown — mirrors .disagreementBreakdown / .entryPriceBreakdown
+ * / .categoryBreakdown so the eight performance views read as siblings.
+ * 12px padding, 14px border-radius, 1px subtle border. Tag chip uses a
+ * green tint to match the paper-journal tag chips in the journal editor. */
+.tagBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 14px;
+}
+
+.tagBreakdown.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.tagBreakdownHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tagTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.tagTable th,
+.tagTable td {
+  text-align: left;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tagTable th {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tagTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.tagTable td.pos {
+  color: var(--pos, #3fbf7f);
+}
+
+.tagTable td.neg {
+  color: var(--neg, #d04848);
+}
+
+.tagTable td.pos,
+.tagTable td.neg {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.tagChip {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(63, 191, 127, 0.12);
+  border: 1px solid rgba(63, 191, 127, 0.32);
+  color: var(--pos, #3fbf7f);
+  margin-right: 4px;
+}
+
+.tagOpenTag {
+  font-weight: 400;
+  margin-left: 4px;
+}
+
 /* Calibration scatter — pure-SVG scatter plot of model fair_probability_pct
  * (X) vs realized PnL in dollars (Y). One bubble per closed paper lot.
  * Same visual weight as the other breakdowns (12px padding, 14px radius,
