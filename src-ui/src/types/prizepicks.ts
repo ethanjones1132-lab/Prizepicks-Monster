@@ -358,6 +358,22 @@ export interface PaperAnalytics {
    * disagreement picks the ones I'm losing on?).
    */
   confidence_tier_stats: PaperConfidenceTierStats[];
+  /**
+   * Per-source (AI vs Manual) performance breakdown. The two canonical
+   * sources (`ai_decision` → `manual`) always appear in the result
+   * vector in that fixed order so the UI renders a stable "AI vs
+   * human" comparison without resorting. Empty sources are still
+   * emitted (with zeros) so the table layout doesn't shift as the
+   * user's history grows. The headline question this breakdown
+   * answers: **"is the AI model actually profitable vs. my manual
+   * picks?"** — the central evaluation question for the entire app.
+   * Without this view, a user has no aggregate signal that the AI
+   * component of the system is generating any edge. The data was
+   * already in `paper_lots.source` on every lot (set at fill time
+   * by `record_paper_decision` / `open_paper_trade`); this is a
+   * charting/aggregation task.
+   */
+  source_stats: PaperSourceStats[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;
@@ -489,6 +505,46 @@ export interface PaperConfidenceTierStats {
   bucket: ConfidenceTier;
   /** Human-readable label, e.g. `"High"`. UI should prefer this for display. */
   bucket_label: string;
+  total_trades: number;
+  open_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  realized_pnl: number;
+  total_staked: number;
+  roi_pct: number;
+}
+
+/**
+ * Source identifier for a paper trade. Matches the Rust
+ * `PaperTradeSource` enum. The two canonical sources always appear
+ * in the result vector of `source_stats` in the order
+ * `ai_decision` → `manual` (so the UI renders a stable
+ * "AI vs human" comparison without resorting).
+ */
+export type PaperTradeSource = 'ai_decision' | 'manual';
+
+/**
+ * Performance breakdown for a single paper-trade source (AI-decision
+ * vs Manual). The two canonical sources always appear in the result
+ * vector in the order `ai_decision` → `manual` (so the UI renders
+ * a stable "AI vs human" comparison without resorting). Empty
+ * sources are still emitted (with zeros) so the table layout
+ * doesn't shift as the user's history grows.
+ *
+ * The headline question this breakdown answers: **"is the AI model
+ * actually profitable vs. my manual picks?"** — the central
+ * evaluation question for the entire app. Without this view, a user
+ * has no aggregate signal that the AI component of the system is
+ * generating any edge. The data was already in `paper_lots.source`
+ * on every lot (set at fill time by `record_paper_decision` /
+ * `open_paper_trade`); this is a charting/aggregation task.
+ */
+export interface PaperSourceStats {
+  /** Raw source identifier. Snake_case to match the Rust enum. */
+  source: PaperTradeSource;
+  /** Human-readable label, e.g. `"AI decision"`. UI should prefer this for display. */
+  source_label: string;
   total_trades: number;
   open_trades: number;
   wins: number;

@@ -26,7 +26,7 @@ pub struct PaperAccount {
 }
 
 /// How a paper trade was created.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PaperTradeSource {
     AiDecision,
     Manual,
@@ -36,6 +36,18 @@ impl PaperTradeSource {
     pub fn as_str(&self) -> &'static str {
         match self {
             PaperTradeSource::AiDecision => "AiDecision",
+            PaperTradeSource::Manual => "Manual",
+        }
+    }
+
+    /// Human-readable label used by the UI. Distinct from `as_str()` —
+    /// the latter is the persisted DB representation, the former is
+    /// the user-facing display string. Mirrors `DisagreementBucket::as_label`
+    /// and `ConfidenceTier::as_label` so the UI doesn't have to
+    /// hard-code the label mapping.
+    pub fn as_label(self) -> &'static str {
+        match self {
+            PaperTradeSource::AiDecision => "AI decision",
             PaperTradeSource::Manual => "Manual",
         }
     }
@@ -217,6 +229,20 @@ pub struct PaperAnalytics {
     /// picks where the model was most confident?" (and conversely
     /// "should I skip Low/None confidence picks?").
     pub confidence_tier_stats: Vec<PaperConfidenceTierStats>,
+    /// Per-source (AI vs Manual) performance breakdown. The two
+    /// canonical sources (`AiDecision` → `Manual`) always appear in the
+    /// result vector in that fixed order so the UI renders a stable
+    /// "AI vs human" comparison without resorting. Empty sources are
+    /// still emitted (with zeros) so the table layout doesn't shift as
+    /// the user's history grows. The headline question this breakdown
+    /// answers: **"is the AI model actually profitable vs. my manual
+    /// picks?"** — the central evaluation question for the entire app.
+    /// Without this view, a user has no aggregate signal that the AI
+    /// component of the system is generating any edge. The data was
+    /// already in `paper_lots.source` on every lot (set at fill time
+    /// by `record_paper_decision` / `open_paper_trade`); this is a
+    /// charting/aggregation task.
+    pub source_stats: Vec<PaperSourceStats>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -1204,6 +1230,127 @@ fn compute_tag_stats(lots: &[PaperLot]) -> Vec<PaperTagStats> {
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.tag.cmp(&b.tag))
     });
+    out
+}
+
+/// Per-source (AI vs Manual) performance breakdown. The two canonical
+/// sources always appear in the result vector in the fixed order
+/// `AiDecision` → `Manual` (so the UI renders a stable "model vs human"
+/// ladder without resorting). An empty input still emits both buckets
+/// with zeros so the table layout is stable.
+///
+/// The headline question this breakdown answers: **"Is the AI model
+/// actually profitable vs. my manual picks?"** That is the central
+/// evaluation question for the entire app — without this view, a user
+/// has no aggregate signal that the AI component of the system is
+/// generating any edge. The data is already in `paper_lots.source` on
+/// every lot (set at fill time by `record_paper_decision` /
+/// `open_paper_trade`); this is a charting/aggregation task.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperSourceStats {
+    /// Raw enum variant (snake_case via `#[serde(rename_all = "snake_case")]`)
+    /// for machine-readable comparison. The UI should prefer `source_label`
+    /// for display.
+    pub source: PaperTradeSource,
+    /// Human-readable label, e.g. `"AI decision"` / `"Manual"`. Mirrors
+    /// `PaperHoldTimeStats.bucket_label` / `PaperDisagreementStats.bucket_label`
+    /// so the UI doesn't have to hard-code the label mapping.
+    pub source_label: String,
+    pub total_trades: u32,
+    pub open_trades: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub win_rate: f64,
+    pub realized_pnl: f64,
+    pub total_staked: f64,
+    pub roi_pct: f64,
+}
+
+impl PaperSourceStats {
+    fn new(source: PaperTradeSource) -> Self {
+        Self {
+            source_label: source.as_label().to_string(),
+            source,
+            total_trades: 0,
+            open_trades: 0,
+            wins: 0,
+            losses: 0,
+            win_rate: 0.0,
+            realized_pnl: 0.0,
+            total_staked: 0.0,
+            roi_pct: 0.0,
+        }
+    }
+}
+
+/// Bucket closed + open lots by their `PaperTradeSource` and compute
+/// per-source stats. The two canonical sources (AiDecision, Manual)
+/// always appear in the result vector in the fixed order
+/// `AiDecision` → `Manual` — not sorted by PnL — so the UI renders a
+/// stable "AI vs manual" comparison without resorting. Empty buckets
+/// are still emitted (with zeros) so the table layout doesn't shift
+/// as the user's history grows.
+///
+/// Win/loss/PnL aggregation semantics match the other breakdown helpers
+/// exactly: closed lots count toward wins/losses/realized_pnl/
+/// total_staked; pushes (pnl == 0) contribute stake but not
+/// wins/losses; open lots count toward `total_trades + open_trades`
+/// but contribute nothing to the PnL/ROI aggregations. ROI denominator
+/// is closed stake only — open positions are excluded from the
+/// per-source ROI math.
+fn compute_source_stats(lots: &[PaperLot]) -> Vec<PaperSourceStats> {
+    // Fixed source order: AiDecision → Manual. The output is emitted
+    // in this exact order so the UI doesn't have to sort.
+    let source_order = [PaperTradeSource::AiDecision, PaperTradeSource::Manual];
+
+    // Walk the lots once, bucketing each by its `source` enum.
+    let mut buckets: std::collections::BTreeMap<PaperTradeSource, PaperSourceStats> =
+        std::collections::BTreeMap::new();
+    for l in lots {
+        let entry = buckets
+            .entry(l.source)
+            .or_insert_with(|| PaperSourceStats::new(l.source));
+        entry.total_trades += 1;
+        if l.status == "Open" {
+            entry.open_trades += 1;
+            continue;
+        }
+        let pnl = l.realized_pnl.unwrap_or(0.0);
+        if pnl > 0.0 {
+            entry.wins += 1;
+        } else if pnl < 0.0 {
+            entry.losses += 1;
+        }
+        entry.realized_pnl += pnl;
+        entry.total_staked += l.stake_dollars;
+    }
+
+    // Ensure every canonical source is present, even if empty. This
+    // keeps the table layout stable for users who have only opened
+    // one type of trade (e.g. only manual picks so far).
+    for &s in &source_order {
+        buckets.entry(s).or_insert_with(|| PaperSourceStats::new(s));
+    }
+
+    // Finalize win-rate + ROI per source, then emit in canonical order.
+    let mut out: Vec<PaperSourceStats> = Vec::with_capacity(source_order.len());
+    for &s in &source_order {
+        let mut stat = buckets
+            .remove(&s)
+            .unwrap_or_else(|| PaperSourceStats::new(s));
+        let decided = stat.wins + stat.losses;
+        stat.win_rate = if decided > 0 {
+            (stat.wins as f64 / decided as f64) * 100.0
+        } else {
+            0.0
+        };
+        stat.roi_pct = if stat.total_staked > 0.0 {
+            (stat.realized_pnl / stat.total_staked) * 100.0
+        } else {
+            0.0
+        };
+        out.push(stat);
+    }
     out
 }
 
@@ -2440,6 +2587,7 @@ pub async fn get_analytics(
     let paper_disagreement_stats = compute_disagreement_stats(&all);
     let tag_stats = compute_tag_stats(&all);
     let confidence_tier_stats = compute_confidence_tier_stats(&all);
+    let source_stats = compute_source_stats(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -2480,6 +2628,7 @@ pub async fn get_analytics(
         paper_disagreement_stats,
         tag_stats,
         confidence_tier_stats,
+        source_stats,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -5125,5 +5274,208 @@ mod tests {
         assert_eq!(stats[1].bucket, ConfidenceTier::Medium);
         assert_eq!(stats[2].bucket, ConfidenceTier::Low);
         assert_eq!(stats[3].bucket, ConfidenceTier::None);
+    }
+
+    // ───────────────────────────────────────────────────────────
+    // Per-source (AI vs Manual) breakdown tests
+    // ───────────────────────────────────────────────────────────
+
+    /// Build a closed paper lot tagged with the given `PaperTradeSource`.
+    /// Mirrors `disagreement_lot` / `confidence_lot` so the bucketing
+    /// logic stays testable without depending on the upstream
+    /// `record_paper_decision` write path.
+    fn source_lot(source: PaperTradeSource, stake: f64, pnl: f64) -> PaperLot {
+        let mut lot = closed_lot_price(50.0, stake, pnl);
+        lot.source = source;
+        lot
+    }
+
+    /// Build an open paper lot tagged with the given `PaperTradeSource`.
+    /// Open lots count toward `total_trades + open_trades` but are
+    /// excluded from the per-source PnL/ROI aggregations (mirrors the
+    /// other breakdown helpers).
+    fn source_lot_open(source: PaperTradeSource, stake: f64) -> PaperLot {
+        let mut lot = open_lot_price(50.0, stake);
+        lot.source = source;
+        lot
+    }
+
+    #[test]
+    fn source_stats_empty_input_returns_two_zero_buckets() {
+        // Even with no lots, both canonical sources must appear
+        // (with zeros) so the UI table layout is stable for users
+        // who haven't placed any paper trades yet.
+        let stats = compute_source_stats(&[]);
+        assert_eq!(stats.len(), 2);
+        assert_eq!(stats[0].source, PaperTradeSource::AiDecision);
+        assert_eq!(stats[0].total_trades, 0);
+        assert_eq!(stats[0].wins, 0);
+        assert_eq!(stats[0].losses, 0);
+        assert_eq!(stats[0].win_rate, 0.0);
+        assert_eq!(stats[0].realized_pnl, 0.0);
+        assert_eq!(stats[0].total_staked, 0.0);
+        assert_eq!(stats[0].roi_pct, 0.0);
+        assert_eq!(stats[1].source, PaperTradeSource::Manual);
+        assert_eq!(stats[1].total_trades, 0);
+    }
+
+    #[test]
+    fn source_stats_buckets_lots_by_source_field() {
+        // 2 AI wins + 1 AI loss vs. 1 Manual win + 1 Manual loss.
+        // Verify the win/loss/PnL aggregation per source and the
+        // explicit ROI math.
+        let lots = vec![
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot(PaperTradeSource::AiDecision, 10.0, -1.0),
+            source_lot(PaperTradeSource::Manual, 10.0, 2.0),
+            source_lot(PaperTradeSource::Manual, 10.0, -1.0),
+        ];
+        let stats = compute_source_stats(&lots);
+        assert_eq!(stats[0].source, PaperTradeSource::AiDecision);
+        assert_eq!(stats[0].total_trades, 3);
+        assert_eq!(stats[0].wins, 2);
+        assert_eq!(stats[0].losses, 1);
+        // win_rate = 2 / (2 + 1) * 100 = 66.666...
+        assert!((stats[0].win_rate - 66.66666666666666).abs() < 0.001);
+        assert_eq!(stats[0].realized_pnl, 1.0);
+        assert_eq!(stats[0].total_staked, 30.0);
+        // ROI = 1.0 / 30.0 * 100 = 3.333...%
+        assert!((stats[0].roi_pct - 3.3333333333333335).abs() < 0.001);
+        assert_eq!(stats[1].source, PaperTradeSource::Manual);
+        assert_eq!(stats[1].total_trades, 2);
+        assert_eq!(stats[1].wins, 1);
+        assert_eq!(stats[1].losses, 1);
+        assert_eq!(stats[1].win_rate, 50.0);
+        assert_eq!(stats[1].realized_pnl, 1.0);
+        assert_eq!(stats[1].total_staked, 20.0);
+        // ROI = 1.0 / 20.0 * 100 = 5.0%
+        assert!((stats[1].roi_pct - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn source_stats_canonical_order_ai_then_manual_regardless_of_input() {
+        // Insert lots in reverse canonical order (Manual first, then
+        // AI) and verify the output is still AiDecision → Manual so
+        // the UI renders a stable "AI vs human" comparison without
+        // resorting.
+        let lots = vec![
+            source_lot(PaperTradeSource::Manual, 5.0, 1.0),
+            source_lot(PaperTradeSource::AiDecision, 5.0, 1.0),
+        ];
+        let stats = compute_source_stats(&lots);
+        assert_eq!(stats[0].source, PaperTradeSource::AiDecision);
+        assert_eq!(stats[1].source, PaperTradeSource::Manual);
+    }
+
+    #[test]
+    fn source_stats_only_ai_lots_emits_zero_manual_bucket() {
+        // User has only ever placed AI-decision trades. The Manual
+        // bucket must still appear (with zeros) so the table layout
+        // is stable — the answer to "how am I doing on manual picks"
+        // is currently "no data" rather than a missing row.
+        let lots = vec![
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot(PaperTradeSource::AiDecision, 10.0, -1.0),
+        ];
+        let stats = compute_source_stats(&lots);
+        assert_eq!(stats.len(), 2);
+        assert_eq!(stats[0].source, PaperTradeSource::AiDecision);
+        assert_eq!(stats[0].total_trades, 2);
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 1);
+        assert_eq!(stats[1].source, PaperTradeSource::Manual);
+        assert_eq!(stats[1].total_trades, 0);
+        assert_eq!(stats[1].wins, 0);
+        assert_eq!(stats[1].losses, 0);
+        assert_eq!(stats[1].realized_pnl, 0.0);
+    }
+
+    #[test]
+    fn source_stats_open_lot_counted_in_open_trades_only() {
+        // Open lots count toward `total_trades` and `open_trades` but
+        // contribute nothing to the per-source PnL/ROI aggregations
+        // (mirrors the other breakdown helpers — open positions are
+        // excluded from the per-source ROI math).
+        let lots = vec![
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot_open(PaperTradeSource::AiDecision, 10.0),
+        ];
+        let stats = compute_source_stats(&lots);
+        assert_eq!(stats[0].source, PaperTradeSource::AiDecision);
+        assert_eq!(stats[0].total_trades, 2);
+        assert_eq!(stats[0].open_trades, 1);
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 0);
+        // Only the closed lot contributes to PnL/staked.
+        assert_eq!(stats[0].realized_pnl, 1.0);
+        assert_eq!(stats[0].total_staked, 10.0);
+        // ROI denominator is closed stake only.
+        assert!((stats[0].roi_pct - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn source_stats_push_lot_contributes_stake_but_not_win_or_loss() {
+        // Pushes (realized_pnl == 0) are decided but neither wins
+        // nor losses — they contribute to `total_staked` (which
+        // feeds the ROI denominator) but not to `wins`/`losses`
+        // (which feed win_rate). Mirrors the other breakdown helpers.
+        let lots = vec![
+            source_lot(PaperTradeSource::AiDecision, 10.0, 0.0),
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+        ];
+        let stats = compute_source_stats(&lots);
+        assert_eq!(stats[0].source, PaperTradeSource::AiDecision);
+        assert_eq!(stats[0].total_trades, 2);
+        assert_eq!(stats[0].wins, 1);
+        assert_eq!(stats[0].losses, 0);
+        assert_eq!(stats[0].realized_pnl, 1.0);
+        assert_eq!(stats[0].total_staked, 20.0);
+        // ROI = 1.0 / 20.0 * 100 = 5.0%
+        assert!((stats[0].roi_pct - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn source_stats_source_label_matches_enum_variant() {
+        // The `source_label` is what the UI displays. Verify each
+        // canonical source has the expected human-readable label.
+        let stats = compute_source_stats(&[]);
+        assert_eq!(stats[0].source_label, "AI decision");
+        assert_eq!(stats[1].source_label, "Manual");
+    }
+
+    #[test]
+    fn source_stats_ai_beats_manual_demonstrates_headline_question() {
+        // Demonstrates the headline question this breakdown answers:
+        // "is the AI model actually profitable vs. my manual picks?".
+        // AI: 3 wins + 1 loss, $4 PnL on $40 staked → 50% win rate, 10% ROI.
+        // Manual: 1 win + 3 losses, $-2 PnL on $40 staked → 25% win rate, -5% ROI.
+        let lots = vec![
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot(PaperTradeSource::AiDecision, 10.0, 1.0),
+            source_lot(PaperTradeSource::Manual, 10.0, 1.0),
+            source_lot(PaperTradeSource::Manual, 10.0, -1.0),
+            source_lot(PaperTradeSource::Manual, 10.0, -1.0),
+            source_lot(PaperTradeSource::Manual, 10.0, -1.0),
+        ];
+        let stats = compute_source_stats(&lots);
+        // AI: 4 wins, 0 losses, $4 PnL on $40 staked.
+        assert_eq!(stats[0].source, PaperTradeSource::AiDecision);
+        assert_eq!(stats[0].wins, 4);
+        assert_eq!(stats[0].losses, 0);
+        assert_eq!(stats[0].win_rate, 100.0);
+        assert_eq!(stats[0].realized_pnl, 4.0);
+        assert!((stats[0].roi_pct - 10.0).abs() < 0.001);
+        // Manual: 1 win, 3 losses, $-2 PnL on $40 staked.
+        assert_eq!(stats[1].source, PaperTradeSource::Manual);
+        assert_eq!(stats[1].wins, 1);
+        assert_eq!(stats[1].losses, 3);
+        // win_rate = 1 / (1 + 3) * 100 = 25.0%
+        assert_eq!(stats[1].win_rate, 25.0);
+        assert_eq!(stats[1].realized_pnl, -2.0);
+        // ROI = -2 / 40 * 100 = -5.0%
+        assert!((stats[1].roi_pct - -5.0).abs() < 0.001);
     }
 }

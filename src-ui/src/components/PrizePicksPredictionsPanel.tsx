@@ -14,6 +14,7 @@ import type {
   PaperLot,
   PaperPlayerStats,
   PaperSideStats,
+  PaperSourceStats,
   PaperTagStats,
   PrizePicksPrediction,
   SessionDelta,
@@ -566,6 +567,86 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
                     <strong>{s.bucket_label}</strong>
                     {s.open_trades > 0 && (
                       <span className="muted small confidenceTierOpenTag" title={`${s.open_trades} open lot(s)`}>
+                        {' '}+{s.open_trades} open
+                      </span>
+                    )}
+                  </td>
+                  <td>{s.total_trades}</td>
+                  <td>{s.wins + s.losses > 0 ? `${s.win_rate.toFixed(0)}%` : '—'}</td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                  </td>
+                  <td className={pnlPositive ? 'pos' : 'neg'}>
+                    {pnlPositive ? '+' : ''}{s.roi_pct.toFixed(1)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  /**
+   * Per-source (AI vs Manual) performance table. Mirrors the layout
+   * of `DisagreementBreakdown` and the other breakdowns so the views
+   * read as siblings. Shows the same five metrics (Source / Trades /
+   * Win % / PnL / ROI) with the same pos/neg PnL tint.
+   *
+   * The backend always emits the two canonical sources in a fixed
+   * order (`ai_decision` → `manual`) so the table renders as a stable
+   * "AI vs human" comparison without resorting. The `source_label`
+   * (e.g. `"AI decision"`, `"Manual"`) is what the table actually
+   * displays — the raw `source` enum is for machine-readable
+   * comparison. An inline `<small>` note explains the headline
+   * question for users who don't yet know what the table answers.
+   *
+   * The headline question this breakdown answers: **"is the AI model
+   * actually profitable vs. my manual picks?"** — the central
+   * evaluation question for the entire app.
+   */
+  function SourceBreakdown({ stats }: { stats: PaperSourceStats[] }) {
+    if (!stats || stats.length === 0) {
+      return (
+        <div className="sourceBreakdown empty">
+          <span className="muted small">
+            No paper trades yet — place a few (some via Analyst chat, some manually) to populate the AI-vs-manual comparison.
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="sourceBreakdown">
+        <div className="sourceBreakdownHeader">
+          <span className="muted small">
+            Per-source performance (AI vs Manual)
+            {' '}
+            <span className="muted small" title="Is the AI model actually profitable vs. your manual picks?">
+              (ai decision → manual)
+            </span>
+          </span>
+          <span className="muted small">{stats.length} sources</span>
+        </div>
+        <table className="sourceTable">
+          <thead>
+            <tr>
+              <th scope="col">Source</th>
+              <th scope="col">Trades</th>
+              <th scope="col">Win %</th>
+              <th scope="col">PnL</th>
+              <th scope="col">ROI</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map((s) => {
+              const pnlPositive = s.realized_pnl >= 0;
+              return (
+                <tr key={s.source}>
+                  <td>
+                    <strong>{s.source_label}</strong>
+                    {s.open_trades > 0 && (
+                      <span className="muted small sourceOpenTag" title={`${s.open_trades} open lot(s)`}>
                         {' '}+{s.open_trades} open
                       </span>
                     )}
@@ -1309,6 +1390,7 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <DisagreementBreakdown stats={analytics.paper_disagreement_stats} />}
       {analytics && <ConfidenceTierBreakdown stats={analytics.confidence_tier_stats} />}
       {analytics && <TagBreakdown stats={analytics.tag_stats} />}
+      {analytics && <SourceBreakdown stats={analytics.source_stats} />}
       {analytics && <CalibrationScatter points={analytics.calibration_points} />}
       <PaperJournal lots={paperLots} onUpdated={handleLotUpdated} />
       {message && <p className="muted small">{message}</p>}
