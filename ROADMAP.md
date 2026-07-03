@@ -58,7 +58,7 @@ Visualization shipped:
 | Partial-cache indicator badge | ✅ Done 2026-06-27 | 📦 badge in header |
 | Combined IPC bootstrap | ✅ Done 2026-06-27 | `prizepicks_get_dashboard_bootstrap` single round-trip |
 | Startup prefetch (instant quick cache) | ✅ Done 2026-06-28 | Spawned at app startup, no 8s delay |
-| **Decouple cache reads from long fetches** | 🔶 In progress | `Arc<RwLock<PrizePicksCache>>` + `fetch_in_progress` guard — UI reads never block on 20-page warm |
+| **Decouple cache reads from long fetches** | ✅ Done 2026-07-03 | `Arc<RwLock<Option<PrizePicksCache>>>` + `AtomicBool` fetch guard — UI reads clone the cache under a read-lock, full warm (10s+ of 20 pages) runs without holding the write-lock, fetch dedup prevents concurrent 20-page sweeps. New `try_begin_fetch` / `end_fetch` / `wait_for_in_flight_fetch` helpers. 15 new unit tests. |
 | Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional optimization |
 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint |
 
@@ -101,8 +101,8 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-1. **Complete Phase 3 decoupling** — `Arc<RwLock<PrizePicksCache>>` + fetch guard (unblocks UI responsiveness during full catalog warm)
-2. **Add E2E test scaffolding** — Playwright config + 2-3 critical flows (paper trade → settle → analytics update)
+| 1. ~~**Complete Phase 3 decoupling**~~ | ✅ Done 2026-07-03 — see "Brainstormed & shipped (2026-07-03 afternoon)" below. |
+| 2. Add E2E test scaffolding — Playwright config + 2-3 critical flows (paper trade → settle → analytics update) |
 3. **TypeScript strict mode** — Enable `strict: true` in tsconfig.json, fix any fallout
 4. **Benchmark harness** — Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`
 

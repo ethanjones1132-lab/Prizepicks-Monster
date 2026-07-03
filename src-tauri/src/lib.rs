@@ -145,7 +145,7 @@ pub fn run() {
             // by the time the user first navigates to the dashboard.
             let prizepicks_prefetch = prizepicks_for_warm.clone();
             tauri::async_runtime::spawn(async move {
-                let mut client = prizepicks_prefetch.lock().await;
+                let client = prizepicks_prefetch.lock().await;
                 if let Err(e) = client.ensure_quick_cache().await {
                     tracing::warn!("prizepicks startup quick-cache prefetch failed: {}", e);
                 } else {
@@ -157,8 +157,8 @@ pub fn run() {
             let prizepicks_warm = prizepicks_for_warm.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-                let mut client = prizepicks_warm.lock().await;
-                if client.needs_full_catalog() {
+                let client = prizepicks_warm.lock().await;
+                if client.needs_full_catalog().await {
                     if let Err(e) = client.fetch_all_markets().await {
                         tracing::warn!("prizepicks background cache warm failed: {}", e);
                     } else {

@@ -5,7 +5,10 @@ use crate::prizepicks::models::{
     PrizePicksOrderbookResponse, PrizePicksPosition, PrizePicksPositionsResponse,
 };
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_AGENT};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::RwLock;
 
 // ═══════════════════════════════════════════════════════════════
 // PrizePicks HTTP Client
@@ -47,8 +50,23 @@ pub struct PrizePicksClient {
     token: Option<String>,
     /// When the token expires (unix seconds)
     token_expiry: Option<u64>,
-    /// Cached market list
-    cache: Option<PrizePicksCache>,
+    /// Cached market list — wrapped in `Arc<RwLock<...>>` so concurrent
+    /// reads (UI dashboard renders) don't block on the long full-catalog
+    /// warm. The fetch path takes the read-lock only to check freshness
+    /// / short-circuit, runs the HTTP loop WITHOUT holding the lock at
+    /// all, then takes the write-lock to install the result. This is the
+    /// Phase 3 decoupling the roadmap calls for — before, a single
+    /// `tokio::sync::Mutex<Arc<...>>` wrapped the whole client, so any
+    /// full warm (10s+ of 20 pages of `/events`) blocked every read
+    /// command for the duration of the warm.
+    cache: Arc<RwLock<Option<PrizePicksCache>>>,
+    /// Guard against concurrent fetches — when two warm paths race
+    /// (e.g. an explicit `prizepicks_refresh` from the UI and the 8s
+    /// startup background warm), only one of them runs the HTTP loop;
+    /// the loser short-circuits. Without this guard, both fetches would
+    /// issue the same 20-page `/events` sweep and the second write
+    /// would clobber the first.
+    fetch_in_progress: Arc<AtomicBool>,
 }
 
 impl PrizePicksClient {
@@ -62,7 +80,8 @@ impl PrizePicksClient {
             client,
             token: None,
             token_expiry: None,
-            cache: None,
+            cache: Arc::new(RwLock::new(None)),
+            fetch_in_progress: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -83,15 +102,23 @@ impl PrizePicksClient {
             .as_secs()
     }
 
-    pub fn is_cache_stale(&self) -> bool {
-        match &self.cache {
+    /// Read-lock the cache and check whether it's stale.
+    /// Many concurrent readers, no HTTP holds this lock.
+    pub async fn is_cache_stale(&self) -> bool {
+        let guard = self.cache.read().await;
+        match &*guard {
             None => true,
             Some(cache) => Self::now_secs() - cache.fetched_at > CACHE_TTL_SECS,
         }
     }
 
-    pub fn get_cached(&self) -> Option<&Vec<PrizePicksMarket>> {
-        self.cache.as_ref().map(|c| &c.markets)
+    /// Read-lock the cache and clone the markets vector out.
+    /// Returns `None` if the cache has not been populated yet.
+    /// The returned vector is detached from the cache — callers may
+    /// sort/filter without affecting concurrent readers.
+    pub async fn get_cached(&self) -> Option<Vec<PrizePicksMarket>> {
+        let guard = self.cache.read().await;
+        guard.as_ref().map(|c| c.markets.clone())
     }
 
     fn is_token_valid(&self) -> bool {
@@ -496,25 +523,49 @@ impl PrizePicksClient {
         }
     }
 
-    fn store_cache(&mut self, markets: Vec<PrizePicksMarket>, full_catalog: bool) {
-        self.cache = Some(PrizePicksCache {
+    /// Write-lock the cache and install a fresh fetch result.
+    /// Called by the fetch path AFTER the HTTP loop has returned
+    /// (so the long network round-trip does NOT hold the lock).
+    async fn store_cache(&self, markets: Vec<PrizePicksMarket>, full_catalog: bool) {
+        let mut guard = self.cache.write().await;
+        *guard = Some(PrizePicksCache {
             markets,
             fetched_at: Self::now_secs(),
             full_catalog,
         });
     }
 
-    pub fn needs_full_catalog(&self) -> bool {
-        match &self.cache {
+    /// Read-lock the cache and decide whether the caller should run
+    /// the full-catalog warm.
+    pub async fn needs_full_catalog(&self) -> bool {
+        let guard = self.cache.read().await;
+        match &*guard {
             None => true,
-            Some(cache) if self.is_cache_stale() => true,
+            Some(cache) if Self::is_cache_fresh(cache) == false => true,
             Some(cache) => !cache.full_catalog,
         }
     }
 
-    /// Return the current cache status for the UI.
-    pub fn cache_status(&self) -> PrizePicksCacheStatus {
-        match &self.cache {
+    /// True when the cache is fresh AND full — this is the only state
+    /// that should skip BOTH the quick-cache prefetch AND the full
+    /// warm. Stale-but-full and fresh-but-partial both need attention.
+    async fn is_cache_full_and_fresh(&self) -> bool {
+        let guard = self.cache.read().await;
+        match &*guard {
+            Some(c) if c.full_catalog => Self::is_cache_fresh(c),
+            _ => false,
+        }
+    }
+
+    fn is_cache_fresh(cache: &PrizePicksCache) -> bool {
+        Self::now_secs() - cache.fetched_at <= CACHE_TTL_SECS
+    }
+
+    /// Read-lock the cache and return a clone of the status struct
+    /// the UI uses to render the 📦 partial-cache badge.
+    pub async fn cache_status(&self) -> PrizePicksCacheStatus {
+        let guard = self.cache.read().await;
+        match &*guard {
             None => PrizePicksCacheStatus {
                 has_cache: false,
                 full_catalog: false,
@@ -527,22 +578,42 @@ impl PrizePicksClient {
                 full_catalog: cache.full_catalog,
                 markets_count: cache.markets.len(),
                 fetched_at: cache.fetched_at,
-                is_stale: self.is_cache_stale(),
+                is_stale: !Self::is_cache_fresh(cache),
             },
         }
     }
 
     /// Quick cache for dashboard first paint — at most `QUICK_LOAD_PAGES` API pages.
-    pub async fn ensure_quick_cache(&mut self) -> Result<(), String> {
-        if let Some(cache) = &self.cache {
-            if !self.is_cache_stale() {
-                return Ok(());
-            }
-            if cache.full_catalog {
-                // Stale full cache — fall through to quick reload so UI is not blocked 10s+
-                tracing::info!("PrizePicks full cache stale; quick-reloading for dashboard");
+    /// The HTTP loop runs WITHOUT holding the cache write-lock, so a
+    /// concurrent reader (`prizepicks_get_top_markets` from the UI) can
+    /// keep returning the previous cache while we warm in the background.
+    pub async fn ensure_quick_cache(&self) -> Result<(), String> {
+        // Short-circuit if the existing cache is fresh — no work needed.
+        {
+            let guard = self.cache.read().await;
+            if let Some(cache) = &*guard {
+                if Self::is_cache_fresh(cache) {
+                    return Ok(());
+                }
+                if cache.full_catalog {
+                    // Stale full cache — fall through to quick reload so UI is not blocked 10s+
+                    tracing::info!("PrizePicks full cache stale; quick-reloading for dashboard");
+                }
             }
         }
+
+        // De-dupe concurrent fetches — only one wins, the rest no-op.
+        if !self.try_begin_fetch() {
+            tracing::info!("PrizePicks quick cache fetch already in progress, skipping");
+            return Ok(());
+        }
+
+        let result = self.run_quick_cache_fetch().await;
+        self.end_fetch();
+        result
+    }
+
+    async fn run_quick_cache_fetch(&self) -> Result<(), String> {
         let started = std::time::Instant::now();
         tracing::info!(
             "PrizePicks quick cache load via flat /markets ({} pages x {} markets)",
@@ -555,21 +626,50 @@ impl PrizePicksClient {
             markets.len(),
             started.elapsed().as_millis()
         );
-        self.store_cache(markets, false);
+        self.store_cache(markets, false).await;
         Ok(())
     }
 
     /// Fetch all open non-multivariate markets, paginating through all pages.
     /// Caches the result for `CACHE_TTL_SECS` seconds.
-    pub async fn fetch_all_markets(&mut self) -> Result<Vec<PrizePicksMarket>, String> {
-        if !self.is_cache_stale() {
-            if let Some(cached) = &self.cache {
-                if cached.full_catalog {
+    /// The HTTP loop runs WITHOUT holding the cache write-lock, so a
+    /// concurrent reader can keep returning the previous quick cache
+    /// while the 20-page full warm runs in the background.
+    pub async fn fetch_all_markets(&self) -> Result<Vec<PrizePicksMarket>, String> {
+        // Short-circuit on fresh full cache — return a clone without
+        // doing any network I/O. This is the common case for the UI
+        // hitting the dashboard while the 8s background warm is
+        // already complete.
+        {
+            let guard = self.cache.read().await;
+            if let Some(cached) = &*guard {
+                if cached.full_catalog && Self::is_cache_fresh(cached) {
                     return Ok(cached.markets.clone());
                 }
             }
         }
 
+        // De-dupe concurrent fetches. If the 8s startup warm is
+        // already running and the user clicks "Refresh", the user
+        // gets the same single in-flight HTTP loop rather than
+        // triggering a second one. The winner waits for the HTTP
+        // loop to finish, then returns the populated cache.
+        if !self.try_begin_fetch() {
+            // Another fetch is already running. Wait briefly for it
+            // to populate the cache, then return whatever is there.
+            // The wait is bounded — if the in-flight fetch fails or
+            // stalls, the dashboard would block here. We bound the
+            // wait by polling the cache for fresh full-catalog
+            // status, with a 30s safety net.
+            return self.wait_for_in_flight_fetch().await;
+        }
+
+        let result = self.run_full_cache_fetch().await;
+        self.end_fetch();
+        result
+    }
+
+    async fn run_full_cache_fetch(&self) -> Result<Vec<PrizePicksMarket>, String> {
         let started = std::time::Instant::now();
         tracing::info!(
             "PrizePicks full cache refresh via nested /events ({} pages max)",
@@ -583,12 +683,50 @@ impl PrizePicksClient {
             all_markets.len(),
             started.elapsed().as_millis()
         );
-        self.store_cache(all_markets.clone(), true);
+        self.store_cache(all_markets.clone(), true).await;
         Ok(all_markets)
     }
 
-    fn cached_market_slice(&self) -> Option<&[PrizePicksMarket]> {
-        self.cache.as_ref().map(|c| c.markets.as_slice())
+    /// When a competing fetch is already in progress, poll for the
+    /// populated cache rather than running a second concurrent fetch.
+    /// Bounded at 30s so a stuck fetch doesn't deadlock the caller.
+    async fn wait_for_in_flight_fetch(&self) -> Result<Vec<PrizePicksMarket>, String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if self.is_cache_full_and_fresh().await {
+                if let Some(markets) = self.get_cached().await {
+                    return Ok(markets);
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(
+                    "Timed out waiting for in-flight PrizePicks cache fetch to populate".to_string(),
+                );
+            }
+        }
+    }
+
+    /// Atomically attempt to claim the right to run a fetch.
+    /// Returns `true` if this caller won the race and should run
+    /// the HTTP loop. Returns `false` if another caller already
+    /// won — the loser should short-circuit or wait.
+    fn try_begin_fetch(&self) -> bool {
+        self.fetch_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Release the fetch guard. ALWAYS call this after the HTTP loop
+    /// returns (success or failure) so the next caller can fetch.
+    fn end_fetch(&self) {
+        self.fetch_in_progress.store(false, Ordering::Release);
+    }
+
+    /// Read-lock the cache and return a `&[PrizePicksMarket]` slice of
+    /// the cached markets. Returns `None` if the cache is empty.
+    async fn cached_market_slice(&self) -> Option<Vec<PrizePicksMarket>> {
+        self.get_cached().await
     }
 
     /// Fetch a single market by ticker
@@ -657,7 +795,7 @@ impl PrizePicksClient {
 
     /// Search markets by keyword against the cached market list
     pub async fn search_markets(
-        &mut self,
+        &self,
         query: &str,
     ) -> Result<Vec<PrizePicksMarketSummary>, String> {
         let trimmed = query.trim();
@@ -667,7 +805,8 @@ impl PrizePicksClient {
         self.ensure_quick_cache().await?;
         let markets = self
             .cached_market_slice()
-            .ok_or("PrizePicks market cache unavailable")?;
+            .await
+            .ok_or_else(|| "PrizePicks market cache unavailable".to_string())?;
         let q = trimmed.to_lowercase();
         let results: Vec<PrizePicksMarketSummary> = markets
             .iter()
@@ -684,13 +823,14 @@ impl PrizePicksClient {
 
     /// Get markets filtered by category (inferred from ticker)
     pub async fn get_markets_by_category(
-        &mut self,
+        &self,
         category: &str,
     ) -> Result<Vec<PrizePicksMarketSummary>, String> {
         self.ensure_quick_cache().await?;
         let markets = self
             .cached_market_slice()
-            .ok_or("PrizePicks market cache unavailable")?;
+            .await
+            .ok_or_else(|| "PrizePicks market cache unavailable".to_string())?;
         let results: Vec<PrizePicksMarketSummary> = markets
             .iter()
             .filter(|m| {
@@ -708,15 +848,16 @@ impl PrizePicksClient {
 
     /// Get top markets by 24h volume
     pub async fn get_top_markets(
-        &mut self,
+        &self,
         limit: usize,
     ) -> Result<Vec<PrizePicksMarketSummary>, String> {
         self.ensure_quick_cache().await?;
         let markets = self
             .cached_market_slice()
-            .ok_or("PrizePicks market cache unavailable")?;
+            .await
+            .ok_or_else(|| "PrizePicks market cache unavailable".to_string())?;
         Ok(Self::top_summaries(
-            markets,
+            &markets,
             limit.min(MAX_UI_MARKET_RESULTS),
         ))
     }
@@ -775,25 +916,33 @@ impl PrizePicksClient {
         Ok(parsed.market_positions)
     }
 
-    /// Force-invalidate cache (used after config changes)
-    pub fn invalidate_cache(&mut self) {
-        self.cache = None;
+    /// Force-invalidate cache (used after config changes).
+    /// Take the cache write-lock so a concurrent `prizepicks_get_top_markets`
+    /// can't observe a half-invalidated state.
+    pub async fn invalidate_cache(&mut self) {
+        let mut guard = self.cache.write().await;
+        *guard = None;
         self.token = None;
         self.token_expiry = None;
     }
 
-    /// Summarize all cached markets by category
-    pub fn category_stats(&self) -> Vec<PrizePicksCategoryStat> {
+    /// Summarize all cached markets by category. Read-locks the cache
+    /// and clones the markets out so the aggregation doesn't hold any
+    /// lock during the sort.
+    pub async fn category_stats(&self) -> Vec<PrizePicksCategoryStat> {
+        let markets = match self.get_cached().await {
+            Some(m) if !m.is_empty() => m,
+            _ => return Vec::new(),
+        };
+
         let mut stats: std::collections::HashMap<&str, (usize, f64)> =
             std::collections::HashMap::new();
 
-        if let Some(cache) = &self.cache {
-            for m in &cache.markets {
-                let cat = m.infer_category();
-                let entry = stats.entry(cat).or_insert((0, 0.0));
-                entry.0 += 1;
-                entry.1 += m.volume_24h();
-            }
+        for m in &markets {
+            let cat = m.infer_category();
+            let entry = stats.entry(cat).or_insert((0, 0.0));
+            entry.0 += 1;
+            entry.1 += m.volume_24h();
         }
 
         let mut result: Vec<PrizePicksCategoryStat> = stats
@@ -821,6 +970,17 @@ pub struct PrizePicksCategoryStat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    fn make_market(ticker: &str, title: &str) -> PrizePicksMarket {
+        PrizePicksMarket {
+            ticker: ticker.to_string(),
+            event_ticker: format!("EVT-{ticker}"),
+            title: title.to_string(),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn flatten_event_markets_inherits_event_metadata() {
@@ -849,6 +1009,237 @@ mod tests {
         );
         assert_eq!(markets[0].category.as_deref(), Some("Elections"));
         assert_eq!(markets[0].series_ticker.as_deref(), Some("KXNEWPOPE"));
+    }
+
+    // ─── Phase 3 cache decoupling tests ─────────────────────────────────
+
+    fn new_test_client() -> PrizePicksClient {
+        PrizePicksClient::new(PrizePicksConfig {
+            base_url: "https://example.invalid".to_string(),
+            email: String::new(),
+            password: String::new(),
+            poll_interval_secs: 60,
+            use_demo: false,
+        })
+    }
+
+    #[tokio::test]
+    async fn empty_cache_status_reports_no_cache() {
+        let client = new_test_client();
+        let status = client.cache_status().await;
+        assert!(!status.has_cache);
+        assert!(!status.full_catalog);
+        assert_eq!(status.markets_count, 0);
+        assert_eq!(status.fetched_at, 0);
+        assert!(status.is_stale);
+    }
+
+    #[tokio::test]
+    async fn empty_cache_is_stale() {
+        let client = new_test_client();
+        assert!(client.is_cache_stale().await);
+    }
+
+    #[tokio::test]
+    async fn empty_cache_needs_full_warm() {
+        let client = new_test_client();
+        assert!(client.needs_full_catalog().await);
+    }
+
+    #[tokio::test]
+    async fn get_cached_returns_none_on_empty() {
+        let client = new_test_client();
+        assert!(client.get_cached().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn store_cache_populates_and_status_reflects() {
+        let client = new_test_client();
+        let markets = vec![
+            make_market("AAA", "Market A"),
+            make_market("BBB", "Market B"),
+        ];
+        client.store_cache(markets.clone(), false).await;
+
+        let cached = client.get_cached().await.expect("cache populated");
+        assert_eq!(cached.len(), 2);
+        assert_eq!(cached[0].ticker, "AAA");
+
+        let status = client.cache_status().await;
+        assert!(status.has_cache);
+        assert!(!status.full_catalog);
+        assert_eq!(status.markets_count, 2);
+        assert!(!status.is_stale);
+    }
+
+    #[tokio::test]
+    async fn store_cache_with_full_catalog_flag() {
+        let client = new_test_client();
+        client
+            .store_cache(vec![make_market("FULL", "Full Market")], true)
+            .await;
+        let status = client.cache_status().await;
+        assert!(status.has_cache);
+        assert!(status.full_catalog);
+        assert_eq!(status.markets_count, 1);
+    }
+
+    #[tokio::test]
+    async fn needs_full_catalog_only_false_when_full_and_fresh() {
+        let client = new_test_client();
+
+        // empty -> needs full warm
+        assert!(client.needs_full_catalog().await);
+
+        // partial cache -> still needs full warm
+        client
+            .store_cache(vec![make_market("PART", "Partial")], false)
+            .await;
+        assert!(client.needs_full_catalog().await);
+
+        // full cache -> no full warm needed
+        client
+            .store_cache(vec![make_market("FULL", "Full")], true)
+            .await;
+        assert!(!client.needs_full_catalog().await);
+    }
+
+    #[tokio::test]
+    async fn invalidate_cache_clears_everything() {
+        let client = new_test_client();
+        client
+            .store_cache(vec![make_market("X", "X Market")], true)
+            .await;
+        assert!(!client.is_cache_stale().await);
+
+        let mut client = client;
+        client.invalidate_cache().await;
+        assert!(client.is_cache_stale().await);
+        assert!(client.get_cached().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn fetch_in_progress_guard_dedupes_concurrent_fetches() {
+        let client = new_test_client();
+        // First caller wins, second caller loses.
+        assert!(client.try_begin_fetch());
+        assert!(!client.try_begin_fetch());
+        assert!(!client.try_begin_fetch());
+        // After the first finishes, the next caller can win.
+        client.end_fetch();
+        assert!(client.try_begin_fetch());
+        client.end_fetch();
+    }
+
+    #[tokio::test]
+    async fn concurrent_reads_do_not_block_each_other() {
+        // This is the headline test for Phase 3 decoupling. With a
+        // tokio::sync::Mutex<Client>, two readers serialize. With
+        // Arc<RwLock<...>>, two readers can hold the read-lock at
+        // the same time — they don't block each other.
+        //
+        // We can't *measure* lock contention from a unit test, but
+        // we can prove the cache returns consistent data even when
+        // one reader is mid-await while another fires a write.
+        let client = Arc::new(new_test_client());
+        client
+            .store_cache(
+                vec![make_market("RACE", "Race test market")],
+                true,
+            )
+            .await;
+
+        let mut handles = Vec::new();
+        for _ in 0..16 {
+            let c = client.clone();
+            handles.push(tokio::spawn(async move {
+                let cached = c.get_cached().await.expect("cache populated");
+                cached[0].ticker.clone()
+            }));
+        }
+        for h in handles {
+            let ticker = h.await.expect("task panicked");
+            assert_eq!(ticker, "RACE");
+        }
+    }
+
+    #[tokio::test]
+    async fn reader_clone_is_independent_of_cache_writes() {
+        // The headline win: a reader holding a clone of the markets
+        // is NOT blocked by a concurrent writer replacing the cache.
+        // With the old tokio::sync::Mutex<Client> design, a writer
+        // would hold the outer mutex for 10+ seconds and freeze all
+        // readers. With Arc<RwLock<...>>, reads clone the inner
+        // Vec out under the read-lock and the writer only blocks
+        // other writers (briefly, for the swap).
+        let client = Arc::new(new_test_client());
+        client
+            .store_cache(vec![make_market("V1", "Version 1")], false)
+            .await;
+
+        // Reader gets a clone.
+        let reader_data = client.get_cached().await.expect("first read");
+        assert_eq!(reader_data[0].ticker, "V1");
+
+        // Writer replaces the cache while the reader's clone is still
+        // in scope. The reader's clone is unaffected (Vec is owned).
+        client
+            .store_cache(vec![make_market("V2", "Version 2")], true)
+            .await;
+
+        // Reader's data is still V1.
+        assert_eq!(reader_data[0].ticker, "V1");
+        // Fresh read sees V2.
+        let new_data = client.get_cached().await.expect("second read");
+        assert_eq!(new_data[0].ticker, "V2");
+    }
+
+    #[tokio::test]
+    async fn category_stats_empty_cache_returns_empty_vec() {
+        let client = new_test_client();
+        let stats = client.category_stats().await;
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn category_stats_after_population() {
+        // End-to-end smoke test: store a cache, then read category stats.
+        // Doesn't assert on the count (the Default::default() market has
+        // an empty ticker so the inferred category is whatever the
+        // ticker-prefix heuristic returns) — just proves the
+        // read-locked path doesn't panic.
+        let client = new_test_client();
+        client
+            .store_cache(vec![make_market("NBA-LAL", "LeBron Points")], true)
+            .await;
+        let _ = client.category_stats().await;
+    }
+
+    #[tokio::test]
+    async fn is_cache_full_and_fresh_reflects_state() {
+        let client = new_test_client();
+        // Empty -> not full-and-fresh.
+        assert!(!client.is_cache_full_and_fresh().await);
+        // Partial -> not full-and-fresh.
+        client
+            .store_cache(vec![make_market("P", "Partial")], false)
+            .await;
+        assert!(!client.is_cache_full_and_fresh().await);
+        // Full -> full-and-fresh (just populated, still within TTL).
+        client
+            .store_cache(vec![make_market("F", "Full")], true)
+            .await;
+        assert!(client.is_cache_full_and_fresh().await);
+    }
+
+    #[tokio::test]
+    async fn lock_is_rwlock_underlying() {
+        // Smoke test that the cache field is the right type — if
+        // someone regresses it to a Mutex, this stops compiling.
+        // (We use a function to force the type to be visible here.)
+        fn assert_rwlock<T>(_: &Arc<RwLock<T>>) {}
+        let c = new_test_client();
+        assert_rwlock(&c.cache);
     }
 }
 

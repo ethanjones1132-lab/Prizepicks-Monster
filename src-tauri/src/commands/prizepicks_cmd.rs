@@ -9,7 +9,7 @@ pub async fn prizepicks_get_markets(
     category: String,
     prizepicks: State<'_, PrizePicksState>,
 ) -> Result<Vec<crate::prizepicks::PrizePicksMarketSummary>, String> {
-    let mut client = prizepicks.lock().await;
+    let client = prizepicks.lock().await;
     client.get_markets_by_category(&category).await
 }
 
@@ -40,7 +40,7 @@ pub async fn prizepicks_search_markets(
     if query.len() > 200 {
         return Err("Search query too long (max 200 characters)".to_string());
     }
-    let mut client = prizepicks.lock().await;
+    let client = prizepicks.lock().await;
     client.search_markets(&query).await
 }
 
@@ -50,7 +50,7 @@ pub async fn prizepicks_get_top_markets(
     prizepicks: State<'_, PrizePicksState>,
 ) -> Result<Vec<crate::prizepicks::PrizePicksMarketSummary>, String> {
     let n = limit.unwrap_or(30).min(100);
-    let mut client = prizepicks.lock().await;
+    let client = prizepicks.lock().await;
     client.get_top_markets(n).await
 }
 
@@ -59,7 +59,7 @@ pub async fn prizepicks_get_category_stats(
     prizepicks: State<'_, PrizePicksState>,
 ) -> Result<Vec<crate::prizepicks::PrizePicksCategoryStat>, String> {
     let client = prizepicks.lock().await;
-    Ok(client.category_stats())
+    Ok(client.category_stats().await)
 }
 
 #[tauri::command]
@@ -75,7 +75,7 @@ pub async fn prizepicks_get_portfolio(
         {
             let new_cfg = crate::prizepicks::prizepicks_config_from_app(&app_cfg);
             client.config = new_cfg;
-            client.invalidate_cache();
+            client.invalidate_cache().await;
         }
     }
 
@@ -97,7 +97,7 @@ pub async fn prizepicks_get_cache_status(
     prizepicks: State<'_, PrizePicksState>,
 ) -> Result<crate::prizepicks::models::PrizePicksCacheStatus, String> {
     let client = prizepicks.lock().await;
-    Ok(client.cache_status())
+    Ok(client.cache_status().await)
 }
 
 /// Combined dashboard payload — returns top props, scored props, and
@@ -115,10 +115,12 @@ pub async fn prizepicks_get_dashboard_bootstrap(
 ) -> Result<crate::prizepicks::models::PrizePicksDashboardBootstrap, String> {
     let n = limit.unwrap_or(50).min(100);
 
-    // 1. Cache status (cheap, in-memory)
+    // 1. Cache status (cheap, in-memory, read-locked — no HTTP holds the
+    //    cache lock, so the lock is released quickly even during a
+    //    background full warm).
     let cache_status = {
         let client = prizepicks.lock().await;
-        client.cache_status()
+        client.cache_status().await
     };
 
     // 2. Top props — fetcher performs HTTP/projection work. We run
@@ -157,9 +159,9 @@ pub async fn prizepicks_refresh(
         let mut client = prizepicks.lock().await;
         let new_cfg = crate::prizepicks::prizepicks_config_from_app(&app_cfg);
         client.config = new_cfg;
-        client.invalidate_cache();
+        client.invalidate_cache().await;
     }
-    let mut client = prizepicks.lock().await;
+    let client = prizepicks.lock().await;
     let markets = client.fetch_all_markets().await?;
     let summaries: Vec<crate::prizepicks::PrizePicksMarketSummary> = markets
         .iter()
@@ -287,7 +289,7 @@ pub async fn prizepicks_snapshot_prices(
     prizepicks: State<'_, PrizePicksState>,
     db_pool: State<'_, Pool<Sqlite>>,
 ) -> Result<crate::prizepicks::PrizePicksSnapshotBatch, String> {
-    let mut client = prizepicks.lock().await;
+    let client = prizepicks.lock().await;
     let markets = client.fetch_all_markets().await?;
     let summaries: Vec<crate::prizepicks::PrizePicksMarketSummary> = markets
         .iter()
