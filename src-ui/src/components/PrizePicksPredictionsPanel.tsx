@@ -1080,14 +1080,32 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
   // substring match — the goal is "find this lot again" not "fuzzy
   // match the closest title". Empty string means no search active.
   const [search, setSearch] = useState('');
+  // Active tag filter — set by clicking a tag chip in any row. `null`
+  // means no tag filter active. The companion to the free-text search:
+  // a user who sees the per-tag breakdown showing "ROI on #injury is
+  // +12%" can click #injury in the journal and see exactly which lots
+  // contributed to that bucket.
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNotes, setEditNotes] = useState('');
   const [editTags, setEditTags] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Helper: extract the lowercased, trimmed tag set from a lot's
+  // comma-separated `tags` string. Returns an empty array when the
+  // lot is untagged (or has only whitespace/empty segments), so the
+  // caller can decide whether to skip the row or treat it as a
+  // mismatch against the active tag filter.
+  const splitTags = (raw: string | null | undefined): string[] =>
+    (raw ?? '')
+      .split(',')
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+
   // Filter pipeline: status first (cheap, often trims to a small subset),
-  // then free-text search. Search is normalized to lowercase once per
+  // then tag filter (also cheap — single string split per lot), then
+  // free-text search. Search is normalized to lowercase once per
   // render so each lot's check stays O(title + notes + tags). Whitespace
   // around the search term is trimmed; an all-whitespace search is
   // treated as empty (no filter) so the placeholder remains accurate.
@@ -1095,6 +1113,7 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
     const searchTerm = search.trim().toLowerCase();
     return lots.filter((l) => {
       if (filter !== 'All' && l.status !== filter) return false;
+      if (activeTagFilter && !splitTags(l.tags).includes(activeTagFilter)) return false;
       if (!searchTerm) return true;
       const haystack = [
         l.title ?? '',
@@ -1109,7 +1128,7 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
         .toLowerCase();
       return haystack.includes(searchTerm);
     });
-  }, [lots, filter, search]);
+  }, [lots, filter, search, activeTagFilter]);
 
   const beginEdit = (lot: PaperLot) => {
     setEditingId(lot.id);
@@ -1193,6 +1212,21 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
             </button>
           )}
         </div>
+        {activeTagFilter && (
+          <div className="paperJournalActiveTag">
+            <span className="muted small">tag:</span>
+            <span className="paperJournalTag active">#{activeTagFilter}</span>
+            <button
+              type="button"
+              className="ghostBtn small paperJournalActiveTagClear"
+              onClick={() => setActiveTagFilter(null)}
+              title="Clear tag filter"
+              aria-label="Clear tag filter"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <span className="muted small">
           {filtered.length} of {lots.length}
         </span>
@@ -1239,8 +1273,17 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
                   {lot.notes && <div className="paperJournalNotes">{lot.notes}</div>}
                   {lot.tags && (
                     <div className="paperJournalTags">
-                      {lot.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => (
-                        <span key={t} className="paperJournalTag">{t}</span>
+                      {splitTags(lot.tags).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          className={`paperJournalTag clickable ${activeTagFilter === t ? 'active' : ''}`}
+                          onClick={() => setActiveTagFilter(t)}
+                          title={activeTagFilter === t ? `Clear #${t} filter` : `Filter journal by #${t}`}
+                          aria-label={activeTagFilter === t ? `Clear ${t} tag filter` : `Filter by ${t} tag`}
+                        >
+                          #{t}
+                        </button>
                       ))}
                     </div>
                   )}
@@ -1292,11 +1335,13 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
           <div className="paperJournal empty-filter">
             <span className="muted small">
               No paper lots match{' '}
-              {search && filter !== 'All'
-                ? `“${search.trim()}” in ${filter.toLowerCase()} lots`
-                : search
-                ? `“${search.trim()}”`
-                : `the ${filter.toLowerCase()} filter`}
+              {(() => {
+                const parts: string[] = [];
+                if (activeTagFilter) parts.push(`#${activeTagFilter}`);
+                if (search.trim()) parts.push(`“${search.trim()}”`);
+                if (filter !== 'All') parts.push(`${filter.toLowerCase()} lots`);
+                return parts.length > 0 ? parts.join(' + ') : 'the current filter';
+              })()}
               . Try a shorter term or{' '}
               <button
                 type="button"
@@ -1304,6 +1349,7 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
                 onClick={() => {
                   setSearch('');
                   setFilter('All');
+                  setActiveTagFilter(null);
                 }}
               >
                 clear filters

@@ -2205,6 +2205,55 @@ button {
   font-weight: 500;
 }
 
+/* Clickable variant of .paperJournalTag — used for the journal row
+ * tags. Renders as a button visually styled like the static chip so
+ * the user can immediately recognize it as a tag, but with hover
+ * feedback and a cursor that signals interactivity. The active state
+ * is a brighter background + 1px border so the currently-applied
+ * filter is obvious. We override button defaults (no native border,
+ * font inheritance) so the chip stays visually identical to the
+ * static span when not hovered. */
+.paperJournalTag.clickable {
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 80ms ease, border-color 80ms ease;
+  line-height: 1.4;
+}
+
+.paperJournalTag.clickable:hover {
+  background: rgba(110, 200, 163, 0.22);
+}
+
+.paperJournalTag.clickable.active,
+.paperJournalTag.active {
+  background: rgba(110, 200, 163, 0.32);
+  border-color: rgba(110, 200, 163, 0.55);
+  color: #8ee0bd;
+}
+
+/* Active-tag indicator pill in the journal header — surfaces the
+ * currently-applied tag filter so the user can see at a glance which
+ * filter is active and clear it without scrolling back into the lot
+ * list. Same dark-theme pill aesthetic as the search input. */
+.paperJournalActiveTag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  background: rgba(110, 200, 163, 0.08);
+  border: 1px solid rgba(110, 200, 163, 0.25);
+}
+
+.paperJournalActiveTagClear {
+  font-size: 0.7rem;
+  padding: 0 4px;
+  line-height: 1.4;
+}
+
 .paperJournalEditor {
   display: flex;
   flex-direction: column;
