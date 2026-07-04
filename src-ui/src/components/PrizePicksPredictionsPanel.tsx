@@ -1076,16 +1076,40 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
  */
 function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: PaperLot) => void }) {
   const [filter, setFilter] = useState<'All' | 'Open' | 'Closed'>('All');
+  // Free-text search across title, notes, and tags. Case-insensitive
+  // substring match — the goal is "find this lot again" not "fuzzy
+  // match the closest title". Empty string means no search active.
+  const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNotes, setEditNotes] = useState('');
   const [editTags, setEditTags] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Filter pipeline: status first (cheap, often trims to a small subset),
+  // then free-text search. Search is normalized to lowercase once per
+  // render so each lot's check stays O(title + notes + tags). Whitespace
+  // around the search term is trimmed; an all-whitespace search is
+  // treated as empty (no filter) so the placeholder remains accurate.
   const filtered = useMemo(() => {
-    if (filter === 'All') return lots;
-    return lots.filter((l) => l.status === filter);
-  }, [lots, filter]);
+    const searchTerm = search.trim().toLowerCase();
+    return lots.filter((l) => {
+      if (filter !== 'All' && l.status !== filter) return false;
+      if (!searchTerm) return true;
+      const haystack = [
+        l.title ?? '',
+        l.notes ?? '',
+        l.tags ?? '',
+        // Ticker + category help when the title is "(untitled)" but the
+        // user remembers "I traded the QQQ-style Over on points".
+        l.ticker ?? '',
+        l.category ?? '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }, [lots, filter, search]);
 
   const beginEdit = (lot: PaperLot) => {
     setEditingId(lot.id);
@@ -1146,6 +1170,28 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
               {f}
             </button>
           ))}
+        </div>
+        <div className="paperJournalSearch">
+          <input
+            type="search"
+            className="paperJournalSearchInput"
+            placeholder="🔍 title / notes / tags / ticker"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Filter paper lots by title, notes, tags, or ticker"
+            title="Filter paper lots by title, notes, tags, ticker, or category"
+          />
+          {search && (
+            <button
+              type="button"
+              className="ghostBtn small paperJournalSearchClear"
+              onClick={() => setSearch('')}
+              title="Clear search"
+              aria-label="Clear search"
+            >
+              ✕
+            </button>
+          )}
         </div>
         <span className="muted small">
           {filtered.length} of {lots.length}
@@ -1242,6 +1288,30 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
             </article>
           );
         })}
+        {filtered.length === 0 && lots.length > 0 && (
+          <div className="paperJournal empty-filter">
+            <span className="muted small">
+              No paper lots match{' '}
+              {search && filter !== 'All'
+                ? `“${search.trim()}” in ${filter.toLowerCase()} lots`
+                : search
+                ? `“${search.trim()}”`
+                : `the ${filter.toLowerCase()} filter`}
+              . Try a shorter term or{' '}
+              <button
+                type="button"
+                className="ghostBtn small paperJournalClearLink"
+                onClick={() => {
+                  setSearch('');
+                  setFilter('All');
+                }}
+              >
+                clear filters
+              </button>
+              .
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -2036,11 +2036,71 @@ button {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .paperJournalFilters {
   display: flex;
   gap: 4px;
+}
+
+/* Free-text search input — sits next to the All/Open/Closed filter chips
+ * and clears with a small ✕ button. Sized to fit the existing header
+ * row; the search input collapses to a min-width of 160px and grows up
+ * to a comfortable 260px so a long search term doesn't reflow the
+ * whole header. Matches the dark-theme input pattern used elsewhere
+ * (paperJournalTextarea, paperJournalTagInput). */
+.paperJournalSearch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 220px;
+  min-width: 160px;
+  max-width: 320px;
+}
+
+.paperJournalSearchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.paperJournalSearchInput:focus {
+  border-color: rgba(110, 200, 163, 0.5);
+}
+
+.paperJournalSearchInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.paperJournalSearchClear {
+  padding: 2px 6px;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+/* Empty state shown when the filter (status + search) excludes every
+ * lot but the user has at least one lot. Mirrors `.paperJournal.empty`
+ * (which is for the "no lots at all" state) but uses the
+ * `.empty-filter` modifier so the two states can be styled
+ * independently if needed. */
+.paperJournal.empty-filter {
+  padding: 14px 12px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.paperJournalClearLink {
+  margin: 0 2px;
 }
 
 .paperJournalList {
