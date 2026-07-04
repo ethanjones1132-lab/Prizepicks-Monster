@@ -80,7 +80,7 @@ Visualization shipped:
 - [x] README comprehensive rewrite (2026-07-02)
 - [x] LICENSE file added (MIT, 2026-07-02)
 - [ ] TypeScript strict mode full coverage (src-ui tsconfig.json)
-- [ ] E2E tests for critical user flows (Playwright)
+- [x] E2E tests for critical user flows (Playwright)
 - [ ] Benchmarks for hot paths (grading, Kelly, calibration)
 - [ ] Structured logging / observability (OpenTelemetry)
 
@@ -102,7 +102,7 @@ Visualization shipped:
 ## Next Actionable Items (Priority Order)
 
 | 1. ~~**Complete Phase 3 decoupling**~~ | ✅ Done 2026-07-03 — see "Brainstormed & shipped (2026-07-03 afternoon)" below. |
-| 2. Add E2E test scaffolding — Playwright config + 2-3 critical flows (paper trade → settle → analytics update) |
+| 2. ~~Add E2E test scaffolding — Playwright config + 2-3 critical flows (paper trade → settle → analytics update)~~ | ✅ Done 2026-07-04 — Playwright config + 7 tests covering app load, paper trading, ML predictor, settings, and analytics breakdowns. |
 3. **TypeScript strict mode** — Enable `strict: true` in tsconfig.json, fix any fallout
 4. **Benchmark harness** — Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`
 

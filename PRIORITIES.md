@@ -1,7 +1,22 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-03 (afternoon maintenance pass — **Per-source (AI vs Manual) paper performance breakdown shipped** (🤖 answers the central evaluation question: "is the AI model actually profitable vs. my manual picks?"). Health checks: `cargo check` clean, `tsc` clean, **298 lib tests pass** (was 290, +8 new). Previous pass: Phase 3 cache decoupling (🔒 `Arc<RwLock<Option<PrizePicksCache>>>` + `AtomicBool` fetch guard). Two passes back: ROADMAP.md created (📋 116-line phased roadmap with checkable milestones).)
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 3 cache decoupling done · Phase 4 startup prefetch done · Per-category paper breakdown done · Per-side paper breakdown done · Per-window session PnL chips done · Per-hold-time paper breakdown done · Per-player paper breakdown done · Per-entry-price paper breakdown done · Calibration scatter done · Per-disagreement-bucket paper breakdown done · Paper-journal UI done · Per-tag paper breakdown done · Per-confidence-tier paper breakdown done · Per-source paper breakdown done · README comprehensive rewrite done**
+Last updated: 2026-07-04 (overnight maintenance pass — **Playwright E2E test scaffolding shipped** (🎭 7 tests covering app load, paper trade flow, ML predictor, settings, and analytics breakdowns; satisfies Phase 5 "E2E tests for critical user flows" item). Health checks: `cargo check` clean, `tsc --noEmit` clean, **298 lib tests pass** (no Rust changes this pass). Previous pass: Per-source (AI vs Manual) paper performance breakdown (🤖 8 unit tests added; 298 from 290).)
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 3 partial-cache indicator done · Phase 3 combined IPC done · Phase 3 cache decoupling done · Phase 4 startup prefetch done · Per-category paper breakdown done · Per-side paper breakdown done · Per-window session PnL chips done · Per-hold-time paper breakdown done · Per-player paper breakdown done · Per-entry-price paper breakdown done · Calibration scatter done · Per-disagreement-bucket paper breakdown done · Paper-journal UI done · Per-tag paper breakdown done · Per-confidence-tier paper breakdown done · Per-source paper breakdown done · README comprehensive rewrite done · Playwright E2E scaffolding done**
+
+## 2026-07-04 overnight pass — Playwright E2E test scaffolding
+
+**Feature shipped (Playwright E2E test scaffolding):**
+
+- `src-ui/playwright.config.ts` — Playwright configuration with `webServer` integration (starts `npm run dev` on port 1420), `chromium` project, HTML reporter, trace on first retry, `tests/` test directory.
+- `src-ui/package.json` — Added `@playwright/test` and `@types/node` to devDependencies. Added npm scripts: `test` (playwright test), `test:ui` (playwright test --ui), `test:headed` (playwright test --headed).
+- `src-ui/tests/app-load.spec.ts` — 3 tests covering: app loads with sidebar navigation visible, navigation to PrizePicks dashboard works, paper trading panel loads with analytics, ML predictor tab accessible.
+- `src-ui/tests/paper-trade-flow.spec.ts` — 4 tests covering: paper trade flow (dashboard → predictions → verify trade entry), analytics breakdowns render (Category, Side, Hold Time, Player, Entry Price, Disagreement, Confidence, Tag), settings tab loads with config content.
+- `.gitignore` — Added `playwright-report/` and `test-results/` to ignore list.
+- All 7 tests pass. `cargo check` clean. `npx tsc --noEmit` clean. 298 lib tests pass.
+
+This satisfies the Phase 5 "Add E2E test scaffolding — Playwright config + 2-3 critical flows" roadmap item.
+
+---
 
 ## 2026-07-03 afternoon pass — Per-source (AI vs Manual) paper performance breakdown
 
