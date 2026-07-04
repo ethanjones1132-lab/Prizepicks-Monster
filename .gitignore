@@ -19,4 +19,8 @@ reports/improve-pass/
 
 # Python
 __pycache__/
-*.pyc
+*.pyc/
+
+# Playwright
+playwright-report/
+test-results/
