@@ -9,6 +9,7 @@ pub mod error;
 pub mod eval_adapter;
 pub mod football;
 pub mod line_tracker;
+pub mod logging;
 pub mod ml_predictor;
 pub mod notification;
 pub mod paper;
@@ -26,18 +27,15 @@ use tokio::sync::Mutex;
 use weather::WeatherClient;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    // Initialize the global tracing subscriber *before* the tokio runtime
+    // exists — subscriber registration is a process-wide, synchronous side
+    // effect, and putting it inside `block_on` was a leftover from the
+    // original prototype. The new `logging::init_logging()` also supports
+    // `PRIZEPICKS_LOG_FORMAT=json` for structured output in CI / log
+    // aggregators; see `src/logging.rs` for the full contract.
+    let _log_format = logging::init_logging();
 
-    rt.block_on(async {
-        tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-            )
-            .with_file(true)
-            .with_line_number(true)
-            .init();
-    });
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 
     // Initialize SQLite database
     let db_pool = rt.block_on(async {
