@@ -82,7 +82,9 @@ Visualization shipped:
 - [x] TypeScript strict mode full coverage (src-ui tsconfig.json)
 - [x] E2E tests for critical user flows (Playwright)
 - [x] Benchmarks for hot paths (grading, portfolio_risk, calibration) — 2026-07-05
-- [ ] Structured logging / observability (OpenTelemetry)
+- [x] Structured logging foundation (tracing-subscriber human + JSON modes, frontend logger.ts) — 2026-07-05
+- [x] Per-command `correlation_id` for trace grouping (pre-OTel stepping stone) — 2026-07-05
+- [ ] OpenTelemetry SDK adoption (W3C `trace_id` + `span_id` pair, OTLP exporter, metric export)
 
 ---
 
