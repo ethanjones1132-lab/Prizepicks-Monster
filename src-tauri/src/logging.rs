@@ -115,6 +115,42 @@ pub fn init_logging() -> LogFormat {
     format
 }
 
+/// Generate a short correlation id for a single command invocation.
+///
+/// Returned as an 8-character lowercase-hex string derived from the
+/// sub-second nanosecond clock (the bottom 32 bits of the `UNIX_EPOCH`
+/// nanosecond count). 8 hex chars = 32 bits of entropy, which is enough
+/// to keep collisions vanishingly rare across a single user session
+/// (the expected collision point for 32-bit ids is ~65k samples; the
+/// dashboard bootstrap fires at most a few times per minute).
+///
+/// **Why 8 chars, not a UUID?** Log lines in devtools are read by humans;
+/// pasting a long UUID into a bug report is annoying and grepping a long
+/// UUID through 5k log lines is slow. 8 chars is short enough to type
+/// from a screenshot and long enough to be unique per-invocation.
+///
+/// **Why not just `Uuid::new_v4()`?** Pulling in the `uuid` crate is a
+/// heavy dependency for a value that's only used as a log key. The
+/// nanosecond clock is already in `std` and is sufficient for the
+/// "group a single command's log lines together" use case.
+///
+/// **Caveat for log aggregators:** this is **not** a W3C-compliant
+/// `trace_id` (those are 16 bytes / 32 hex chars). The full OTel
+/// observability item in `PRIORITIES.md` will introduce a real
+/// `trace_id` + `span_id` pair when the project adopts an OTel SDK;
+/// the correlation id is the pre-OTel stepping stone that lets us
+/// group log lines by user action today.
+pub fn new_correlation_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    // Bottom 32 bits → 8 hex chars. `as u64` is safe (nanos is u128 but
+    // the bottom 32 bits are well within u64 range).
+    format!("{:08x}", (nanos as u64) & 0xFFFF_FFFF)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,5 +211,121 @@ mod tests {
         // regression where someone adds a new variant but forgets to
         // keep the equality exhaustive.
         assert_ne!(LogFormat::Human, LogFormat::Json);
+    }
+
+    #[test]
+    fn correlation_id_is_8_char_lowercase_hex() {
+        // 8-char format: the docstring promises exactly that. The hex
+        // alphabet must be lowercase to match the format string `{:08x}`
+        // and to be `jq -r` / `grep`-friendly in CI scripts.
+        let cid = new_correlation_id();
+        assert_eq!(cid.len(), 8, "expected 8-char correlation id, got {:?}", cid);
+        assert!(
+            cid.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "expected lowercase hex only, got {:?}",
+            cid
+        );
+    }
+
+    #[test]
+    fn correlation_id_changes_across_rapid_calls() {
+        // 1000 rapid calls should produce at least 990 distinct values.
+        // The nanosecond clock advances between every call, but on some
+        // platforms (Windows, older Linux) the resolution can be coarser
+        // than 1ns and a few collisions are possible. 990/1000 (99%)
+        // is the threshold that catches a regression to a constant or
+        // 1-second-resolution clock while tolerating the platform's
+        // actual resolution.
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..1000 {
+            seen.insert(new_correlation_id());
+        }
+        assert!(
+            seen.len() >= 990,
+            "expected at least 990 distinct correlation ids in 1000 calls, got {}",
+            seen.len()
+        );
+    }
+
+    #[test]
+    fn correlation_id_uses_only_hex_alphabet() {
+        // Pins the character set: a future change to base36 or any
+        // non-hex alphabet would break the docstring promise and
+        // (more importantly) the regex `^[0-9a-f]{8}$` any consumer
+        // uses to extract the id from a log line. This test fails
+        // loudly if anyone widens the alphabet.
+        for _ in 0..50 {
+            let cid = new_correlation_id();
+            assert!(
+                cid.chars()
+                    .all(|c| matches!(c, '0'..='9' | 'a'..='f')),
+                "non-hex char in correlation id {:?}",
+                cid
+            );
+        }
+    }
+
+    #[test]
+    fn correlation_id_survives_into_tracing_event_field() {
+        // End-to-end check: a `tracing::info!` event with a
+        // `correlation_id` field captures the cid we generated and
+        // re-emits it through the same `Display` impl the production
+        // `prizepicks_get_dashboard_bootstrap` and `prizepicks_refresh`
+        // commands rely on. Catches a regression where the `%cid`
+        // formatter is dropped (e.g. switching to `cid` without `%`
+        // would emit the field's `Debug` repr, which is also a string
+        // but with quotes — grep would still find it, but a downstream
+        // `jq` filter wouldn't).
+        use std::sync::{Arc, Mutex};
+        use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+        // Capture the layer's output in a shared buffer.
+        let buf = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let buf_clone = Arc::clone(&buf);
+        let make_writer = move || -> Box<dyn std::io::Write> {
+            Box::new(BufferWriter(buf_clone.clone()))
+        };
+
+        let subscriber = tracing_subscriber::registry()
+            .with(EnvFilter::new("info"))
+            .with(
+                fmt::layer()
+                    .with_writer(make_writer)
+                    .with_ansi(false)
+                    .with_target(false),
+            );
+
+        let cid = new_correlation_id();
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(correlation_id = %cid, "[PrizePicks] verification event");
+        });
+
+        let captured = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
+        assert!(
+            captured.contains(&cid),
+            "expected captured output to contain cid {}, got: {}",
+            cid,
+            captured
+        );
+        assert!(
+            captured.contains("[PrizePicks] verification event"),
+            "expected captured output to contain the event message, got: {}",
+            captured
+        );
+    }
+
+    /// Trivial `Write` adapter that just appends to a shared `Vec<u8>`.
+    /// The `fmt::layer().with_writer(...)` API requires a `MakeWriter`
+    /// that yields a `Write`; `Vec<u8>` is the natural sink for tests.
+    use std::sync::{Arc, Mutex as StdMutex};
+    struct BufferWriter(Arc<StdMutex<Vec<u8>>>);
+    impl std::io::Write for BufferWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
 }

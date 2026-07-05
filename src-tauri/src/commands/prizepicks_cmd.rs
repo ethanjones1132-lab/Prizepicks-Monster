@@ -113,7 +113,21 @@ pub async fn prizepicks_get_dashboard_bootstrap(
     prizepicks: State<'_, PrizePicksState>,
     prizepicks_fetcher: State<'_, Arc<Mutex<crate::prizepicks::PrizePicksFetcher>>>,
 ) -> Result<crate::prizepicks::models::PrizePicksDashboardBootstrap, String> {
+    // Generate a per-invocation correlation id so every log line emitted
+    // by this command (and any async work it spawns) can be grouped by
+    // `grep <cid>` when triaging a dashboard-load issue. The id is
+    // surfaced as a `correlation_id` field on each event below, which
+    // appears in both the human-readable and JSON output modes — the
+    // JSON consumer can `jq 'select(.fields.correlation_id == "abcd1234")'`
+    // to reconstruct the entire trace from the log aggregator. This is
+    // the pre-OTel stepping stone for the Phase 5 observability item.
+    let cid = crate::logging::new_correlation_id();
     let n = limit.unwrap_or(50).min(100);
+    tracing::info!(
+        correlation_id = %cid,
+        limit = n,
+        "[PrizePicks] dashboard bootstrap start"
+    );
 
     // 1. Cache status (cheap, in-memory, read-locked — no HTTP holds the
     //    cache lock, so the lock is released quickly even during a
@@ -126,7 +140,7 @@ pub async fn prizepicks_get_dashboard_bootstrap(
     // 2. Top props — fetcher performs HTTP/projection work. We run
     //    this after releasing the client lock above so a slow network
     //    call doesn't pin the PrizePicks client.
-    let props = {
+    let props: Vec<_> = {
         let mut fetcher = prizepicks_fetcher.lock().await;
         let response = fetcher.fetch_props(None, false).await?;
         response.props.into_iter().take(n).collect()
@@ -141,6 +155,14 @@ pub async fn prizepicks_get_dashboard_bootstrap(
         fetcher.get_scored_props().await?
     };
 
+    tracing::info!(
+        correlation_id = %cid,
+        props_count = props.len(),
+        scored_props_count = scored_props.len(),
+        cache_full = cache_status.full_catalog,
+        "[PrizePicks] dashboard bootstrap end"
+    );
+
     Ok(crate::prizepicks::models::PrizePicksDashboardBootstrap {
         props,
         scored_props,
@@ -154,6 +176,16 @@ pub async fn prizepicks_refresh(
     prizepicks: State<'_, PrizePicksState>,
     db_pool: State<'_, Pool<Sqlite>>,
 ) -> Result<usize, String> {
+    // Per-invocation correlation id — same convention as
+    // `prizepicks_get_dashboard_bootstrap`. A "Refresh" click is the
+    // most common user-reported hang in the app (it triggers a full
+    // 20-page catalog sweep), so being able to grep every line of
+    // output for one specific refresh attempt is high-ROI.
+    let cid = crate::logging::new_correlation_id();
+    tracing::info!(
+        correlation_id = %cid,
+        "[PrizePicks] refresh start (full catalog warm requested)"
+    );
     {
         let app_cfg = config.lock().await;
         let mut client = prizepicks.lock().await;
@@ -168,8 +200,18 @@ pub async fn prizepicks_refresh(
         .map(crate::prizepicks::PrizePicksMarketSummary::from)
         .collect();
     if let Err(e) = crate::prizepicks::price_tracker::snapshot_markets(&db_pool, &summaries).await {
-        tracing::warn!("prizepicks price snapshot on refresh: {}", e);
+        tracing::warn!(
+            correlation_id = %cid,
+            "[PrizePicks] refresh price snapshot failed: {}",
+            e
+        );
     }
+    tracing::info!(
+        correlation_id = %cid,
+        markets_count = markets.len(),
+        summaries_count = summaries.len(),
+        "[PrizePicks] refresh end"
+    );
     Ok(markets.len())
 }
 
