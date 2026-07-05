@@ -79,9 +79,9 @@ Visualization shipped:
 
 - [x] README comprehensive rewrite (2026-07-02)
 - [x] LICENSE file added (MIT, 2026-07-02)
-- [ ] TypeScript strict mode full coverage (src-ui tsconfig.json)
+- [x] TypeScript strict mode full coverage (src-ui tsconfig.json)
 - [x] E2E tests for critical user flows (Playwright)
-- [ ] Benchmarks for hot paths (grading, Kelly, calibration)
+- [x] Benchmarks for hot paths (grading, portfolio_risk, calibration) — 2026-07-05
 - [ ] Structured logging / observability (OpenTelemetry)
 
 ---
