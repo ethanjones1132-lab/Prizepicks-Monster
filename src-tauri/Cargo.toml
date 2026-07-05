@@ -67,3 +67,19 @@ edge-eval = { path = "C:/Users/ethan/kalshi-build/edge-eval" }
 
 # Shared Monster-apps edge math (also used by the offline backtest CLI)
 monster-edge-core = { path = "C:/Users/ethan/kalshi-build/monster-edge-core" }
+
+[dev-dependencies]
+criterion = { version = "0.7.0", default-features = false, features = ["cargo_bench_support"] }
+serde_json = "1.0"
+
+[[bench]]
+name = "grading_bench"
+harness = false
+
+[[bench]]
+name = "portfolio_risk_bench"
+harness = false
+
+[[bench]]
+name = "calibration_bench"
+harness = false
