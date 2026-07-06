@@ -243,6 +243,23 @@ pub struct PaperAnalytics {
     /// by `record_paper_decision` / `open_paper_trade`); this is a
     /// charting/aggregation task.
     pub source_stats: Vec<PaperSourceStats>,
+    /// Top 5 closed paper lots sorted by `realized_pnl` DESC. Pushes
+    /// (`realized_pnl == 0`) and open lots are excluded. Ties broken by
+    /// `closed_at` ASC, then `lot_id` ASC. Empty when no closed lots
+    /// have a non-zero realized PnL. The companion to
+    /// `top_losers` — together they answer "what were the *specific*
+    /// lots that drove my PnL?" so the user can click through to the
+    /// journal and learn from them. Mirrors the per-axis-breakdown
+    /// payload shape (small `Vec<…>` of records with display-ready
+    /// context fields) so the UI can render the panel without
+    /// follow-up `get_lot` round-trips.
+    pub top_winners: Vec<PaperTopLot>,
+    /// Top 5 closed paper lots sorted by `realized_pnl` ASC (most
+    /// negative first). Same exclusion rules and tiebreaks as
+    /// `top_winners`. Empty when no closed lots have a non-zero
+    /// realized PnL. The companion to `top_winners` — the
+    /// "what to learn from" mirror panel.
+    pub top_losers: Vec<PaperTopLot>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
     /// `None` when no baseline snapshot exists (e.g. a brand-new account).
     pub session_pnl: SessionPnl,
@@ -1352,6 +1369,165 @@ fn compute_source_stats(lots: &[PaperLot]) -> Vec<PaperSourceStats> {
         out.push(stat);
     }
     out
+}
+
+/// One closed paper lot surfaced in the "top winners / top losers" panel.
+/// Carries enough context (title, side, prices, stake, settlement result,
+/// close timestamp) for the React side to render a one-line "lesson
+/// learned" row without re-fetching the lot. Mirrors the field shape of
+/// `CalibrationPoint` but with realized PnL as the headline number — the
+/// calibration chart's headline is the model fair %, this one is the
+/// dollar result. Open lots are excluded (no realized PnL yet); pushes
+/// (`realized_pnl == 0`) are also excluded from both lists so the panel
+/// only shows the genuinely informative outcomes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PaperTopLot {
+    /// The lot's primary key — used by the UI as a React `key` and (in a
+    /// future iteration) to deep-link to the journal editor.
+    pub lot_id: String,
+    /// The PrizePicks ticker (e.g. `"NFL-QB-JOSHALLEN-Passyds-275.5"`).
+    pub ticker: String,
+    /// Human-readable title (e.g. `"Josh Allen Over 275.5 passing yards"`).
+    /// Stored directly on the lot at fill time, so this is the same string
+    /// the user saw in the prediction list.
+    pub title: String,
+    /// Stat category (e.g. `"Points"`, `"Rebounds"`). Carried over so the
+    /// row can be tagged with its category without an extra join.
+    pub category: String,
+    /// `"Over"` / `"Under"`. The lot's `side` field is the canonical
+    /// human-readable string (the `"YES"` / `"NO"` storage form is
+    /// normalized on write by `place_trade`).
+    pub side: String,
+    /// Dollar PnL for this lot. Always non-zero for entries in
+    /// `top_winners` (positive) and `top_losers` (negative) — see the
+    /// helper docstring for the exclusion rules.
+    pub realized_pnl: f64,
+    /// Dollar stake on the lot. Used to render the ROI multiplier next to
+    /// the headline PnL (`+$5.00 on $2.00 stake → 2.5x`) so the user can
+    /// see at a glance whether the big winner was also a high-conviction
+    /// size-up.
+    pub stake_dollars: f64,
+    /// Entry price in cents. Carried so the row can show the price the
+    /// user entered at without a follow-up `get_lot` round-trip.
+    pub entry_price_cents: f64,
+    /// Exit price in cents, when the lot was closed via the manual
+    /// `close_lot` path. `None` for auto-graded lots where the resolved
+    /// outcome is `"Win"` / `"Loss"` but no explicit exit price was
+    /// recorded (the implementation collapses a 99.99¢ settlement to
+    /// `Win` without writing `closed_price_cents`).
+    pub closed_price_cents: Option<f64>,
+    /// ISO-8601 close timestamp. Lets the UI surface "Closed 3 days ago"
+    /// context without a separate query.
+    pub closed_at: Option<String>,
+    /// `"Win"` / `"Loss"` — the settlement result the helper computed at
+    /// close time. Always non-Push for entries in either list.
+    pub settlement_result: Option<String>,
+}
+
+/// Default number of top winners / top losers to surface. Five matches the
+/// implicit convention of the per-axis breakdowns (which emit only
+/// populated buckets — the closest analog is the size of the "top of the
+/// leaderboard" you'd want to see in a single screen of the panel).
+const TOP_LOTS_LIMIT: usize = 5;
+
+/// Build the `top_winners` + `top_losers` pair for the `PaperAnalytics`
+/// payload.
+///
+/// **Exclusions (apply to both lists):**
+///   - Open lots (no realized PnL).
+///   - Pushes (realized PnL == 0 — neither a win nor a loss).
+///   - Lots where `realized_pnl` is `None` (defensive — should not happen
+///     for a Closed lot, but the helper is total over its input).
+///
+/// **Sort order:**
+///   - `top_winners`: `realized_pnl` DESC (biggest PnL first). Ties
+///     broken by `closed_at` ASC (older wins first), then by `lot_id`
+///     ASC for determinism.
+///   - `top_losers`:  `realized_pnl` ASC (most negative first). Same
+///     tiebreak.
+///
+/// **Capping:** each list is capped at `TOP_LOTS_LIMIT` (5) so a user
+/// with 500 closed lots doesn't get a panel that scrolls forever. The
+/// panel mirrors the "top 5" mental model users already have from the
+/// equity-curve chart and the per-axis leaderboards.
+///
+/// **Output size:** always `0` (empty) when there are no qualifying
+/// winners/losers, never padded. The UI can render the empty state copy
+/// from `stats.length === 0` checks.
+fn compute_top_lots(lots: &[PaperLot]) -> (Vec<PaperTopLot>, Vec<PaperTopLot>) {
+    // Walk once, splitting the decided lots into separate winners /
+    // losers pools. Doing the split up front (rather than relying on
+    // the sort to partition) means a sign-confused lot — e.g. a
+    // negative PnL that the sort places above a positive PnL because of
+    // a NaN in the underlying column — can never bleed into the wrong
+    // panel. The "decided" gate is identical for both pools: status
+    // must be "Closed" and realized_pnl must be Some(p) with p != 0.0.
+    let mut winners_only: Vec<&PaperLot> = Vec::new();
+    let mut losers_only: Vec<&PaperLot> = Vec::new();
+    for l in lots {
+        if l.status != "Closed" {
+            continue;
+        }
+        match l.realized_pnl {
+            Some(p) if p > 0.0 => winners_only.push(l),
+            Some(p) if p < 0.0 => losers_only.push(l),
+            _ => continue, // None or push (==0) — excluded from both
+        }
+    }
+
+    // Project to `PaperTopLot`. Defined as a closure so the projection
+    // logic lives in exactly one place even though it's invoked from
+    // both sort-then-take branches below.
+    let to_top_lot = |l: &PaperLot| PaperTopLot {
+        lot_id: l.id.clone(),
+        ticker: l.ticker.clone(),
+        title: l.title.clone(),
+        category: l.category.clone(),
+        side: l.side.clone(),
+        realized_pnl: l.realized_pnl.unwrap_or(0.0),
+        stake_dollars: l.stake_dollars,
+        entry_price_cents: l.entry_price_cents,
+        closed_price_cents: l.closed_price_cents,
+        closed_at: l.closed_at.clone(),
+        settlement_result: l.settlement_result.clone(),
+    };
+
+    // Sort winners DESC by realized_pnl, ties broken by closed_at ASC
+    // then lot_id ASC. The tuple-comparison key keeps the tiebreak
+    // chain in a single sort call. We already filtered out non-positive
+    // PnLs so every entry here is a real win.
+    winners_only.sort_by(|a, b| {
+        b.realized_pnl
+            .unwrap_or(0.0)
+            .partial_cmp(&a.realized_pnl.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.closed_at.cmp(&b.closed_at))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let top_winners: Vec<PaperTopLot> = winners_only
+        .iter()
+        .take(TOP_LOTS_LIMIT)
+        .map(|l| to_top_lot(l))
+        .collect();
+
+    // Sort losers ASC by realized_pnl, same tiebreak. The "older first"
+    // tiebreak direction matches the winners branch so the two lists
+    // share a consistent "depth-first" mental model.
+    losers_only.sort_by(|a, b| {
+        a.realized_pnl
+            .unwrap_or(0.0)
+            .partial_cmp(&b.realized_pnl.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.closed_at.cmp(&b.closed_at))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let top_losers: Vec<PaperTopLot> = losers_only
+        .iter()
+        .take(TOP_LOTS_LIMIT)
+        .map(|l| to_top_lot(l))
+        .collect();
+
+    (top_winners, top_losers)
 }
 
 /// Today and 7-day session PnL deltas for the paper account. Both fields are
@@ -2588,6 +2764,7 @@ pub async fn get_analytics(
     let tag_stats = compute_tag_stats(&all);
     let confidence_tier_stats = compute_confidence_tier_stats(&all);
     let source_stats = compute_source_stats(&all);
+    let (top_winners, top_losers) = compute_top_lots(&all);
 
     // Session PnL: fetch the most-recent equity snapshots and walk them to
     // compute today's and 7-day deltas. The snapshot list is bounded to
@@ -2629,6 +2806,8 @@ pub async fn get_analytics(
         tag_stats,
         confidence_tier_stats,
         source_stats,
+        top_winners,
+        top_losers,
         session_pnl,
         fetched_at: Utc::now().to_rfc3339(),
     })
@@ -5477,5 +5656,248 @@ mod tests {
         assert_eq!(stats[1].realized_pnl, -2.0);
         // ROI = -2 / 40 * 100 = -5.0%
         assert!((stats[1].roi_pct - -5.0).abs() < 0.001);
+    }
+
+    // ── compute_top_lots tests ───────────────────────────────────
+
+    /// Helper for the top-lots tests. Mirrors `closed_lot_price` but lets
+    /// the test author pin `id` + `title` + `category` + `side` +
+    /// `closed_at` individually so the projection fields can be asserted
+    /// (e.g. `assert_eq!(top.title, "Josh Allen Over 275.5 passing yards")`).
+    fn top_lot(
+        id: &str,
+        title: &str,
+        category: &str,
+        side: &str,
+        pnl: f64,
+        closed_at: &str,
+    ) -> PaperLot {
+        PaperLot {
+            id: id.to_string(),
+            ticker: format!("T-{id}"),
+            title: title.to_string(),
+            category: category.to_string(),
+            side: side.to_string(),
+            entry_price_cents: 50.0,
+            qty: 1.0,
+            stake_dollars: 5.0,
+            source: PaperTradeSource::Manual,
+            decision_json: None,
+            opened_at: "2026-01-01T00:00:00Z".to_string(),
+            closed_at: Some(closed_at.to_string()),
+            closed_price_cents: Some(if pnl >= 0.0 { 100.0 } else { 0.0 }),
+            realized_pnl: Some(pnl),
+            status: "Closed".to_string(),
+            settlement_result: Some(
+                if pnl > 0.0 {
+                    "Win"
+                } else if pnl < 0.0 {
+                    "Loss"
+                } else {
+                    "Push"
+                }
+                .to_string(),
+            ),
+            notes: None,
+            tags: None,
+        }
+    }
+
+    #[test]
+    fn top_lots_empty_input_returns_two_empty_vecs() {
+        // With no lots, both lists are empty Vecs (not padded to size 5
+        // with zero placeholders) so the UI can show its empty-state copy.
+        let (winners, losers) = compute_top_lots(&[]);
+        assert!(winners.is_empty());
+        assert!(losers.is_empty());
+    }
+
+    #[test]
+    fn top_lots_excludes_open_lots() {
+        // Open lots have no realized PnL; they must not appear in either
+        // list. The single open lot here is the only input — the helper
+        // should return two empty Vecs.
+        let lots = vec![open_lot()];
+        let (winners, losers) = compute_top_lots(&lots);
+        assert!(winners.is_empty());
+        assert!(losers.is_empty());
+    }
+
+    #[test]
+    fn top_lots_excludes_push_lots() {
+        // A push (realized_pnl == 0) is neither a winner nor a loser.
+        // The single push lot here is the only input — both lists empty.
+        let lots = vec![top_lot(
+            "push1",
+            "Test Push",
+            "Points",
+            "Over",
+            0.0,
+            "2026-01-02T00:00:00Z",
+        )];
+        let (winners, losers) = compute_top_lots(&lots);
+        assert!(winners.is_empty());
+        assert!(losers.is_empty());
+    }
+
+    #[test]
+    fn top_winners_sorted_by_realized_pnl_desc() {
+        // Five winners with non-decreasing PnL. Order in the input is
+        // scrambled so we can verify the sort actually runs.
+        let lots = vec![
+            top_lot("w2", "B", "Points", "Over", 2.0, "2026-01-02T00:00:00Z"),
+            top_lot("w5", "E", "Points", "Over", 5.0, "2026-01-05T00:00:00Z"),
+            top_lot("w1", "A", "Points", "Over", 1.0, "2026-01-01T00:00:00Z"),
+            top_lot("w4", "D", "Points", "Over", 4.0, "2026-01-04T00:00:00Z"),
+            top_lot("w3", "C", "Points", "Over", 3.0, "2026-01-03T00:00:00Z"),
+        ];
+        let (winners, _) = compute_top_lots(&lots);
+        assert_eq!(winners.len(), 5);
+        // DESC order by PnL.
+        assert_eq!(winners[0].lot_id, "w5");
+        assert_eq!(winners[1].lot_id, "w4");
+        assert_eq!(winners[2].lot_id, "w3");
+        assert_eq!(winners[3].lot_id, "w2");
+        assert_eq!(winners[4].lot_id, "w1");
+    }
+
+    #[test]
+    fn top_losers_sorted_by_realized_pnl_asc() {
+        // Five losers with non-increasing (more negative) PnL. Scrambled
+        // input order.
+        let lots = vec![
+            top_lot("l-2", "B", "Points", "Under", -2.0, "2026-01-02T00:00:00Z"),
+            top_lot("l-5", "E", "Points", "Under", -5.0, "2026-01-05T00:00:00Z"),
+            top_lot("l-1", "A", "Points", "Under", -1.0, "2026-01-01T00:00:00Z"),
+            top_lot("l-4", "D", "Points", "Under", -4.0, "2026-01-04T00:00:00Z"),
+            top_lot("l-3", "C", "Points", "Under", -3.0, "2026-01-03T00:00:00Z"),
+        ];
+        let (_, losers) = compute_top_lots(&lots);
+        assert_eq!(losers.len(), 5);
+        // ASC order by PnL (most negative first).
+        assert_eq!(losers[0].lot_id, "l-5");
+        assert_eq!(losers[1].lot_id, "l-4");
+        assert_eq!(losers[2].lot_id, "l-3");
+        assert_eq!(losers[3].lot_id, "l-2");
+        assert_eq!(losers[4].lot_id, "l-1");
+    }
+
+    #[test]
+    fn top_lots_caps_each_list_at_five() {
+        // 8 winners + 8 losers → each list capped at the canonical 5.
+        let mut lots = Vec::new();
+        for i in 1..=8 {
+            lots.push(top_lot(
+                &format!("w{i}"),
+                "T",
+                "Points",
+                "Over",
+                i as f64,
+                &format!("2026-01-{i:02}T00:00:00Z"),
+            ));
+        }
+        for i in 1..=8 {
+            lots.push(top_lot(
+                &format!("l-{i}"),
+                "T",
+                "Points",
+                "Under",
+                -(i as f64),
+                &format!("2026-02-{i:02}T00:00:00Z"),
+            ));
+        }
+        let (winners, losers) = compute_top_lots(&lots);
+        assert_eq!(winners.len(), 5, "winners must be capped at 5");
+        assert_eq!(losers.len(), 5, "losers must be capped at 5");
+        // The 6th winner (pnl=3) should NOT be in the output — the cap
+        // dropped it, and the top-5 are pnl=8,7,6,5,4.
+        assert!(!winners.iter().any(|w| w.lot_id == "w3"));
+        // The 6th loser (pnl=-3) should NOT be in the output.
+        assert!(!losers.iter().any(|l| l.lot_id == "l-3"));
+    }
+
+    #[test]
+    fn top_lots_ties_break_by_closed_at_asc() {
+        // Three lots all with pnl == 2.0 (tie). The helper should fall
+        // back to closed_at ASC (older first) as the first tiebreak.
+        let lots = vec![
+            top_lot("t-new", "New", "Points", "Over", 2.0, "2026-01-05T00:00:00Z"),
+            top_lot("t-old", "Old", "Points", "Over", 2.0, "2026-01-01T00:00:00Z"),
+            top_lot("t-mid", "Mid", "Points", "Over", 2.0, "2026-01-03T00:00:00Z"),
+        ];
+        let (winners, _) = compute_top_lots(&lots);
+        assert_eq!(winners.len(), 3);
+        // Older closed_at first.
+        assert_eq!(winners[0].lot_id, "t-old");
+        assert_eq!(winners[1].lot_id, "t-mid");
+        assert_eq!(winners[2].lot_id, "t-new");
+    }
+
+    #[test]
+    fn top_lots_projection_carries_all_display_fields() {
+        // The whole point of `PaperTopLot` is that the UI can render a
+        // one-line row without a follow-up `get_lot` call. Verify every
+        // projection field round-trips from the source lot.
+        let source = top_lot(
+            "l1",
+            "Josh Allen Over 275.5 passing yards",
+            "Passing Yards",
+            "Over",
+            7.5,
+            "2026-03-15T18:30:00Z",
+        );
+        let (winners, _) = compute_top_lots(&[source]);
+        assert_eq!(winners.len(), 1);
+        let w = &winners[0];
+        assert_eq!(w.lot_id, "l1");
+        assert_eq!(w.ticker, "T-l1");
+        assert_eq!(w.title, "Josh Allen Over 275.5 passing yards");
+        assert_eq!(w.category, "Passing Yards");
+        assert_eq!(w.side, "Over");
+        assert!((w.realized_pnl - 7.5).abs() < 1e-9);
+        assert!((w.stake_dollars - 5.0).abs() < 1e-9);
+        assert!((w.entry_price_cents - 50.0).abs() < 1e-9);
+        assert_eq!(w.closed_price_cents, Some(100.0));
+        assert_eq!(w.closed_at.as_deref(), Some("2026-03-15T18:30:00Z"));
+        assert_eq!(w.settlement_result.as_deref(), Some("Win"));
+    }
+
+    #[test]
+    fn top_lots_mixed_winners_losers_and_pushes_sorted_into_separate_lists() {
+        // 3 wins, 2 losses, 1 push, 1 open. The push and open should be
+        // excluded; the 3 wins should land in `top_winners` DESC; the
+        // 2 losses should land in `top_losers` ASC. This is the
+        // headline behavior — winners and losers are sorted
+        // independently and never bleed into the other list.
+        let lots = vec![
+            top_lot("w-big", "Big Win", "Points", "Over", 10.0, "2026-01-10T00:00:00Z"),
+            top_lot("w-mid", "Mid Win", "Rebounds", "Over", 5.0, "2026-01-09T00:00:00Z"),
+            top_lot("w-sml", "Sm Win", "Assists", "Over", 1.0, "2026-01-08T00:00:00Z"),
+            top_lot("l-mid", "Mid Loss", "Points", "Under", -3.0, "2026-01-07T00:00:00Z"),
+            top_lot("l-big", "Big Loss", "Rebounds", "Under", -8.0, "2026-01-06T00:00:00Z"),
+            top_lot("p1", "Push", "Points", "Over", 0.0, "2026-01-05T00:00:00Z"),
+            open_lot(),
+        ];
+        let (winners, losers) = compute_top_lots(&lots);
+        assert_eq!(winners.len(), 3);
+        assert_eq!(losers.len(), 2);
+        // Winners: big → mid → sml
+        assert_eq!(winners[0].lot_id, "w-big");
+        assert_eq!(winners[1].lot_id, "w-mid");
+        assert_eq!(winners[2].lot_id, "w-sml");
+        // Losers: big (most negative) → mid
+        assert_eq!(losers[0].lot_id, "l-big");
+        assert_eq!(losers[1].lot_id, "l-mid");
+        // No contamination: winners should not contain any losers,
+        // losers should not contain any winners, neither should contain
+        // the push or the open lot.
+        for w in &winners {
+            assert!(!w.lot_id.starts_with('l'));
+            assert!(w.lot_id != "p1");
+        }
+        for l in &losers {
+            assert!(!l.lot_id.starts_with('w'));
+            assert!(l.lot_id != "p1");
+        }
     }
 }

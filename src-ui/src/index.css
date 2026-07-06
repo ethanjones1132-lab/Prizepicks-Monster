@@ -1625,6 +1625,149 @@ button {
   margin-left: 4px;
 }
 
+/* Top winners / top losers — two side-by-side sub-tables of the
+ * up-to-5 biggest wins and 5 biggest losses by realized PnL. The
+ * panel reads as a sibling of the other breakdowns (12px padding,
+ * 14px border-radius, subtle border) but uses a 2-column grid for
+ * the inner layout so a user can see winners and losers without
+ * scrolling. */
+.topLotsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  margin-bottom: 14px;
+}
+
+.topLotsPanel.empty {
+  padding: 16px;
+  text-align: center;
+}
+
+.topLotsPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.topLotsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* On narrow widths, stack the two columns vertically so the
+ * per-column table doesn't get squeezed into illegible widths. */
+@media (max-width: 720px) {
+  .topLotsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.topLotsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.topLotsColumnTitle {
+  margin: 0 0 4px 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.topLotsColumnTitle-winners {
+  color: var(--pos, #3fbf7f);
+}
+
+.topLotsColumnTitle-losers {
+  color: var(--neg, #d04848);
+}
+
+.topLotsColumnEmpty {
+  padding: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.topLotsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  table-layout: auto;
+}
+
+.topLotsTable th,
+.topLotsTable td {
+  text-align: left;
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: top;
+}
+
+.topLotsTable th {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 500;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.topLotsTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.topLotsTable td.pos {
+  color: var(--pos, #3fbf7f);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.topLotsTable td.neg {
+  color: var(--neg, #d04848);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.topLotsTable td.muted {
+  font-variant-numeric: tabular-nums;
+}
+
+.topLotsTitle {
+  /* Clamp long titles to two lines so a single crazy long lottery
+   * prop name doesn't blow out the row height. The full title
+   * remains in the `title` attribute for hover-disclosure. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+  line-height: 1.25;
+}
+
+.topLotsRow-winner td {
+  /* Subtle green tint on the first column to make winners visually
+   * scannable. Same idea as the per-side `.pos` tint, applied at
+   * the row level for a slightly stronger cue. */
+  border-left: 2px solid rgba(63, 191, 127, 0.0);
+}
+
+.topLotsRow-loser td {
+  border-left: 2px solid rgba(208, 72, 72, 0.0);
+}
+
 /* Calibration scatter — pure-SVG scatter plot of model fair_probability_pct
  * (X) vs realized PnL in dollars (Y). One bubble per closed paper lot.
  * Same visual weight as the other breakdowns (12px padding, 14px radius,

@@ -374,9 +374,63 @@ export interface PaperAnalytics {
    * charting/aggregation task.
    */
   source_stats: PaperSourceStats[];
+  /**
+   * Top 5 closed paper lots sorted by `realized_pnl` DESC. Pushes
+   * (`realized_pnl == 0`) and open lots are excluded. Ties broken by
+   * `closed_at` ASC, then `lot_id` ASC. Empty when no closed lots
+   * have a non-zero realized PnL. The companion to `top_losers` —
+   * together they answer "what were the *specific* lots that drove my
+   * PnL?" so the user can click through to the journal and learn from
+   * them.
+   */
+  top_winners: PaperTopLot[];
+  /**
+   * Top 5 closed paper lots sorted by `realized_pnl` ASC (most
+   * negative first). Same exclusion rules and tiebreaks as
+   * `top_winners`. Empty when no closed lots have a non-zero
+   * realized PnL. The "what to learn from" mirror panel.
+   */
+  top_losers: PaperTopLot[];
   /** Per-window equity change (today / 7d) for the summary card. */
   session_pnl: SessionPnl;
   fetched_at: string;
+}
+
+/**
+ * One closed paper lot projected for the "top winners / top losers"
+ * panel. Carries enough context (title, side, prices, stake, settlement
+ * result, close timestamp) for the React side to render a one-line
+ * "lesson learned" row without re-fetching the lot. Mirrors the field
+ * shape of `CalibrationPoint` but with realized PnL as the headline
+ * number — the calibration chart's headline is the model fair %, this
+ * one's headline is the dollar result. Open lots are excluded (no
+ * realized PnL yet); pushes (`realized_pnl == 0`) are also excluded
+ * from both lists so the panel only shows the genuinely informative
+ * outcomes.
+ */
+export interface PaperTopLot {
+  /** The lot's primary key — used as a React `key`. */
+  lot_id: string;
+  /** The PrizePicks ticker (e.g. `"NFL-QB-JOSHALLEN-Passyds-275.5"`). */
+  ticker: string;
+  /** Human-readable title (e.g. `"Josh Allen Over 275.5 passing yards"`). */
+  title: string;
+  /** Stat category (e.g. `"Points"`, `"Rebounds"`). */
+  category: string;
+  /** `"Over"` / `"Under"`. */
+  side: string;
+  /** Dollar PnL for this lot. Always non-zero for entries in either list. */
+  realized_pnl: number;
+  /** Dollar stake on the lot. UI uses this to render the ROI multiplier. */
+  stake_dollars: number;
+  /** Entry price in cents. */
+  entry_price_cents: number;
+  /** Exit price in cents, when the lot was closed via the manual `close_lot` path. `null` for auto-graded lots. */
+  closed_price_cents: number | null;
+  /** ISO-8601 close timestamp. */
+  closed_at: string | null;
+  /** `"Win"` / `"Loss"` — settlement result. */
+  settlement_result: string | null;
 }
 
 /**

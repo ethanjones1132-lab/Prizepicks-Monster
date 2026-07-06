@@ -16,6 +16,7 @@ import type {
   PaperSideStats,
   PaperSourceStats,
   PaperTagStats,
+  PaperTopLot,
   PrizePicksPrediction,
   SessionDelta,
 } from '../types/prizepicks';
@@ -664,6 +665,155 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
             })}
           </tbody>
         </table>
+      </div>
+    );
+  }
+
+  /**
+   * Top Winners / Top Losers panel. Renders two side-by-side
+   * sub-tables — winners on the left, losers on the right — of the
+   * up-to-5 biggest wins and 5 biggest losses by realized PnL. Each
+   * row carries the lot's title, side, category, stake, and the
+   * PnL-to-stake ROI multiplier so the user can see at a glance
+   * whether the headline number was a low-conviction dart-throw or
+   * a high-stakes conviction bet.
+   *
+   * The headline question this panel answers: **"what were the
+   * *specific* lots that drove my PnL?"** — the per-axis breakdowns
+   * (Category / Side / Player / etc.) tell you *where* the edge is,
+   * but they don't surface the lot itself. Without this view, the
+   * only way to find your biggest winner was to scroll the entire
+   * journal and read each row.
+   *
+   * Empty states: if there are no closed lots with a non-zero PnL
+   * yet (e.g. a brand-new account with only open lots / pushes),
+   * a single empty-state copy guides the user to settle paper
+   * trades. The two sub-tables are rendered side-by-side when both
+   * lists are populated, and a "no winners yet" / "no losers yet"
+   * placeholder replaces the empty sub-table on a per-list basis.
+   */
+  function TopLotsPanel({
+    winners,
+    losers,
+  }: {
+    winners: PaperTopLot[];
+    losers: PaperTopLot[];
+  }) {
+    const hasWinners = winners.length > 0;
+    const hasLosers = losers.length > 0;
+    if (!hasWinners && !hasLosers) {
+      return (
+        <div className="topLotsPanel empty">
+          <span className="muted small">
+            No settled paper lots with a non-zero PnL yet — once you
+            close a paper trade (or one auto-grades), your biggest
+            wins and losses will appear here.
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="topLotsPanel">
+        <div className="topLotsPanelHeader">
+          <span className="muted small">
+            Top winners &amp; top losers (by realized PnL)
+            {' '}
+            <span
+              className="muted small"
+              title="Top 5 closed lots by realized PnL. Open lots and pushes are excluded. Click a row to jump to the lot in the journal."
+            >
+              (top 5 each · newest entry price on the right)
+            </span>
+          </span>
+        </div>
+        <div className="topLotsGrid">
+          <div className="topLotsColumn">
+            <h4 className="topLotsColumnTitle topLotsColumnTitle-winners">
+              <span className="pos">▲ Top winners</span>
+            </h4>
+            {hasWinners ? (
+              <table className="topLotsTable">
+                <thead>
+                  <tr>
+                    <th scope="col">Title</th>
+                    <th scope="col">Side</th>
+                    <th scope="col">Cat</th>
+                    <th scope="col">Stake</th>
+                    <th scope="col">PnL</th>
+                    <th scope="col">×</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {winners.map((w) => {
+                    const roiMult =
+                      w.stake_dollars > 0
+                        ? (w.realized_pnl / w.stake_dollars).toFixed(2)
+                        : '—';
+                    return (
+                      <tr key={w.lot_id} className="topLotsRow topLotsRow-winner">
+                        <td className="topLotsTitle" title={w.title}>
+                          {w.title}
+                        </td>
+                        <td>{w.side}</td>
+                        <td>{w.category}</td>
+                        <td className="muted small">${w.stake_dollars.toFixed(2)}</td>
+                        <td className="pos">+${w.realized_pnl.toFixed(2)}</td>
+                        <td className="muted small">{roiMult}×</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="topLotsColumnEmpty muted small">
+                No winners yet — every closed lot has been a loss or push.
+              </div>
+            )}
+          </div>
+          <div className="topLotsColumn">
+            <h4 className="topLotsColumnTitle topLotsColumnTitle-losers">
+              <span className="neg">▼ Top losers</span>
+            </h4>
+            {hasLosers ? (
+              <table className="topLotsTable">
+                <thead>
+                  <tr>
+                    <th scope="col">Title</th>
+                    <th scope="col">Side</th>
+                    <th scope="col">Cat</th>
+                    <th scope="col">Stake</th>
+                    <th scope="col">PnL</th>
+                    <th scope="col">×</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {losers.map((l) => {
+                    const roiMult =
+                      l.stake_dollars > 0
+                        ? (l.realized_pnl / l.stake_dollars).toFixed(2)
+                        : '—';
+                    return (
+                      <tr key={l.lot_id} className="topLotsRow topLotsRow-loser">
+                        <td className="topLotsTitle" title={l.title}>
+                          {l.title}
+                        </td>
+                        <td>{l.side}</td>
+                        <td>{l.category}</td>
+                        <td className="muted small">${l.stake_dollars.toFixed(2)}</td>
+                        <td className="neg">${l.realized_pnl.toFixed(2)}</td>
+                        <td className="muted small">{roiMult}×</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="topLotsColumnEmpty muted small">
+                No losers yet — every closed lot has been a win or push.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -1507,6 +1657,12 @@ export function PrizePicksPredictionsPanel() {
       {analytics && <ConfidenceTierBreakdown stats={analytics.confidence_tier_stats} />}
       {analytics && <TagBreakdown stats={analytics.tag_stats} />}
       {analytics && <SourceBreakdown stats={analytics.source_stats} />}
+      {analytics && (
+        <TopLotsPanel
+          winners={analytics.top_winners}
+          losers={analytics.top_losers}
+        />
+      )}
       {analytics && <CalibrationScatter points={analytics.calibration_points} />}
       <PaperJournal lots={paperLots} onUpdated={handleLotUpdated} />
       {message && <p className="muted small">{message}</p>}
