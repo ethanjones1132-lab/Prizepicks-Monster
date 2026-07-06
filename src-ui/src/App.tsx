@@ -1,13 +1,14 @@
 import './index.css';
 import { useState } from 'react';
 import { ChatView } from './components/ChatView';
+import { LogViewer } from './components/LogViewer';
 import { MLPredictorPanel } from './components/MLPredictorPanel';
 import { PrizePicksPredictionsPanel } from './components/PrizePicksPredictionsPanel';
 import { PrizePicksView } from './components/PrizePicksView';
 import { PropsView } from './components/PropsView';
 import { SettingsView } from './components/SettingsView';
 
-type Tab = 'props' | 'prizepicks' | 'chat' | 'predictions' | 'ml' | 'settings';
+type Tab = 'props' | 'prizepicks' | 'chat' | 'predictions' | 'ml' | 'logs' | 'settings';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('props');
@@ -29,6 +30,7 @@ export default function App() {
           { id: 'chat', label: '🧠 Analyst chat' },
           { id: 'predictions', label: '📈 Prediction log' },
           { id: 'ml', label: '🤖 ML predictor' },
+          { id: 'logs', label: '🪵 Logs' },
           { id: 'settings', label: '⚙️ Settings' },
         ].map((tab) => (
           <button
@@ -70,6 +72,7 @@ export default function App() {
             <MLPredictorPanel />
           </section>
         )}
+        {activeTab === 'logs' && <LogViewer />}
         {activeTab === 'settings' && <SettingsView />}
       </main>
     </div>

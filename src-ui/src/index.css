@@ -2296,3 +2296,273 @@ button {
   align-items: center;
   gap: 6px;
 }
+
+/* =========================================================================
+   LogViewer (in-app ring buffer of frontend [PrizePicks] log lines)
+   ========================================================================= */
+
+.logViewerToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 12px 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.logViewerLevels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.logViewerLevelChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.logViewerLevelChip:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.logViewerLevelChip.active {
+  background: rgba(110, 200, 163, 0.18);
+  border-color: rgba(110, 200, 163, 0.55);
+  color: #c9efdc;
+}
+
+.logViewerLevelChip.active.error {
+  background: rgba(208, 72, 72, 0.18);
+  border-color: rgba(208, 72, 72, 0.55);
+  color: #f1b7b7;
+}
+
+.logViewerLevelChip.active.warn {
+  background: rgba(220, 175, 60, 0.18);
+  border-color: rgba(220, 175, 60, 0.55);
+  color: #f1dca0;
+}
+
+.logViewerLevelChip.active.info {
+  background: rgba(110, 165, 230, 0.18);
+  border-color: rgba(110, 165, 230, 0.55);
+  color: #b9d6f1;
+}
+
+.logViewerLevelChip.active.debug {
+  background: rgba(180, 180, 180, 0.18);
+  border-color: rgba(180, 180, 180, 0.45);
+  color: #d4d4d4;
+}
+
+.logViewerCount {
+  display: inline-block;
+  min-width: 1.6em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  font-size: 0.72rem;
+}
+
+.logViewerSearchWrap {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.logViewerSearch {
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.logViewerSearch:focus {
+  outline: none;
+  border-color: rgba(110, 200, 163, 0.5);
+}
+
+.logViewerSearch::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.logViewerPause,
+.logViewerClear {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.logViewerPause:hover,
+.logViewerClear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.logViewerPause.paused {
+  background: rgba(220, 175, 60, 0.18);
+  border-color: rgba(220, 175, 60, 0.5);
+  color: #f1dca0;
+}
+
+.logViewerCopyHint {
+  display: inline-block;
+  margin: 0 12px 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(110, 200, 163, 0.12);
+  border: 1px solid rgba(110, 200, 163, 0.35);
+  color: #c9efdc;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.logViewerEmpty {
+  padding: 24px 16px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.12);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.logViewerList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+.logViewerRow {
+  display: grid;
+  grid-template-columns: 100px 56px 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  word-break: break-word;
+}
+
+.logViewerRow:last-child {
+  border-bottom: none;
+}
+
+.logViewerRow.error {
+  background: rgba(208, 72, 72, 0.06);
+}
+
+.logViewerRow.warn {
+  background: rgba(220, 175, 60, 0.04);
+}
+
+.logViewerTs {
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.logViewerLevel {
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.logViewerLevel.error {
+  color: #f1b7b7;
+  background: rgba(208, 72, 72, 0.18);
+  border-color: rgba(208, 72, 72, 0.4);
+}
+
+.logViewerLevel.warn {
+  color: #f1dca0;
+  background: rgba(220, 175, 60, 0.18);
+  border-color: rgba(220, 175, 60, 0.4);
+}
+
+.logViewerLevel.info {
+  color: #b9d6f1;
+  background: rgba(110, 165, 230, 0.18);
+  border-color: rgba(110, 165, 230, 0.4);
+}
+
+.logViewerLevel.debug {
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(180, 180, 180, 0.12);
+  border-color: rgba(180, 180, 180, 0.3);
+}
+
+.logViewerMessage {
+  color: rgba(255, 255, 255, 0.92);
+  white-space: pre-wrap;
+}
+
+.logViewerExtras {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.74rem;
+}
+
+.logViewerCidChip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 200, 163, 0.45);
+  background: rgba(110, 200, 163, 0.1);
+  color: #b8e7d1;
+  font: inherit;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+.logViewerCidChip:hover {
+  background: rgba(110, 200, 163, 0.22);
+  border-color: rgba(110, 200, 163, 0.7);
+}
+
+.logViewerPausedBanner {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(220, 175, 60, 0.35);
+  background: rgba(220, 175, 60, 0.1);
+  color: #f1dca0;
+  font-size: 0.82rem;
+  text-align: center;
+}

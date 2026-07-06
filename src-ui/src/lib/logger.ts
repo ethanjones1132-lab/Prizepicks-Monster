@@ -19,16 +19,21 @@
 //      extension. Full OpenTelemetry export is out of scope for this pass;
 //      the foundation (Rust tracing subscriber + a parallel TS logger
 //      that emits the same shape) is what lands here.
+//   4. Pushes every entry into a process-wide ring buffer
+//      (`./logBuffer.ts`) so the in-app `LogViewer` component can show
+//      the same lines without requiring the dev to open devtools.
 //
 // If the project later adopts `tauri-plugin-log` for full Rust ↔ JS log
 // bridging, this module is the natural frontend side of that wire — the
 // shape is already there.
 
+import { logBuffer, LogEntry, LogLevel } from './logBuffer';
+
 const PREFIX = '[PrizePicks]';
 
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type Extras = Record<string, unknown> | unknown[] | undefined;
 
-function formatExtras(extras?: Record<string, unknown> | unknown[]): string {
+function formatExtras(extras?: Extras): string {
   if (!extras) return '';
   if (Array.isArray(extras)) {
     if (extras.length === 0) return '';
@@ -45,51 +50,74 @@ function formatExtras(extras?: Record<string, unknown> | unknown[]): string {
   return ' ' + String(extras);
 }
 
-function emit(level: LogLevel, message: string, extras?: Record<string, unknown> | unknown[]): void {
-  const line = `${PREFIX} ${message}${formatExtras(extras)}`;
+function emit(level: LogLevel, message: string, extras?: Extras): void {
+  const formatted = `${message}${formatExtras(extras)}`;
+  // Mirror the human-readable line to the console for devtools parity.
+  // The buffer line stores the un-prefixed message + the raw extras
+  // object so the LogViewer can group by level and filter by
+  // correlation_id without re-parsing the formatted string.
+  const consoleLine = `${PREFIX} ${formatted}`;
   switch (level) {
     case 'debug':
       // `console.debug` is hidden by default in many browser devtools
       // configs; fall back to `console.log` if the level is unavailable
       // so a developer with default filters still sees the message.
       if (typeof console.debug === 'function') {
-        console.debug(line);
+        console.debug(consoleLine);
       } else {
-        console.log(line);
+        console.log(consoleLine);
       }
-      return;
+      break;
     case 'info':
-      console.log(line);
-      return;
+      console.log(consoleLine);
+      break;
     case 'warn':
-      console.warn(line);
-      return;
+      console.warn(consoleLine);
+      break;
     case 'error':
-      console.error(line);
-      return;
+      console.error(consoleLine);
+      break;
+  }
+
+  // Push to the in-process ring buffer for the LogViewer. Wrapped in a
+  // try/catch so a buffer failure (e.g. out of memory) never breaks
+  // the caller's code path.
+  try {
+    const entry: LogEntry = {
+      ts: Date.now(),
+      level,
+      // Store the body without the `[PrizePicks]` prefix; the viewer
+      // adds the prefix back so its display format matches the
+      // devtools output exactly.
+      message,
+      extras: extras as LogEntry['extras'],
+    };
+    logBuffer.push(entry);
+  } catch {
+    // Intentionally silent: the buffer push is best-effort observability.
   }
 }
 
 /** Debug-level message; hidden by default in browser devtools. */
-export function debug(message: string, extras?: Record<string, unknown> | unknown[]): void {
+export function debug(message: string, extras?: Extras): void {
   emit('debug', message, extras);
 }
 
 /** Informational message; visible in devtools by default. */
-export function info(message: string, extras?: Record<string, unknown> | unknown[]): void {
+export function info(message: string, extras?: Extras): void {
   emit('info', message, extras);
 }
 
 /** Warning message; surfaced by devtools as yellow. */
-export function warn(message: string, extras?: Record<string, unknown> | unknown[]): void {
+export function warn(message: string, extras?: Extras): void {
   emit('warn', message, extras);
 }
 
 /** Error message; surfaced by devtools as red. */
-export function error(message: string, extras?: Record<string, unknown> | unknown[]): void {
+export function error(message: string, extras?: Extras): void {
   emit('error', message, extras);
 }
 
 /** Default export bundles all four levels for callers that prefer
- *  `import logger from '...'` over four named imports. */
+*  `import logger from '...'` over four named imports. */
 export default { debug, info, warn, error };
