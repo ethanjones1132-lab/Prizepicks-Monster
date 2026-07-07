@@ -1238,12 +1238,18 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
   // substring match — the goal is "find this lot again" not "fuzzy
   // match the closest title". Empty string means no search active.
   const [search, setSearch] = useState('');
-  // Active tag filter — set by clicking a tag chip in any row. `null`
-  // means no tag filter active. The companion to the free-text search:
-  // a user who sees the per-tag breakdown showing "ROI on #injury is
-  // +12%" can click #injury in the journal and see exactly which lots
-  // contributed to that bucket.
-  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  // Active tag filters — set by clicking a tag chip in any row. The
+  // list of normalized lowercased tags is the *additive* OR filter:
+  // a lot is shown if it carries at least one of the active tags.
+  // Clicking a tag that's already active removes it (toggle off);
+  // clicking a tag that's not active adds it (compose multi-tag
+  // filters). Empty array means no tag filter active. The companion
+  // to the free-text search: a user who sees the per-tag breakdown
+  // showing "ROI on #injury is +12%" can click #injury in the
+  // journal and see exactly which lots contributed to that bucket,
+  // then click #nba-playoff to widen the view to lots tagged
+  // either injury OR playoff.
+  const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNotes, setEditNotes] = useState('');
   const [editTags, setEditTags] = useState('');
@@ -1277,7 +1283,15 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
     const searchTerm = search.trim().toLowerCase();
     return lots.filter((l) => {
       if (filter !== 'All' && l.status !== filter) return false;
-      if (activeTagFilter && !splitTags(l.tags).includes(activeTagFilter)) return false;
+      if (activeTagFilters.length > 0) {
+        // OR semantics: the lot matches if it carries at least one of
+        // the active tags. We do this with a `some` over the (small)
+        // active-tag list rather than a set-intersection because the
+        // active list is bounded by the number of distinct tags the
+        // user has clicked, typically 1-3 in practice.
+        const lotTags = splitTags(l.tags);
+        if (!activeTagFilters.some((t) => lotTags.includes(t))) return false;
+      }
       if (!searchTerm) return true;
       const haystack = [
         l.title ?? '',
@@ -1292,7 +1306,7 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
         .toLowerCase();
       return haystack.includes(searchTerm);
     });
-  }, [lots, filter, search, activeTagFilter]);
+  }, [lots, filter, search, activeTagFilters]);
 
   // Sort pipeline — runs after filter so the user sees the rows they
   // actually want, in the order they want. Pure client-side reorder,
@@ -1442,21 +1456,38 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
             <option value="hold_desc">Longest hold</option>
           </select>
         </div>
-        {activeTagFilter && (
-                  <div className="paperJournalActiveTag">
-                    <span className="muted small">tag:</span>
-                    <span className="paperJournalTag active">#{activeTagFilter}</span>
-                    <button
-                      type="button"
-                      className="ghostBtn small paperJournalActiveTagClear"
-                      onClick={() => setActiveTagFilter(null)}
-                      title="Clear tag filter"
-                      aria-label="Clear tag filter"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
+        {activeTagFilters.length > 0 && (
+          <div className="paperJournalActiveTags">
+            <span className="muted small">tags:</span>
+            {activeTagFilters.map((t) => (
+              <span key={t} className="paperJournalActiveTagsChip">
+                <span className="paperJournalTag active">#{t}</span>
+                <button
+                  type="button"
+                  className="ghostBtn small paperJournalActiveTagsClear"
+                  onClick={() =>
+                    setActiveTagFilters((prev) => prev.filter((x) => x !== t))
+                  }
+                  title={`Remove #${t} from the active filter`}
+                  aria-label={`Remove ${t} tag from active filter`}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            {activeTagFilters.length > 1 && (
+              <button
+                type="button"
+                className="ghostBtn small paperJournalActiveTagsClearAll"
+                onClick={() => setActiveTagFilters([])}
+                title="Clear all active tag filters"
+                aria-label="Clear all active tag filters"
+              >
+                clear all
+              </button>
+            )}
+          </div>
+        )}
                 <button
                   type="button"
                   className="ghostBtn small"
@@ -1530,18 +1561,43 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
                   {lot.notes && <div className="paperJournalNotes">{lot.notes}</div>}
                   {lot.tags && (
                     <div className="paperJournalTags">
-                      {splitTags(lot.tags).map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          className={`paperJournalTag clickable ${activeTagFilter === t ? 'active' : ''}`}
-                          onClick={() => setActiveTagFilter(t)}
-                          title={activeTagFilter === t ? `Clear #${t} filter` : `Filter journal by #${t}`}
-                          aria-label={activeTagFilter === t ? `Clear ${t} tag filter` : `Filter by ${t} tag`}
-                        >
-                          #{t}
-                        </button>
-                      ))}
+                      {splitTags(lot.tags).map((t) => {
+                        const isActive = activeTagFilters.includes(t);
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            className={`paperJournalTag clickable ${isActive ? 'active' : ''}`}
+                            onClick={() => {
+                              // Toggle: if the clicked tag is already
+                              // active, remove it (so a second click
+                              // clears just that tag). Otherwise add
+                              // it to the active set (so clicking a
+                              // different tag composes a multi-tag
+                              // OR filter). Normalization (trim +
+                              // lowercase) happens in `splitTags` on
+                              // the receiving side, so the stored
+                              // value matches the array we're
+                              // searching.
+                              setActiveTagFilters((prev) =>
+                                prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t],
+                              );
+                            }}
+                            title={
+                              isActive
+                                ? `Remove #${t} from the active filter`
+                                : `Add #${t} to the active filter`
+                            }
+                            aria-label={
+                              isActive
+                                ? `Remove ${t} tag from active filter`
+                                : `Add ${t} tag to active filter`
+                            }
+                          >
+                            #{t}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1594,7 +1650,11 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
               No paper lots match{' '}
               {(() => {
                 const parts: string[] = [];
-                if (activeTagFilter) parts.push(`#${activeTagFilter}`);
+                if (activeTagFilters.length > 0) {
+                  parts.push(
+                    activeTagFilters.map((t) => `#${t}`).join(' + '),
+                  );
+                }
                 if (search.trim()) parts.push(`“${search.trim()}”`);
                 if (filter !== 'All') parts.push(`${filter.toLowerCase()} lots`);
                 return parts.length > 0 ? parts.join(' + ') : 'the current filter';
@@ -1606,7 +1666,7 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
                 onClick={() => {
                   setSearch('');
                   setFilter('All');
-                  setActiveTagFilter(null);
+                  setActiveTagFilters([]);
                 }}
               >
                 clear filters

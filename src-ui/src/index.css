@@ -2425,6 +2425,44 @@ button {
   line-height: 1.4;
 }
 
+/* Multi-tag active-filter pill cluster (sibling of the legacy
+ * .paperJournalActiveTag single-pill rule above). The container
+ * lays out the leading 'tags:' label, one chip-row per active
+ * tag (each with its own clear button), and an optional
+ * 'clear all' button when two or more tags are active. The chip
+ * row mirrors the legacy single-pill's rounded-pill aesthetic
+ * so visually the two states read as the same widget in
+ * single vs. multi mode. */
+.paperJournalActiveTags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.paperJournalActiveTagsChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 8px;
+  border-radius: 999px;
+  background: rgba(110, 200, 163, 0.08);
+  border: 1px solid rgba(110, 200, 163, 0.25);
+}
+
+.paperJournalActiveTagsClear {
+  font-size: 0.7rem;
+  padding: 0 4px;
+  line-height: 1.4;
+}
+
+.paperJournalActiveTagsClearAll {
+  margin-left: 2px;
+  font-size: 0.72rem;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
 .paperJournalEditor {
   display: flex;
   flex-direction: column;
