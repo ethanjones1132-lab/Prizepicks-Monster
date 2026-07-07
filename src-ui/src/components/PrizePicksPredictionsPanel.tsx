@@ -1224,6 +1224,14 @@ function PlayerBreakdown({ stats }: { stats: PaperPlayerStats[] }) {
  * positions vs. settled history. Empty state guides the user toward placing
  * paper trades.
  */
+type PaperJournalSortKey =
+  | 'opened_desc'
+  | 'closed_desc'
+  | 'pnl_desc'
+  | 'pnl_asc'
+  | 'stake_desc'
+  | 'hold_desc';
+
 function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: PaperLot) => void }) {
   const [filter, setFilter] = useState<'All' | 'Open' | 'Closed'>('All');
   // Free-text search across title, notes, and tags. Case-insensitive
@@ -1241,6 +1249,12 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
   const [editTags, setEditTags] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Sort dropdown — picks the order the filtered list renders in. Default
+  // is `opened_desc` so a freshly-loaded journal shows lots in the same
+  // order the backend already returns (preserves the long-standing
+  // 'newest first' mental model). PnL / stake / hold-time sorts need a
+  // moment to make sense of the data, so they're opt-in.
+  const [sortKey, setSortKey] = useState<PaperJournalSortKey>('opened_desc');
 
   // Helper: extract the lowercased, trimmed tag set from a lot's
   // comma-separated `tags` string. Returns an empty array when the
@@ -1279,6 +1293,56 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
       return haystack.includes(searchTerm);
     });
   }, [lots, filter, search, activeTagFilter]);
+
+  // Sort pipeline — runs after filter so the user sees the rows they
+  // actually want, in the order they want. Pure client-side reorder,
+  // no backend round-trip (the journal is already in memory). Open
+  // lots and pushes are pushed to the bottom for the PnL sort so a
+  // `null` realized_pnl doesn't dominate the top of the list. Hold-time
+  // sort treats `null` closed_at as +Infinity (open lots at the bottom)
+  // so the user sees the recently-settled lots first. The 'stable
+  // secondary sort on lot_id' is implicit through Array.prototype.sort's
+  // stability (V8 has been stable since 7.0), so ties on PnL/stake/
+  // closed_at don't reshuffle randomly between renders.
+  const sorted = useMemo(() => {
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      switch (sortKey) {
+        case 'opened_desc':
+          return b.opened_at.localeCompare(a.opened_at);
+        case 'closed_desc':
+          // Open lots have null closed_at — sort them last.
+          if (a.closed_at == null && b.closed_at == null) return 0;
+          if (a.closed_at == null) return 1;
+          if (b.closed_at == null) return -1;
+          return b.closed_at.localeCompare(a.closed_at);
+        case 'pnl_desc':
+          return (b.realized_pnl ?? -Infinity) - (a.realized_pnl ?? -Infinity);
+        case 'pnl_asc':
+          return (a.realized_pnl ?? Infinity) - (b.realized_pnl ?? Infinity);
+        case 'stake_desc':
+          return b.stake_dollars - a.stake_dollars;
+        case 'hold_desc': {
+          // Hold time = closed_at - opened_at (in seconds, rounded).
+          // Open lots have null closed_at → +Infinity → bottom of list.
+          const aHold = a.closed_at
+            ? Math.round(
+                (Date.parse(a.closed_at) - Date.parse(a.opened_at)) / 1000,
+              )
+            : Infinity;
+          const bHold = b.closed_at
+            ? Math.round(
+                (Date.parse(b.closed_at) - Date.parse(b.opened_at)) / 1000,
+              )
+            : Infinity;
+          return bHold - aHold;
+        }
+        default:
+          return 0;
+      }
+    });
+    return copy;
+  }, [filtered, sortKey]);
 
   const beginEdit = (lot: PaperLot) => {
     setEditingId(lot.id);
@@ -1362,6 +1426,22 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
             </button>
           )}
         </div>
+        <div className="paperJournalSort">
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as PaperJournalSortKey)}
+            className="paperJournalSortSelect"
+            title="Sort paper lots"
+            aria-label="Sort paper lots"
+          >
+            <option value="opened_desc">Newest opened</option>
+            <option value="closed_desc">Newest closed</option>
+            <option value="pnl_desc">Highest PnL</option>
+            <option value="pnl_asc">Lowest PnL</option>
+            <option value="stake_desc">Highest stake</option>
+            <option value="hold_desc">Longest hold</option>
+          </select>
+        </div>
         {activeTagFilter && (
                   <div className="paperJournalActiveTag">
                     <span className="muted small">tag:</span>
@@ -1409,7 +1489,7 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
                 </span>
       </div>
       <div className="paperJournalList">
-        {filtered.map((lot) => {
+        {sorted.map((lot) => {
           const isOpen = lot.status === 'Open';
           const pnlPositive = (lot.realized_pnl ?? 0) >= 0;
           const isEditing = editingId === lot.id;

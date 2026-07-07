@@ -2229,6 +2229,34 @@ button {
   line-height: 1;
 }
 
+/* Sort dropdown — sits between the search input and the Export CSV
+ * button in the journal header. Smaller than the .toolbar select
+ * (compact 28px min-height, 8px font) so it doesn't overwhelm the
+ * row at 1280px; matches the dark-theme select pattern from
+ * .toolbar select so the chrome is visually consistent. */
+.paperJournalSort {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.paperJournalSortSelect {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.paperJournalSortSelect:focus {
+  border-color: rgba(110, 200, 163, 0.5);
+}
+
 /* Empty state shown when the filter (status + search) excludes every
  * lot but the user has at least one lot. Mirrors `.paperJournal.empty`
  * (which is for the "no lots at all" state) but uses the
