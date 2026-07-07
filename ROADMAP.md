@@ -1,6 +1,6 @@
 # PrizePicks Monster — Phased Roadmap
 
-Last updated: 2026-07-03
+Last updated: 2026-07-07
 
 This roadmap derives from `PRIORITIES.md` (ranked backlog), `AGENTS.md` (working rules), and commit history. Milestones are checkable items with explicit status.
 
@@ -103,13 +103,18 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-| 1. ~~**Complete Phase 3 decoupling**~~ | ✅ Done 2026-07-03 — see "Brainstormed & shipped (2026-07-03 afternoon)" below. |
-| 2. ~~Add E2E test scaffolding — Playwright config + 2-3 critical flows (paper trade → settle → analytics update)~~ | ✅ Done 2026-07-04 — Playwright config + 7 tests covering app load, paper trading, ML predictor, settings, and analytics breakdowns. |
-3. **TypeScript strict mode** — Enable `strict: true` in tsconfig.json, fix any fallout
-4. **Benchmark harness** — Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`
+Last updated: 2026-07-07
 
----
-
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1 | ~~Complete Phase 3 decoupling~~ | ✅ Done 2026-07-03 | `Arc<RwLock<Option<PrizePicksCache>>>` + `AtomicBool` fetch guard. 15 new unit tests. |
+| 2 | ~~Add E2E test scaffolding — Playwright config + 2-3 critical flows~~ | ✅ Done 2026-07-04 | Playwright config + tests covering app load, paper trading, ML predictor, settings, analytics breakdowns. |
+| 3 | ~~TypeScript strict mode~~ | ✅ Already enabled | `strict: true` is in `src-ui/tsconfig.json`. |
+| 4 | ~~Benchmark harness~~ | ✅ Done 2026-07-05 | Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`. 14 bench functions, all compile + run. |
+| 5 | OpenTelemetry SDK adoption | ⬜ Not started | W3C `trace_id` + `span_id` pair, OTLP exporter, metric export. The pre-OTel `correlation_id` infrastructure is in place (2026-07-05), so the migration is mostly SDK wiring + exporter config. No concrete plan yet — requires deciding on the OTLP collector / vendor (Grafana Tempo? Jaeger? Honeycomb? vendor-neutral?). |
+| 6 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
+| 7 | Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional Phase 3 optimization. |
+| 8 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |
 ## Milestone Tracking Format
 
 - `[ ]` Not started
