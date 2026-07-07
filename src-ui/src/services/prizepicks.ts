@@ -165,10 +165,12 @@ export const prizepicksApi = {
      * `limit` is optional — when omitted, returns every lot (most recent first).
      */
     getPaperLots: (statusFilter?: string, limit?: number) =>
-      invoke<PaperLot[]>('paper_get_lots', {
-        statusFilter: statusFilter ?? null,
-        limit: limit ?? null,
-      }),
+          invoke<PaperLot[]>('paper_get_lots', {
+            statusFilter: statusFilter ?? null,
+            limit: limit ?? null,
+          }),
+
+      exportPaperLotsCsv: () => invoke<string>('paper_export_lots_csv'),
 
     // ── ML Predictor ──
 

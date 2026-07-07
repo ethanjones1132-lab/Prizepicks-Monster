@@ -2455,9 +2455,94 @@ pub async fn list_lots(
         .map_err(|e| format!("Failed to list paper lots: {}", e))?;
 
     Ok(rows.iter().map(row_to_lot).collect())
-}
+    }
 
-/// Update notes and/or tags on a paper lot.
+    /// Export paper lots as CSV string.
+    /// Returns all columns from `paper_lots` including notes and tags.
+    /// Rows are ordered by `opened_at DESC` (most recent first).
+    pub async fn export_paper_lots_csv(
+        pool: &Pool<Sqlite>,
+    ) -> Result<String, String> {
+        let sql = r#"
+            SELECT id, ticker, title, category, side, entry_price_cents, qty, stake_dollars,
+                   source, decision_json, opened_at, closed_at, closed_price_cents,
+                   realized_pnl, status, settlement_result, notes, tags
+            FROM paper_lots
+            ORDER BY opened_at DESC
+        "#;
+
+        let rows = sqlx::query(sql)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Failed to fetch paper lots for CSV export: {}", e))?;
+
+        let mut wtr = csv::Writer::from_writer(Vec::new());
+        wtr.write_record(&[
+            "id",
+            "ticker",
+            "title",
+            "category",
+            "side",
+            "entry_price_cents",
+            "qty",
+            "stake_dollars",
+            "source",
+            "decision_json",
+            "opened_at",
+            "closed_at",
+            "closed_price_cents",
+            "realized_pnl",
+            "status",
+            "settlement_result",
+            "notes",
+            "tags",
+        ])
+        .map_err(|e| format!("CSV header error: {}", e))?;
+
+        for row in &rows {
+            let lot = row_to_lot(row);
+            let closed_price = lot.closed_price_cents.map(|v| v.to_string()).unwrap_or_default();
+            let realized = lot.realized_pnl.map(|v| v.to_string()).unwrap_or_default();
+            let closed_at = lot.closed_at.unwrap_or_default();
+            let settlement = lot.settlement_result.unwrap_or_default();
+            let notes = lot.notes.unwrap_or_default();
+            let tags = lot.tags.unwrap_or_default();
+
+            wtr.write_record(&[
+                            &lot.id,
+                            &lot.ticker,
+                            &lot.title,
+                            &lot.category,
+                            &lot.side,
+                            &lot.entry_price_cents.to_string(),
+                            &lot.qty.to_string(),
+                            &lot.stake_dollars.to_string(),
+                            lot.source.as_str(),
+                            &lot.decision_json.unwrap_or_default(),
+                            &lot.opened_at,
+                            &closed_at,
+                            &closed_price,
+                            &realized,
+                            &lot.status,
+                            &settlement,
+                            &notes,
+                            &tags,
+                        ])
+            .map_err(|e| format!("CSV row error: {}", e))?;
+        }
+
+        wtr.flush()
+            .map_err(|e| format!("CSV flush error: {}", e))?;
+
+        let bytes = wtr
+            .into_inner()
+            .map_err(|e| format!("CSV inner error: {}", e))?;
+
+        String::from_utf8(bytes)
+            .map_err(|e| format!("CSV encoding error: {}", e))
+    }
+
+    /// Update notes and/or tags on a paper lot.
 pub async fn update_lot_notes(
     pool: &Pool<Sqlite>,
     lot_id: &str,

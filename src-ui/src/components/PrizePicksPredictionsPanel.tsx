@@ -1363,23 +1363,50 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
           )}
         </div>
         {activeTagFilter && (
-          <div className="paperJournalActiveTag">
-            <span className="muted small">tag:</span>
-            <span className="paperJournalTag active">#{activeTagFilter}</span>
-            <button
-              type="button"
-              className="ghostBtn small paperJournalActiveTagClear"
-              onClick={() => setActiveTagFilter(null)}
-              title="Clear tag filter"
-              aria-label="Clear tag filter"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-        <span className="muted small">
-          {filtered.length} of {lots.length}
-        </span>
+                  <div className="paperJournalActiveTag">
+                    <span className="muted small">tag:</span>
+                    <span className="paperJournalTag active">#{activeTagFilter}</span>
+                    <button
+                      type="button"
+                      className="ghostBtn small paperJournalActiveTagClear"
+                      onClick={() => setActiveTagFilter(null)}
+                      title="Clear tag filter"
+                      aria-label="Clear tag filter"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="ghostBtn small"
+                  onClick={async () => {
+                    try {
+                      const csv = await prizepicksApi.exportPaperLotsCsv();
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement('a');
+                      const url = URL.createObjectURL(blob);
+                      link.setAttribute('href', url);
+                      const now = new Date();
+                      const dateStr = now.toISOString().split('T')[0];
+                      link.setAttribute('download', `paper-lots-${dateStr}.csv`);
+                      link.style.visibility = 'hidden';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(url);
+                    } catch (e) {
+                      console.error('Failed to export paper lots CSV:', e);
+                    }
+                  }}
+                  title="Export all paper lots to CSV"
+                  aria-label="Export all paper lots to CSV"
+                >
+                  📥 Export CSV
+                </button>
+                <span className="muted small">
+                  {filtered.length} of {lots.length}
+                </span>
       </div>
       <div className="paperJournalList">
         {filtered.map((lot) => {

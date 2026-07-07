@@ -278,6 +278,7 @@ pub fn run() {
             commands::paper_get_equity_history,
             commands::paper_get_lots,
             commands::paper_update_lot_notes,
+            commands::paper_export_lots_csv,
             // Player Prop commands
             commands::prizepicks_get_props,
             commands::prizepicks_get_top_props,

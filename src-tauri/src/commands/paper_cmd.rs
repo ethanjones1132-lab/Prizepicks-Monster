@@ -72,3 +72,13 @@ pub async fn paper_get_lots(
 ) -> Result<Vec<crate::paper::PaperLot>, String> {
     crate::paper::list_lots(&db_pool, status_filter.as_deref(), limit).await
 }
+
+/// Export all paper lots as CSV.
+/// Returns a UTF-8 CSV string with all columns from `paper_lots`
+/// including notes and tags, ordered by `opened_at DESC` (most recent first).
+#[tauri::command]
+pub async fn paper_export_lots_csv(
+    db_pool: State<'_, Pool<Sqlite>>,
+) -> Result<String, String> {
+    crate::paper::export_paper_lots_csv(&db_pool).await
+}
