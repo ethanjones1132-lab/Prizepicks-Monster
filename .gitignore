@@ -1,3 +1,27 @@
+# Dependencies
+node_modules/
+src-tauri/target/
+src-ui/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated build logs
+*.log
+reports/improve-pass/
+
+# Python
+__pycache__/
+*.pyc/
+
+# Playwright
 playwright-report/
 test-results/
 
@@ -13,9 +37,3 @@ scripts/apply-*.py
 
 # Build artifacts (transient — produced by tsc, vite, cargo, python)
 src-tauri/src/__pycache__/
-src-tauri/target/
-src-ui/dist/
-src-ui/node_modules/
-
-# Legacy debug output (improve-pass scratch from 2026-06-22)
-reports/improve-pass/
