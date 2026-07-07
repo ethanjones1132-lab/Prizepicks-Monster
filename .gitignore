@@ -27,3 +27,6 @@ test-results/
 
 # Hermes Agent working directory
 .hermes/
+
+# Verify scratch scripts (Icarus / cron transient)
+scripts/verify-*.py
