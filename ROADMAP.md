@@ -1,6 +1,6 @@
 # PrizePicks Monster — Phased Roadmap
 
-Last updated: 2026-07-07
+Last updated: 2026-07-07 (afternoon maintenance pass — multi-tag OR filter landed)
 
 This roadmap derives from `PRIORITIES.md` (ranked backlog), `AGENTS.md` (working rules), and commit history. Milestones are checkable items with explicit status.
 
@@ -103,7 +103,7 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-Last updated: 2026-07-07
+Last updated: 2026-07-07 (afternoon maintenance pass — multi-tag OR filter landed)
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
