@@ -2274,6 +2274,51 @@ button {
   margin: 0 2px;
 }
 
+/* Aggregate stats chip for the *currently filtered* journal set.
+ * Sits next to the existing "N of M" count and surfaces the
+ * realized PnL + W/L record of whatever subset the user has
+ * composed (status + multi-tag OR filter + free-text search).
+ * Uses the same pos/neg tints as the per-axis breakdowns so the
+ * chip reads as a sibling view rather than a new visual pattern.
+ * Compact pill so it doesn't break the existing flex-wrap
+ * behavior of the header. */
+.paperJournalStats {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: help;
+}
+
+.paperJournalStats.pos {
+  color: #6ec8a3;
+  border-color: rgba(110, 200, 163, 0.35);
+  background: rgba(110, 200, 163, 0.10);
+}
+
+.paperJournalStats.neg {
+  color: #e57373;
+  border-color: rgba(229, 115, 115, 0.35);
+  background: rgba(229, 115, 115, 0.10);
+}
+
+.paperJournalStatsPnl {
+  font-weight: 700;
+}
+
+.paperJournalStatsRecord {
+  font-weight: 500;
+  /* Slightly lighter so the headline PnL number carries the visual
+   * weight; the W/L record is supporting context. */
+  opacity: 0.85;
+}
+
 .paperJournalList {
   display: flex;
   flex-direction: column;

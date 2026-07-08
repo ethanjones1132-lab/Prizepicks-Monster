@@ -1308,16 +1308,49 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
     });
   }, [lots, filter, search, activeTagFilters]);
 
-  // Sort pipeline — runs after filter so the user sees the rows they
-  // actually want, in the order they want. Pure client-side reorder,
-  // no backend round-trip (the journal is already in memory). Open
-  // lots and pushes are pushed to the bottom for the PnL sort so a
-  // `null` realized_pnl doesn't dominate the top of the list. Hold-time
-  // sort treats `null` closed_at as +Infinity (open lots at the bottom)
-  // so the user sees the recently-settled lots first. The 'stable
-  // secondary sort on lot_id' is implicit through Array.prototype.sort's
-  // stability (V8 has been stable since 7.0), so ties on PnL/stake/
-  // closed_at don't reshuffle randomly between renders.
+  // Aggregate stats of the *currently filtered* set — surfaces the
+  // realized PnL, win/loss record, and open count of whatever subset
+  // the user has composed (status + multi-tag OR filter + free-text
+  // search). This is the bridge between the per-axis breakdowns
+  // (which force the user to know *which axis* to slice on) and the
+  // raw row list (which forces the user to mentally aggregate). With
+  // the multi-tag OR filter in place, the user can now define
+  // arbitrary subsets ("#injury OR #nba-playoff", then narrow with a
+  // search for "Q1") and immediately see the slice's PnL. Pure
+  // client-side reduce; the lot array is already in memory so this
+  // is O(filtered.length). Open lots are counted but don't
+  // contribute to PnL/stake; pushes contribute stake to the
+  // denominator but don't move the W/L record.
+  const filteredStats = useMemo(() => {
+    let wins = 0;
+    let losses = 0;
+    let openCount = 0;
+    let pnl = 0;
+    let closedStake = 0;
+    for (const lot of filtered) {
+      if (lot.status === 'Open') {
+        openCount += 1;
+        continue;
+      }
+      // Closed (Win/Loss/Push) — realized_pnl may be 0 (push) or null
+      // (defensive); we only credit wins/losses when there's an
+      // unambiguous outcome.
+      if (lot.realized_pnl == null) continue;
+      pnl += lot.realized_pnl;
+      closedStake += lot.stake_dollars;
+      if (lot.realized_pnl > 0) wins += 1;
+      else if (lot.realized_pnl < 0) losses += 1;
+      // pnl == 0 → push, contributes stake to the denominator but
+      // not to the W/L record (mirrors the convention used by the
+      // per-axis breakdowns).
+    }
+    const decided = wins + losses;
+    const winRate = decided > 0 ? (wins / decided) * 100 : 0;
+    const roiPct = closedStake > 0 ? (pnl / closedStake) * 100 : 0;
+    return { wins, losses, openCount, pnl, closedStake, winRate, roiPct, closedCount: filtered.length - openCount };
+  }, [filtered]);
+
+  // Sort pipeline
   const sorted = useMemo(() => {
     const copy = [...filtered];
     copy.sort((a, b) => {
@@ -1515,6 +1548,31 @@ function PaperJournal({ lots, onUpdated }: { lots: PaperLot[]; onUpdated: (lot: 
                 >
                   📥 Export CSV
                 </button>
+                {filtered.length < lots.length && filteredStats.closedCount > 0 && (
+                  <span
+                    className={`paperJournalStats ${filteredStats.pnl >= 0 ? 'pos' : 'neg'}`}
+                    title={
+                      filteredStats.closedCount === 0
+                        ? 'No closed lots in the filtered set'
+                        : `${filteredStats.wins} win${filteredStats.wins === 1 ? '' : 's'}, ${filteredStats.losses} loss${filteredStats.losses === 1 ? '' : 'es'} on ${filteredStats.closedCount} closed lot${filteredStats.closedCount === 1 ? '' : 's'}\n` +
+                          `Realized PnL: ${filteredStats.pnl >= 0 ? '+' : ''}$${filteredStats.pnl.toFixed(2)} (${filteredStats.roiPct >= 0 ? '+' : ''}${filteredStats.roiPct.toFixed(1)}% ROI on $${filteredStats.closedStake.toFixed(2)} staked)` +
+                          (filteredStats.openCount > 0 ? `\n${filteredStats.openCount} open lot${filteredStats.openCount === 1 ? '' : 's'} not yet settled` : '')
+                    }
+                    aria-label={
+                      `Filtered set: ${filteredStats.wins} wins, ${filteredStats.losses} losses, ` +
+                      `realized PnL ${filteredStats.pnl >= 0 ? '+' : ''}$${filteredStats.pnl.toFixed(2)}` +
+                      (filteredStats.openCount > 0 ? `, ${filteredStats.openCount} open` : '')
+                    }
+                  >
+                    <span className="paperJournalStatsPnl">
+                      {filteredStats.pnl >= 0 ? '+' : ''}${filteredStats.pnl.toFixed(2)}
+                    </span>
+                    <span className="paperJournalStatsRecord muted small">
+                      {filteredStats.wins}W · {filteredStats.losses}L
+                      {filteredStats.openCount > 0 && ` · ${filteredStats.openCount} open`}
+                    </span>
+                  </span>
+                )}
                 <span className="muted small">
                   {filtered.length} of {lots.length}
                 </span>
