@@ -1,6 +1,6 @@
 # PrizePicks Monster — Phased Roadmap
 
-Last updated: 2026-07-07 (afternoon maintenance pass — multi-tag OR filter landed)
+Last updated: 2026-07-08 (afternoon maintenance pass — OTel structural foundation)
 
 This roadmap derives from `PRIORITIES.md` (ranked backlog), `AGENTS.md` (working rules), and commit history. Milestones are checkable items with explicit status.
 
@@ -84,7 +84,8 @@ Visualization shipped:
 - [x] Benchmarks for hot paths (grading, portfolio_risk, calibration) — 2026-07-05
 - [x] Structured logging foundation (tracing-subscriber human + JSON modes, frontend logger.ts) — 2026-07-05
 - [x] Per-command `correlation_id` for trace grouping (pre-OTel stepping stone) — 2026-07-05
-- [ ] OpenTelemetry SDK adoption (W3C `trace_id` + `span_id` pair, OTLP exporter, metric export)
+- [/] OpenTelemetry structural foundation (`telemetry.rs` module, no-op guard, onboarding docs) — 2026-07-08
+- [ ] OTel exporter + W3C `trace_id` / `span_id` pair (add `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `tracing-opentelemetry` crates; configure exporter in `telemetry::init_otel`)
 
 ---
 
@@ -111,7 +112,7 @@ Last updated: 2026-07-07 (afternoon maintenance pass — multi-tag OR filter lan
 | 2 | ~~Add E2E test scaffolding — Playwright config + 2-3 critical flows~~ | ✅ Done 2026-07-04 | Playwright config + tests covering app load, paper trading, ML predictor, settings, analytics breakdowns. |
 | 3 | ~~TypeScript strict mode~~ | ✅ Already enabled | `strict: true` is in `src-ui/tsconfig.json`. |
 | 4 | ~~Benchmark harness~~ | ✅ Done 2026-07-05 | Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`. 14 bench functions, all compile + run. |
-| 5 | OpenTelemetry SDK adoption | ⬜ Not started | W3C `trace_id` + `span_id` pair, OTLP exporter, metric export. The pre-OTel `correlation_id` infrastructure is in place (2026-07-05), so the migration is mostly SDK wiring + exporter config. No concrete plan yet — requires deciding on the OTLP collector / vendor (Grafana Tempo? Jaeger? Honeycomb? vendor-neutral?). |
+| 5 | OpenTelemetry SDK adoption | ⬜ Not started → [/] Structural foundation landed 2026-07-08 | `telemetry.rs` module (no-op `OtelGuard`, `init_otel()` wired into startup, onboarding docs for exporter crate). 4 unit tests. No new crate deps. Next step: add `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `tracing-opentelemetry` crates and configure OTLP exporter in `telemetry::init_otel`. |
 | 6 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
 | 7 | Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional Phase 3 optimization. |
 | 8 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |
