@@ -18,6 +18,8 @@ import type {
   MLPrediction,
   MLPredictionBatch,
   MLTrainingResult,
+  AppNotification,
+  NotificationSettings,
 } from '../types/prizepicks';
 import type { PropPick, ScoredProp } from '../types';
 
@@ -200,4 +202,27 @@ export const prizepicksApi = {
 
   mlGetCategoryModels: () =>
     invoke<MLCategoryModelList>('ml_get_category_models'),
+
+  // ── Notifications ──
+
+  getNotifications: (limit?: number) =>
+    invoke<AppNotification[]>('get_notifications', { limit: limit ?? 50 }),
+
+  getUnreadNotificationCount: () =>
+    invoke<number>('get_unread_notification_count'),
+
+  markNotificationRead: (id: string) =>
+    invoke<void>('mark_notification_read', { id }),
+
+  markAllNotificationsRead: () =>
+    invoke<void>('mark_all_notifications_read'),
+
+  dismissNotification: (id: string) =>
+    invoke<void>('dismiss_notification_cmd', { id }),
+
+  getNotificationSettings: () =>
+    invoke<NotificationSettings>('get_notification_settings'),
+
+  saveNotificationSettings: (settings: NotificationSettings) =>
+    invoke<void>('save_notification_settings', { settings }),
 };

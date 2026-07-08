@@ -764,3 +764,39 @@ export interface MLCategoryModelList {
   models: MLCategoryModelInfo[];
 }
 
+// ── Notification types ──
+
+export type NotificationType =
+  | 'game_starting'
+  | 'game_final'
+  | 'prediction_graded'
+  | 'prediction_win'
+  | 'prediction_loss'
+  | 'prediction_push'
+  | 'grading_complete'
+  | 'info';
+
+export interface AppNotification {
+  id: string;
+  notification_type: NotificationType;
+  title: string;
+  body: string;
+  player_name: string | null;
+  game_id: string | null;
+  prediction_id: string | null;
+  created_at: string;
+  read: boolean;
+  dismissed: boolean;
+}
+
+export interface NotificationSettings {
+  enabled: boolean;
+  game_starting_enabled: boolean;
+  game_final_enabled: boolean;
+  prediction_graded_enabled: boolean;
+  grading_complete_enabled: boolean;
+  poll_interval_secs: number;
+  game_starting_minutes_before: number;
+  show_os_notifications: boolean;
+}
+
