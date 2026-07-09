@@ -84,8 +84,9 @@ Visualization shipped:
 - [x] Benchmarks for hot paths (grading, portfolio_risk, calibration) — 2026-07-05
 - [x] Structured logging foundation (tracing-subscriber human + JSON modes, frontend logger.ts) — 2026-07-05
 - [x] Per-command `correlation_id` for trace grouping (pre-OTel stepping stone) — 2026-07-05
-- [/] OpenTelemetry structural foundation (`telemetry.rs` module, no-op guard, onboarding docs) — 2026-07-08
-- [ ] OTel exporter + W3C `trace_id` / `span_id` pair (add `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `tracing-opentelemetry` crates; configure exporter in `telemetry::init_otel`)
+|- [/] OpenTelemetry structural foundation (`telemetry.rs` module, no-op guard, onboarding docs) — 2026-07-08
+|- [x] **OTel SDK adoption** (`opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates; `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter; global tracer provider set; 6 unit tests) — **2026-07-09**
+|- [ ] `tracing-opentelemetry` bridge (`Layer<S>` trait-bound incompatibility with mixed JsonFields/DefaultFields subscriber — needs resolution before adding)
 
 ---
 
@@ -104,7 +105,7 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-Last updated: 2026-07-07 (afternoon maintenance pass — multi-tag OR filter landed)
+Last updated: 2026-07-09 (afternoon maintenance pass — OTel SDK adoption)
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
@@ -112,7 +113,7 @@ Last updated: 2026-07-07 (afternoon maintenance pass — multi-tag OR filter lan
 | 2 | ~~Add E2E test scaffolding — Playwright config + 2-3 critical flows~~ | ✅ Done 2026-07-04 | Playwright config + tests covering app load, paper trading, ML predictor, settings, analytics breakdowns. |
 | 3 | ~~TypeScript strict mode~~ | ✅ Already enabled | `strict: true` is in `src-ui/tsconfig.json`. |
 | 4 | ~~Benchmark harness~~ | ✅ Done 2026-07-05 | Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`. 14 bench functions, all compile + run. |
-| 5 | OpenTelemetry SDK adoption | ⬜ Not started → [/] Structural foundation landed 2026-07-08 | `telemetry.rs` module (no-op `OtelGuard`, `init_otel()` wired into startup, onboarding docs for exporter crate). 4 unit tests. No new crate deps. Next step: add `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`, `tracing-opentelemetry` crates and configure OTLP exporter in `telemetry::init_otel`. |
+| 5 | OpenTelemetry SDK adoption | ✅ Done 2026-07-09 | `opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates (0.32). `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter. Global tracer provider set. 6 unit tests. No OTLP/gRPC deps. `tracing-opentelemetry` bridge deferred (trait-bound incompatibility). |
 | 6 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
 | 7 | Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional Phase 3 optimization. |
 | 8 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |

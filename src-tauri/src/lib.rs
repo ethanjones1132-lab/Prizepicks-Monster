@@ -28,6 +28,11 @@ use tokio::sync::Mutex;
 use weather::WeatherClient;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize the OpenTelemetry tracer provider *before* the tracing
+    // subscriber, so `logging::init_logging` can include the OTel layer.
+    // Uses a lightweight stdout exporter (no OTLP/gRPC deps).
+    let _otel_guard = telemetry::init_otel();
+
     // Initialize the global tracing subscriber *before* the tokio runtime
     // exists — subscriber registration is a process-wide, synchronous side
     // effect, and putting it inside `block_on` was a leftover from the
@@ -35,10 +40,6 @@ pub fn run() {
     // `PRIZEPICKS_LOG_FORMAT=json` for structured output in CI / log
     // aggregators; see `src/logging.rs` for the full contract.
     let _log_format = logging::init_logging();
-
-    // Initialize the OpenTelemetry tracer provider (no-op by default;
-    // set PRIZEPICKS_OTEL_ENDPOINT to activate OTLP export).
-    let _otel_guard = telemetry::init_otel();
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
 
