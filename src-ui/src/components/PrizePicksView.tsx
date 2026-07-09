@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { prizepicksApi } from '../services/prizepicks';
 import type { PrizePicksCacheStatus } from '../types/prizepicks';
 import type { PropPick, ScoredProp } from '../types';
@@ -17,6 +17,7 @@ export function PrizePicksView() {
   const [props, setProps] = useState<PropPick[]>([]);
   const [scoredProps, setScoredProps] = useState<ScoredProp[]>([]);
   const [selectedLeague, setSelectedLeague] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -25,6 +26,17 @@ export function PrizePicksView() {
   const requestId = useRef(0);
 
   const leagues = ['All', 'NFL', 'NBA', 'MLB', 'NHL'];
+
+  // Reset category filter when props are reloaded (e.g. league change)
+  useEffect(() => {
+    setSelectedCategory('All');
+  }, [props]);
+
+  // Compute unique stat categories from the loaded props
+  const categories = useMemo(() => {
+    const cats = new Set(props.map((p) => p.prop_type).filter(Boolean));
+    return ['All', ...Array.from(cats).sort()];
+  }, [props]);
 
   const loadProps = useCallback(async (opts?: { query?: string; league?: string }) => {
     const id = ++requestId.current;
@@ -108,6 +120,11 @@ export function PrizePicksView() {
     }
   };
 
+  // Client-side filter by stat category
+  const displayProps = selectedCategory === 'All'
+    ? props
+    : props.filter((p) => p.prop_type === selectedCategory);
+
   return (
     <div className="prizepicksPage">
       <header className="prizepicksHeader">
@@ -153,6 +170,7 @@ export function PrizePicksView() {
         </button>
       </div>
 
+      {/* League filter chips */}
       <div className="categoryRow">
         {leagues.map((lg) => (
           <button
@@ -166,6 +184,23 @@ export function PrizePicksView() {
           </button>
         ))}
       </div>
+
+      {/* Stat category filter chips (appear once props are loaded) */}
+      {!loading && categories.length > 1 && (
+        <div className="categoryRow categoryRowCategories">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              className={`chip small ${selectedCategory === cat ? 'active' : ''}`}
+              onClick={() => setSelectedCategory(cat)}
+              disabled={loading || props.length === 0}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading && <p className="muted pad">Loading props…</p>}
       {error && <p className="error pad">{error}</p>}
@@ -195,12 +230,19 @@ export function PrizePicksView() {
         </>
       )}
 
-      {/* All props */}
+      {/* All props — filtered by stat category */}
       {!loading && (
         <>
-          <h3 className="sectionHeader">All Props</h3>
+          <h3 className="sectionHeader">
+            {selectedCategory === 'All' ? 'All Props' : `${selectedCategory} Props`}
+            {selectedCategory !== 'All' && props.length > 0 && (
+              <span className="muted small">
+                {' '}({displayProps.length} of {props.length})
+              </span>
+            )}
+          </h3>
           <div className="marketGrid">
-            {props.map((prop) => (
+            {displayProps.map((prop) => (
               <div key={prop.id} className="marketCard">
                 <div className="marketCardTop">
                   <code>{prop.player}</code>
@@ -220,8 +262,12 @@ export function PrizePicksView() {
         </>
       )}
 
-      {!loading && props.length === 0 && !error && (
-        <p className="muted pad">No props found.</p>
+      {!loading && displayProps.length === 0 && !error && (
+        <p className="muted pad">
+          {props.length === 0
+            ? 'No props found.'
+            : `No ${selectedCategory} props match the current filters.`}
+        </p>
       )}
     </div>
   );

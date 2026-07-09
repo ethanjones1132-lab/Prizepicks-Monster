@@ -517,6 +517,17 @@ button {
   margin-bottom: 20px;
 }
 
+.categoryRowCategories {
+  margin-top: -10px;
+  margin-bottom: 22px;
+}
+
+.categoryRowCategories .chip.small {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
 .chip {
   padding: 7px 12px;
   border-radius: 999px;
