@@ -1,6 +1,6 @@
 # PrizePicks Monster — Phased Roadmap
 
-Last updated: 2026-07-08 (afternoon maintenance pass — OTel structural foundation)
+Last updated: 2026-07-09 (overnight maintenance pass — Profit Factor in paper summary card) — OTel structural foundation)
 
 This roadmap derives from `PRIORITIES.md` (ranked backlog), `AGENTS.md` (working rules), and commit history. Milestones are checkable items with explicit status.
 
