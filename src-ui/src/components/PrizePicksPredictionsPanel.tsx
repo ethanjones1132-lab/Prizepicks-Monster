@@ -1842,6 +1842,10 @@ export function PrizePicksPredictionsPanel() {
             <strong>{analytics.win_rate.toFixed(0)}%</strong>
           </div>
           <div>
+            <span className="muted">Profit factor</span>
+            <strong>{analytics.profit_factor.toFixed(2)}</strong>
+          </div>
+          <div>
             <span className="muted">Max DD</span>
             <strong>{analytics.max_drawdown_pct.toFixed(1)}%</strong>
           </div>
