@@ -28,13 +28,12 @@ tauri-plugin-opener = "2.0.0-beta.0"
 tauri-plugin-notification = "2"
 
 # OpenTelemetry distributed tracing (stdout exporter — lightweight, no OTLP/gRPC deps)
-# NOTE: `tracing-opentelemetry` (0.33) has Layer<S> trait-bound incompatibility
-# with our mixed JsonFields/DefaultFields subscriber. The SDK is wired so
-# `opentelemetry::global::tracer()` returns a real tracer; adding the
-# `tracing-opentelemetry` bridge layer requires resolving the trait gap.
+# tracing-opentelemetry 0.33 bridges tracing spans → OTel spans.
+# See the telemetry module for the Layer<S> workaround details.
 opentelemetry = { version = "0.32", features = ["trace"] }
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 opentelemetry-stdout = { version = "0.32", features = ["trace"] }
+tracing-opentelemetry = "0.33"
 
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }

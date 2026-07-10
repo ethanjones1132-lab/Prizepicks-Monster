@@ -83,10 +83,10 @@ Visualization shipped:
 - [x] E2E tests for critical user flows (Playwright)
 - [x] Benchmarks for hot paths (grading, portfolio_risk, calibration) — 2026-07-05
 - [x] Structured logging foundation (tracing-subscriber human + JSON modes, frontend logger.ts) — 2026-07-05
-- [x] Per-command `correlation_id` for trace grouping (pre-OTel stepping stone) — 2026-07-05
-|- [/] OpenTelemetry structural foundation (`telemetry.rs` module, no-op guard, onboarding docs) — 2026-07-08
-|- [x] **OTel SDK adoption** (`opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates; `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter; global tracer provider set; 6 unit tests) — **2026-07-09**
-|- [ ] `tracing-opentelemetry` bridge (`Layer<S>` trait-bound incompatibility with mixed JsonFields/DefaultFields subscriber — needs resolution before adding)
+|- [x] Per-command `correlation_id` for trace grouping (pre-OTel stepping stone) — 2026-07-05
+|- [x] OpenTelemetry structural foundation (`telemetry.rs` module, no-op guard, onboarding docs) — 2026-07-08
+|- [x] **OTel SDK adoption** (`opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates; `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter; global tracer provider set; 6 unit tests) — **2026-07-09** (evening)
+|- [x] **`tracing-opentelemetry` bridge** — wired into both JSON and Human subscriber configurations in `logging.rs`. Every `tracing::info_span!(...)` and `tracing::info!(...)` event flows through the OTel span pipeline automatically. No trait-bound workaround needed with `tracing-opentelemetry 0.33` + `opentelemetry 0.32`. `tracing-opentelemetry = "0.33"` added, `OtelLayer` plumbed into both subscriber arms. — **2026-07-09** (evening)
 
 ---
 
@@ -105,7 +105,7 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-Last updated: 2026-07-09 (afternoon maintenance pass — OTel SDK adoption)
+|Last updated: 2026-07-09 (evening maintenance pass — `tracing-opentelemetry` bridge landed + OTel Layer plumbed into both subscriber arms)
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
@@ -113,10 +113,11 @@ Last updated: 2026-07-09 (afternoon maintenance pass — OTel SDK adoption)
 | 2 | ~~Add E2E test scaffolding — Playwright config + 2-3 critical flows~~ | ✅ Done 2026-07-04 | Playwright config + tests covering app load, paper trading, ML predictor, settings, analytics breakdowns. |
 | 3 | ~~TypeScript strict mode~~ | ✅ Already enabled | `strict: true` is in `src-ui/tsconfig.json`. |
 | 4 | ~~Benchmark harness~~ | ✅ Done 2026-07-05 | Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`. 14 bench functions, all compile + run. |
-| 5 | OpenTelemetry SDK adoption | ✅ Done 2026-07-09 | `opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates (0.32). `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter. Global tracer provider set. 6 unit tests. No OTLP/gRPC deps. `tracing-opentelemetry` bridge deferred (trait-bound incompatibility). |
-| 6 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
-| 7 | Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional Phase 3 optimization. |
-| 8 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |
+| 5 | ~~OpenTelemetry SDK adoption~~ | ✅ Done 2026-07-09 | `opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates (0.32). `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter. Global tracer provider set. 6 unit tests. No OTLP/gRPC deps. |
+| 6 | ~~`tracing-opentelemetry` bridge~~ | ✅ Done 2026-07-09 | `tracing-opentelemetry = "0.33"` added. `otel_layer` wired into both JSON and Human subscriber arms in `logging.rs`. No trait-bound workaround needed. `cargo check` clean. |
+| 7 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
+| 8 | Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional Phase 3 optimization. |
+| 9 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |
 ## Milestone Tracking Format
 
 - `[ ]` Not started

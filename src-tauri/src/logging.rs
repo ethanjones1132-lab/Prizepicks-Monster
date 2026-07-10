@@ -16,6 +16,14 @@
 //! (e.g. `RUST_LOG=prizepicks_monster_lib=debug,info`); defaults to `info`
 //! when unset.
 //!
+//! ## OpenTelemetry bridge
+//!
+//! The [`tracing-opentelemetry`] layer is wired into both the JSON and Human
+//! subscriber configurations, bridging every `tracing::info_span!(...)` and
+//! `tracing::info!(...)` event into an OpenTelemetry span tree. The global
+//! tracer provider (set by [`crate::telemetry::init_otel`] before this
+//! function is called) provides the real or no-op tracer.
+//!
 //! ## Why this module exists separately
 //!
 //! The original `lib.rs::run` called `tracing_subscriber::fmt().init()` *inside*
@@ -71,6 +79,14 @@ pub fn init_logging() -> LogFormat {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
+    // Build the OpenTelemetry tracing layer from the global tracer provider.
+    // `init_otel()` MUST have been called before this function so the global
+    // provider is a real tracer (not the default no-op). If no provider was
+    // set this produces a no-op layer that still compiles and accepts spans
+    // — they just won't be exported.
+    let otel_tracer = opentelemetry::global::tracer("prizepicks-monster");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(otel_tracer);
+
     // Build the formatter. `.with_target(true)` is omitted from the pretty
     // path because the human reader is the developer, who knows the crate
     // structure; including the target on every line clutters the output
@@ -86,6 +102,7 @@ pub fn init_logging() -> LogFormat {
                 .with_line_number(true);
             let _ = tracing_subscriber::registry()
                 .with(env_filter)
+                .with(otel_layer)
                 .with(json_layer)
                 .try_init();
         }
@@ -102,6 +119,7 @@ pub fn init_logging() -> LogFormat {
                 .with_ansi(use_ansi);
             let _ = tracing_subscriber::registry()
                 .with(env_filter)
+                .with(otel_layer)
                 .with(human_layer)
                 .try_init();
         }

@@ -28,11 +28,11 @@
 //! ✅ SDK wired — `init_otel()` creates a real `SdkTracerProvider` with a
 //!    `SimpleSpanProcessor` + stdout exporter. Spans are printed to stdout.
 //!
-//! ⬜ `tracing-opentelemetry` bridge — the `Layer<S>` trait bound is
-//!    incompatible with our mixed-JsonFields/DefaultFields subscriber setup.
-//!    Adding this crate would connect `tracing::info_span!(...)` to OTel
-//!    spans automatically. See the crate docs for the trait resolution
-//!    workaround (likely needs a uniform field type or a wrapping layer).
+//! ✅ `tracing-opentelemetry` bridge — wired into both the JSON and Human
+//!    subscriber configurations in `logging.rs`. Every `tracing::info_span!(...)`
+//!    and `tracing::info!(...)` event flows through the OTel span pipeline
+//!    automatically. No trait-bound workaround was needed with the current
+//!    dependency versions (`tracing-opentelemetry 0.33` + `opentelemetry 0.32`).
 //!
 //! ## Environment variables
 //!
