@@ -564,6 +564,54 @@ button {
   color: #ffb3b3;
 }
 
+/* Props sort dropdown — compact select + direction toggle in the section header */
+.propsSort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  flex: 0 0 auto;
+}
+
+.propsSortSelect {
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(20, 20, 20, 0.85);
+  color: #ddd;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.propsSortSelect:focus {
+  border-color: rgba(110, 200, 163, 0.5);
+  outline: none;
+}
+
+.sortDirBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.85);
+  color: #aaa;
+  font-size: 0.9rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  transition: 120ms ease;
+}
+
+.sortDirBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #eee;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
 .marketGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

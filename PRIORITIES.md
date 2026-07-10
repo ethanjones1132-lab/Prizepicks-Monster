@@ -1,9 +1,18 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-10 (afternoon maintenance pass #2 — **multi-source prop data pipeline**: The Odds API, ESPN, Sleeper integrations with graceful degradation fallback chain. **320+ lib tests pass**. Previous: earlier today — slim cache compilation fix.)
-
+Last updated: 2026-07-10 (evening maintenance pass — **props sort dropdown**: Edge/Confidence/Projection/Name sort controls on the dashboard props grid)
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done** — Phase 5 polish & hardening is now **complete** (README, LICENSE, TS strict, E2E tests, benchmarks, structured logging, correlation_id, LogViewer, Notification Center, Profit Factor, stat category filter, OTel SDK adoption, tracing-opentelemetry bridge). Remaining deferred items (correlation graph, SQLite persistence) have no active implementation plan.
+
+## 2026-07-10 evening pass — Props sort dropdown on dashboard
+
+**Feature shipped (sort controls for the main props grid on the PrizePicks dashboard):** The All Props grid had league tabs and a stat category filter but no way to sort the cards — users who wanted to find the highest-edge or highest-confidence props had to visually scan the grid. This pass adds a compact sort dropdown + direction toggle in the section header, following the same pattern as the paper journal sort dropdown (2026-07-07). Shipped:
+
+- `src-ui/src/components/PrizePicksView.tsx` — new `PropsSortKey` type (`'name' | 'edge' | 'confidence' | 'projection'`), `sortKey` state (default `'edge'`) and `sortDir` state (default `'desc'`). New `sortedProps` `useMemo` that sorts a copy of `displayProps` by the selected key using 4-case switch (name → `localeCompare`, numeric fields → subtraction). Direction toggle via `-cmp` flip. Compact `<select>` with 4 options (Edge, Confidence, Projection, Name) and a direction toggle button (`↓`/`↑`) in the `All Props` section header. Render line changed from `displayProps.map` to `sortedProps.map` so the sort applies to the grid. 20 net lines added.
+
+- `src-ui/src/index.css` — new `.propsSort` (inline-flex container, 12px left margin to sit next to the section header text), `.propsSortSelect` (compact 26px min-height, dark-theme border + focus accent matching the existing `.paperJournalSortSelect` pattern), `.sortDirBtn` (26px square toggle with hover transition). 44 lines added.
+
+- **Ad-hoc verification**: `scripts/verify-2026-07-10-props-sort.py` — 20/20 checks pass covering: type declaration, state defaults, useMemo dep array, all 4 switch cases, direction toggle, select element, direction button, render line swap, all 5 CSS classes, and 0 literal-`\\n` corruption. `cargo check` clean. `npx tsc --noEmit` clean. **320 lib tests pass** (no Rust changes). End-to-end wiring: 1 component file, 1 CSS file, ~64 net insertions.
 
 ## 2026-07-10 afternoon pass #2 — Multi-source prop data pipeline shipped
 

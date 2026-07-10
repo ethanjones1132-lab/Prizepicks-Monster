@@ -1,6 +1,6 @@
 # PrizePicks Monster — Phased Roadmap
 
-Last updated: 2026-07-09 (overnight maintenance pass — Profit Factor in paper summary card) — OTel structural foundation)
+Last updated: 2026-07-10 (evening maintenance pass — props sort dropdown on dashboard)
 
 This roadmap derives from `PRIORITIES.md` (ranked backlog), `AGENTS.md` (working rules), and commit history. Milestones are checkable items with explicit status.
 
@@ -59,7 +59,7 @@ Visualization shipped:
 | Combined IPC bootstrap | ✅ Done 2026-06-27 | `prizepicks_get_dashboard_bootstrap` single round-trip |
 | Startup prefetch (instant quick cache) | ✅ Done 2026-06-28 | Spawned at app startup, no 8s delay |
 | **Decouple cache reads from long fetches** | ✅ Done 2026-07-03 | `Arc<RwLock<Option<PrizePicksCache>>>` + `AtomicBool` fetch guard — UI reads clone the cache under a read-lock, full warm (10s+ of 20 pages) runs without holding the write-lock, fetch dedup prevents concurrent 20-page sweeps. New `try_begin_fetch` / `end_fetch` / `wait_for_in_flight_fetch` helpers. 15 new unit tests. |
-| Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional optimization |
+| Slim cache to `PrizePicksMarketSummary` | ✅ Done 2026-07-10 | Overnight pass: cache storage changed from `Vec<PrizePicksMarket>` to `Vec<PrizePicksMarketSummary>` |
 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint |
 
 ---
@@ -105,7 +105,7 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-|Last updated: 2026-07-09 (evening maintenance pass — `tracing-opentelemetry` bridge landed + OTel Layer plumbed into both subscriber arms)
+|Last updated: 2026-07-10 (evening maintenance pass — props sort dropdown on dashboard)
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
@@ -113,11 +113,12 @@ Visualization shipped:
 | 2 | ~~Add E2E test scaffolding — Playwright config + 2-3 critical flows~~ | ✅ Done 2026-07-04 | Playwright config + tests covering app load, paper trading, ML predictor, settings, analytics breakdowns. |
 | 3 | ~~TypeScript strict mode~~ | ✅ Already enabled | `strict: true` is in `src-ui/tsconfig.json`. |
 | 4 | ~~Benchmark harness~~ | ✅ Done 2026-07-05 | Criterion benches for `grading.rs`, `portfolio_risk.rs`, `calibration.rs`. 14 bench functions, all compile + run. |
-| 5 | ~~OpenTelemetry SDK adoption~~ | ✅ Done 2026-07-09 | `opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates (0.32). `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter. Global tracer provider set. 6 unit tests. No OTLP/gRPC deps. |
-| 6 | ~~`tracing-opentelemetry` bridge~~ | ✅ Done 2026-07-09 | `tracing-opentelemetry = "0.33"` added. `otel_layer` wired into both JSON and Human subscriber arms in `logging.rs`. No trait-bound workaround needed. `cargo check` clean. |
-| 7 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
-| 8 | Slim cache to `PrizePicksMarketSummary` | ⬜ Deferred | Optional Phase 3 optimization. |
-| 9 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |
+|| 5 | ~~OpenTelemetry SDK adoption~~ | ✅ Done 2026-07-09 | `opentelemetry` + `opentelemetry_sdk` + `opentelemetry-stdout` crates (0.32). `SdkTracerProvider` with `SimpleSpanProcessor` + stdout exporter. Global tracer provider set. 6 unit tests. No OTLP/gRPC deps. |
+|| 6 | ~~`tracing-opentelemetry` bridge~~ | ✅ Done 2026-07-09 | `tracing-opentelemetry = "0.33"` added. `otel_layer` wired into both JSON and Human subscriber arms in `logging.rs`. No trait-bound workaround needed. `cargo check` clean. |
+|| 7 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
+|| 8 | ~~Slim cache to `PrizePicksMarketSummary`~~ | ✅ Done 2026-07-10 | Cache storage changed from `Vec<PrizePicksMarket>` to `Vec<PrizePicksMarketSummary>`. Compilation errors fixed same-day. |
+|| 9 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |
+|| 10 | Props sort dropdown (Edge/Confidence/Projection/Name) | ✅ Done 2026-07-10 | Compact select + direction toggle in the All Props section header. `sortedProps` useMemo with 4-case switch. |
 ## Milestone Tracking Format
 
 - `[ ]` Not started

@@ -19,6 +19,9 @@ export function PrizePicksView() {
   const [selectedLeague, setSelectedLeague] = useState('All');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
+  const [sortKey, setSortKey] = useState<PropsSortKey>('edge');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +127,30 @@ export function PrizePicksView() {
   const displayProps = selectedCategory === 'All'
     ? props
     : props.filter((p) => p.prop_type === selectedCategory);
+
+  // Client-side sort by edge/confidence/name/projection
+  const sortedProps = useMemo(() => {
+    const copy = [...displayProps];
+    copy.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'name':
+          cmp = a.player.localeCompare(b.player);
+          break;
+        case 'edge':
+          cmp = a.edge_pct - b.edge_pct;
+          break;
+        case 'confidence':
+          cmp = a.confidence - b.confidence;
+          break;
+        case 'projection':
+          cmp = a.projection - b.projection;
+          break;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+    return copy;
+  }, [displayProps, sortKey, sortDir]);
 
   return (
     <div className="prizepicksPage">
@@ -240,9 +267,31 @@ export function PrizePicksView() {
                 {' '}({displayProps.length} of {props.length})
               </span>
             )}
+            <span className="propsSort">
+              <select
+                className="propsSortSelect"
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as PropsSortKey)}
+                aria-label="Sort props by"
+              >
+                <option value="edge">Edge</option>
+                <option value="confidence">Confidence</option>
+                <option value="projection">Projection</option>
+                <option value="name">Name</option>
+              </select>
+              <button
+                type="button"
+                className="sortDirBtn"
+                onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                title={sortDir === 'desc' ? 'Sort descending' : 'Sort ascending'}
+                aria-label={`Sort ${sortDir === 'desc' ? 'descending' : 'ascending'}`}
+              >
+                {sortDir === 'desc' ? '↓' : '↑'}
+              </button>
+            </span>
           </h3>
           <div className="marketGrid">
-            {displayProps.map((prop) => (
+            {sortedProps.map((prop) => (
               <div key={prop.id} className="marketCard">
                 <div className="marketCardTop">
                   <code>{prop.player}</code>
