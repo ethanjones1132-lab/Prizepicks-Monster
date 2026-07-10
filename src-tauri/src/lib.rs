@@ -97,7 +97,8 @@ pub fn run() {
             .expect("Failed to create sports API client"),
     ));
     let opticodds_key = config::load_config().opticodds_api_key.clone();
-    let prizepicks_fetcher = Arc::new(Mutex::new(PrizePicksFetcher::new(opticodds_key)));
+    let odds_api_key = config::load_config().odds_api_key.clone();
+    let prizepicks_fetcher = Arc::new(Mutex::new(PrizePicksFetcher::new(opticodds_key, odds_api_key)));
     let db_pool_state = db_pool.clone();
     let prediction_tracker_for_setup = prediction_tracker.clone();
     let prizepicks_for_grade = prizepicks_client.clone();

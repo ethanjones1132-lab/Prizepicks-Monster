@@ -21,6 +21,8 @@ pub struct AppConfig {
     pub openweathermap_api_key: String,
     pub api_sports_key: String,
     pub opticodds_api_key: String,
+    #[serde(default = "String::new")]
+    pub odds_api_key: String,
     // Custom system prompt preferences
     pub risk_tolerance: String, // "conservative" | "moderate" | "aggressive"
     pub preferred_leagues: Vec<String>, // e.g. ["NFL", "NBA"]
@@ -66,6 +68,7 @@ impl Default for AppConfig {
             openweathermap_api_key: String::new(),
             api_sports_key: String::new(),
             opticodds_api_key: String::new(),
+            odds_api_key: String::new(),
             risk_tolerance: "moderate".to_string(),
             preferred_leagues: vec!["NFL".to_string()],
             stat_weighting: "balanced".to_string(),

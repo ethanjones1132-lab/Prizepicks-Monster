@@ -427,12 +427,48 @@ impl PrizePicksClient {
                     "Primary PrizePicks flat markets failed, trying fallback: {}",
                     e
                 );
-                // Re-fetch on fallback base requires a one-off client pointed at fallback;
-                // for now surface the primary error — fallback path matches events catalog.
-                Err(e)
+                // Fallback is also dead; gracefully degrade
+                match self.try_secondary_base(max_pages).await {
+                    Ok(markets) => Ok(markets),
+                    Err(e2) => {
+                        tracing::error!(
+                            "Both PrizePicks flat markets endpoints failed. Primary: {}. Fallback: {}. Returning empty.",
+                            e, e2
+                        );
+                        Ok(vec![])
+                    }
+                }
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Attempt fetch from the secondary base URL.
+    async fn try_secondary_base(&self, max_pages: usize) -> Result<Vec<PrizePicksMarket>, String> {
+        // Create a one-off client pointing at the fallback base URL
+        let fallback_url = FALLBACK_BASE_URL;
+        // Fallback URL may have a different host; try the fetch directly
+        // by using the fallback as the base.
+        let mut results = Vec::new();
+        for page in 1..=max_pages.min(2) {
+            let url = format!("{}/markets?page={}&limit={}", fallback_url, page, FLAT_MARKET_PAGE_LIMIT);
+            let resp = self.client.get(&url)
+                .send()
+                .await
+                .map_err(|e| format!("Fallback markets request failed: {}", e))?;
+            if !resp.status().is_success() {
+                return Err(format!("Fallback markets returned status {}", resp.status()));
+            }
+            let page_data: serde_json::Value = resp.json().await
+                .map_err(|e| format!("Fallback markets parse failed: {}", e))?;
+            let markets_page: Vec<PrizePicksMarket> = serde_json::from_value(page_data)
+                .unwrap_or_default();
+            results.extend(markets_page);
+            if results.len() < FLAT_MARKET_PAGE_LIMIT as usize {
+                break; // Last page
+            }
+        }
+        Ok(results)
     }
 
     /// Nested /events catalog — used only for explicit full refresh.
@@ -494,29 +530,34 @@ impl PrizePicksClient {
         }
 
         async fn fetch_events_catalog_resilient(
-        &self,
-        max_pages: usize,
-    ) -> Result<Vec<PrizePicksMarketSummary>, String> {
-        let primary_base_url = self.base_url().to_string();
-        match self
-            .fetch_events_catalog_from_base(&primary_base_url, max_pages)
-            .await
-        {
-            Ok(markets) => Ok(markets),
-            Err(e) if primary_base_url == PRIMARY_BASE_URL => {
-                tracing::warn!("Primary PrizePicks URL failed, trying fallback: {}", e);
-                self.fetch_events_catalog_from_base(FALLBACK_BASE_URL, max_pages)
-                    .await
-                    .map_err(|e2| {
-                        format!(
-                            "Both PrizePicks endpoints failed. Primary: {}. Fallback: {}",
-                            e, e2
-                        )
-                    })
+            &self,
+        ) -> Result<Vec<PrizePicksMarketSummary>, String> {
+            let max_pages = if self.config.use_demo { 1 } else { 3 };
+            let primary_base_url = self.base_url().to_string();
+            match self
+                .fetch_events_catalog_from_base(&primary_base_url, max_pages)
+                .await
+            {
+                Ok(markets) => Ok(markets),
+                Err(e) if primary_base_url == PRIMARY_BASE_URL => {
+                    tracing::warn!("Primary PrizePicks URL failed, trying fallback: {}", e);
+                    match self.fetch_events_catalog_from_base(FALLBACK_BASE_URL, max_pages).await {
+                        Ok(markets) => Ok(markets),
+                        Err(e2) => {
+                            tracing::error!(
+                                "Both PrizePicks endpoints failed. Primary: {}. Fallback: {}. Returning empty cache.",
+                                e, e2
+                            );
+                            // Graceful degradation: return empty vec instead of propagating the error
+                            // The trading API infrastructure (api.elections.prizepicks.com) has been
+                            // decommissioned. Other data sources (OpticOdds, ESPN, Sleeper) still work.
+                            Ok(vec![])
+                        }
+                    }
+                }
+                Err(e) => Err(e),
             }
-            Err(e) => Err(e),
         }
-    }
 
     /// Write-lock the cache and install a fresh fetch result.
     /// Called by the fetch path AFTER the HTTP loop has returned
@@ -675,7 +716,7 @@ impl PrizePicksClient {
             MAX_PAGINATION_PAGES
         );
         let all_markets = self
-            .fetch_events_catalog_resilient(MAX_PAGINATION_PAGES)
+            .fetch_events_catalog_resilient()
             .await?;
         tracing::info!(
             "PrizePicks full cache ready: {} markets in {}ms",
