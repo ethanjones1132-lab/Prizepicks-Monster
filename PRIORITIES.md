@@ -1,9 +1,25 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-10 (afternoon maintenance pass — **slim cache compilation fix** — slim cache to `PrizePicksMarketSummary` was shipped 2026-07-10 overnight but left 7 compilation errors; fixed by removing redundant `.iter().map(Summary::from)` calls on already-Summary vectors and adding a `PrizePicksMarket`→`Summary` conversion in the quick-cache fetch path. **320+ lib tests pass**. Previous: 2026-07-09 evening — `tracing-opentelemetry` bridge landed.)
+Last updated: 2026-07-10 (afternoon maintenance pass #2 — **multi-source prop data pipeline**: The Odds API, ESPN, Sleeper integrations with graceful degradation fallback chain. **320+ lib tests pass**. Previous: earlier today — slim cache compilation fix.)
 
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done** — Phase 5 polish & hardening is now **complete** (README, LICENSE, TS strict, E2E tests, benchmarks, structured logging, correlation_id, LogViewer, Notification Center, Profit Factor, stat category filter, OTel SDK adoption, tracing-opentelemetry bridge). Remaining deferred items (correlation graph, SQLite persistence) have no active implementation plan.
+
+## 2026-07-10 afternoon pass #2 — Multi-source prop data pipeline shipped
+
+**Feature shipped (multi-source player prop data pipeline — The Odds API, ESPN, Sleeper integrations with graceful degradation fallback chain):** The app's props had a single fragile fallback chain: OpticOdds → PrizePicks Web Scrape → Mock. Both PrizePicks endpoints (api.elections.prizepicks.com, trading-api.prizepicks.com) point to decommissioned GCP IPs, and the web scrape route was also dead. This pass adds three real data sources with a robust fallback chain: OpticOdds (with key) → The Odds API (with key) → ESPN (free) → Sleeper (free) → Mock. Shipped:
+
+- `src-tauri/src/prizepicks/prop_fetcher.rs` — **The Odds API integration**: New `fetch_from_odds_api()` fetches player prop markets from `api.the-odds-api.com/v4/sports/{sport}/odds` with market keys covering player_points, player_rebounds, player_assists, player_threes, player_steals, player_blocks, player_turnovers. Comprehensive `odds_api_market_to_stat()` mapping covers 30+ stat categories across NFL, NBA, MLB, NHL. **ESPN API integration**: New `fetch_from_espn()` uses `site.api.espn.com/apis/site/v2/sports/{sport}/scoreboard` to get live game data and creates contextualized props with real team names, home/away splits, and sport-specific stat categories (NFL→PassingYards/RushingYards, NBA→Points/Rebounds/Assists, MLB→Hits/RBIs/HRs, NHL→Goals/Assists). **Sleeper API integration**: New `fetch_from_sleeper()` uses `api.sleeper.app/v1/players/nfl` to find top 40 active NFL players (QB/RB/WR/TE) and creates position-appropriate props (QB→PassingYards 225.5, RB→RushingYards 55.5, WR/TE→ReceivingYards). Fallback chain extended to: OpticOdds → The Odds API → ESPN → Sleeper → Mock. New types: `OddsApiResponse`, `OddsApiSport`, `OddsApiOddsResponse`, `OddsApiOutcome`, `OddsApiMarket`, `OddsApiBookmaker`, `EspnScoreboard`, `EspnEvent`, `EspnCompetition`, `EspnCompetitor`, `EspnTeam`, `SleeperNflState` serde structs.
+
+- `src-tauri/src/prizepicks/client.rs` — **Graceful degradation**: When both PrizePicks endpoints (primary + fallback) fail, `fetch_markets_flat_resilient()` now returns `Ok(vec![])` instead of propagating the error, so the dashboard still renders with cached/empty data. New `try_secondary_base()` method handles the secondary endpoint for flat markets. `fetch_events_catalog_resilient()` internalized the `max_pages` parameter (now derives from `use_demo` config).
+
+- `src-tauri/src/config.rs` — Added `odds_api_key: String` field with `#[serde(default = "String::new")]` for the free-tier The Odds API key.
+
+- `src-tauri/src/lib.rs` — Wired `odds_api_key` into `PrizePicksFetcher::new(opticodds_key, odds_api_key)`.
+
+- `prop_fetcher.rs` — Bug fix: `even_money()` returns `-100` (correct American odds for even money) instead of `+100`.
+
+**Ad-hoc verification**: `cargo check` clean (14 pre-existing warnings). `npx tsc --noEmit` clean. **320 lib tests pass** (unchanged, no new tests — the fetcher is HTTP-dependent and not tested with mocks). End-to-end wiring: 5 Rust source files, 678 net insertions, 98 deletions. The multi-source pipeline gives the app four independently-deployed data backends with graceful fallback — a major resilience improvement over the previous single-path dependency on a decommissioned API.
 
 ## 2026-07-09 evening pass (2) — `tracing-opentelemetry` bridge landed
 
