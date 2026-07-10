@@ -1,9 +1,9 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-09 (evening maintenance pass — **tracing-opentelemetry bridge wired** — `tracing-opentelemetry = "0.33"` added to Cargo.toml; `otel_layer` plumbed into both JSON and Human subscriber arms in `logging.rs`; no trait-bound workaround needed with the current dependency versions. **320+ lib tests pass**. Previous: 2026-07-09 evening — Stat category filter on dashboard.)
+Last updated: 2026-07-10 (afternoon maintenance pass — **slim cache compilation fix** — slim cache to `PrizePicksMarketSummary` was shipped 2026-07-10 overnight but left 7 compilation errors; fixed by removing redundant `.iter().map(Summary::from)` calls on already-Summary vectors and adding a `PrizePicksMarket`→`Summary` conversion in the quick-cache fetch path. **320+ lib tests pass**. Previous: 2026-07-09 evening — `tracing-opentelemetry` bridge landed.)
 
 
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done** — Phase 5 polish & hardening is now **complete** (README, LICENSE, TS strict, E2E tests, benchmarks, structured logging, correlation_id, LogViewer, Notification Center, Profit Factor, stat category filter, OTel SDK adoption, tracing-opentelemetry bridge). Remaining deferred items (correlation graph, slim cache, SQLite persistence) have no active implementation plan.
+Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done** — Phase 5 polish & hardening is now **complete** (README, LICENSE, TS strict, E2E tests, benchmarks, structured logging, correlation_id, LogViewer, Notification Center, Profit Factor, stat category filter, OTel SDK adoption, tracing-opentelemetry bridge). Remaining deferred items (correlation graph, SQLite persistence) have no active implementation plan.
 
 ## 2026-07-09 evening pass (2) — `tracing-opentelemetry` bridge landed
 
@@ -467,7 +467,7 @@ Surgical fix: a 100-line Python script (`hermes-fix-papermod.py`) opened the fil
 
 - Extract `Arc<RwLock<PrizePicksCache>>` + `fetch_in_progress` guard so UI reads never block on 20-page full warm
 - Background full-catalog warm writes cache without holding the outer `PrizePicksClient` mutex across HTTP pagination
-- Optionally slim cache to `PrizePicksMarketSummary` instead of full `PrizePicksMarket`
+- ✅ **Slim cache to `PrizePicksMarketSummary`** instead of full `PrizePicksMarket` (2026-07-10 — shipped overnight, compilation errors fixed this pass)
 - **Target:** warm revisit under 300ms; category switch under 500ms
 
 ### Phase 3 — Frontend critical-path trim

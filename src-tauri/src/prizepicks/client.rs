@@ -116,7 +116,7 @@ impl PrizePicksClient {
     /// Returns `None` if the cache has not been populated yet.
     /// The returned vector is detached from the cache — callers may
     /// sort/filter without affecting concurrent readers.
-    pub async fn get_cached(&self) -> Option<Vec<PrizePicksMarket>> {
+    pub async fn get_cached(&self) -> Option<Vec<PrizePicksMarketSummary>> {
         let guard = self.cache.read().await;
         guard.as_ref().map(|c| c.markets.clone())
     }
@@ -337,22 +337,22 @@ impl PrizePicksClient {
             .collect()
     }
 
-    fn top_summaries(markets: &[PrizePicksMarket], limit: usize) -> Vec<PrizePicksMarketSummary> {
-        let mut ranked: Vec<&PrizePicksMarket> = markets.iter().collect();
+    fn top_summaries(markets: &[PrizePicksMarketSummary], limit: usize) -> Vec<PrizePicksMarketSummary> {
+        let mut ranked: Vec<&PrizePicksMarketSummary> = markets.iter().collect();
         ranked.sort_by(|a, b| {
-            b.volume_24h()
-                .partial_cmp(&a.volume_24h())
+            b.volume_24h
+                .partial_cmp(&a.volume_24h)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| {
-                    b.total_volume()
-                        .partial_cmp(&a.total_volume())
+                    b.total_volume
+                        .partial_cmp(&a.total_volume)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
         });
         ranked
             .into_iter()
             .take(limit)
-            .map(PrizePicksMarketSummary::from)
+            .cloned()
             .collect()
     }
 
@@ -436,72 +436,67 @@ impl PrizePicksClient {
     }
 
     /// Nested /events catalog — used only for explicit full refresh.
-    async fn fetch_events_catalog_from_base(
-        &self,
-        base_url: &str,
-        max_pages: usize,
-    ) -> Result<Vec<PrizePicksMarket>, String> {
-        let mut all_markets: Vec<PrizePicksMarket> = Vec::new();
-        let mut cursor: Option<String> = None;
-        let mut pages = 0;
-        let mut retries = 0usize;
-        const MAX_RETRIES: usize = 3;
+        async fn fetch_events_catalog_from_base(
+            &self,
+            base_url: &str,
+            max_pages: usize,
+        ) -> Result<Vec<PrizePicksMarketSummary>, String> {
+            let mut all_markets: Vec<PrizePicksMarketSummary> = Vec::new();
+            let mut cursor: Option<String> = None;
+            let mut pages = 0;
+            let mut retries = 0usize;
+            const MAX_RETRIES: usize = 3;
 
-        loop {
-            if pages >= max_pages {
-                break;
-            }
-
-            match self.fetch_events_page(base_url, cursor.as_deref()).await {
-                Ok(resp) => {
-                    retries = 0;
-                    let has_next = resp.cursor.is_some();
-                    cursor = resp.cursor;
-                    if resp.events.is_empty() {
-                        break;
-                    }
-
-                    pages += 1;
-                    for event in resp.events {
-                        all_markets.extend(Self::flatten_event_markets(event));
-                    }
-
-                    if !has_next {
-                        break;
-                    }
-
-                    // Throttle between pages to stay under PrizePicks's rate limit.
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            loop {
+                if pages >= max_pages {
+                    break;
                 }
-                Err(e) => {
-                    if e.contains("429") && retries < MAX_RETRIES {
-                        retries += 1;
-                        let wait_ms = 2000u64 * retries as u64;
-                        tracing::warn!(
-                            "PrizePicks rate limited on page {}, retrying in {}ms ({}/{})",
-                            pages + 1,
-                            wait_ms,
-                            retries,
-                            MAX_RETRIES
-                        );
-                        tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
-                    } else if !all_markets.is_empty() {
-                        tracing::warn!("PrizePicks pagination error on page {}: {}", pages + 1, e);
-                        break;
-                    } else {
-                        return Err(e);
+
+                match self.fetch_events_page(base_url, cursor.as_deref()).await {
+                    Ok(resp) => {
+                        retries = 0;
+                        let has_next = resp.cursor.is_some();
+                        cursor = resp.cursor;
+                        if resp.events.is_empty() {
+                            break;
+                        }
+
+                        pages += 1;
+                        for event in resp.events {
+                            let markets = Self::flatten_event_markets(event);
+                            all_markets.extend(markets.iter().map(PrizePicksMarketSummary::from));
+                        }
+
+                        if !has_next {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        if e.contains("429") && retries < MAX_RETRIES {
+                            retries += 1;
+                            let wait_ms = 1000u64 * retries as u64;
+                            tracing::warn!(
+                                "PrizePicks events catalog rate limited, retry in {}ms",
+                                wait_ms
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+                        } else if !all_markets.is_empty() {
+                            tracing::warn!("PrizePicks events catalog pagination error: {}", e);
+                            break;
+                        } else {
+                            return Err(e);
+                        }
                     }
                 }
             }
+
+            Ok(all_markets)
         }
 
-        Ok(all_markets)
-    }
-
-    async fn fetch_events_catalog_resilient(
+        async fn fetch_events_catalog_resilient(
         &self,
         max_pages: usize,
-    ) -> Result<Vec<PrizePicksMarket>, String> {
+    ) -> Result<Vec<PrizePicksMarketSummary>, String> {
         let primary_base_url = self.base_url().to_string();
         match self
             .fetch_events_catalog_from_base(&primary_base_url, max_pages)
@@ -526,7 +521,7 @@ impl PrizePicksClient {
     /// Write-lock the cache and install a fresh fetch result.
     /// Called by the fetch path AFTER the HTTP loop has returned
     /// (so the long network round-trip does NOT hold the lock).
-    async fn store_cache(&self, markets: Vec<PrizePicksMarket>, full_catalog: bool) {
+    async fn store_cache(&self, markets: Vec<PrizePicksMarketSummary>, full_catalog: bool) {
         let mut guard = self.cache.write().await;
         *guard = Some(PrizePicksCache {
             markets,
@@ -620,7 +615,11 @@ impl PrizePicksClient {
             QUICK_LOAD_PAGES,
             FLAT_MARKET_PAGE_LIMIT
         );
-        let markets = self.fetch_markets_flat_resilient(QUICK_LOAD_PAGES).await?;
+        let raw_markets = self.fetch_markets_flat_resilient(QUICK_LOAD_PAGES).await?;
+        let markets: Vec<PrizePicksMarketSummary> = raw_markets
+            .iter()
+            .map(PrizePicksMarketSummary::from)
+            .collect();
         tracing::info!(
             "PrizePicks quick cache ready: {} markets in {}ms",
             markets.len(),
@@ -635,7 +634,7 @@ impl PrizePicksClient {
     /// The HTTP loop runs WITHOUT holding the cache write-lock, so a
     /// concurrent reader can keep returning the previous quick cache
     /// while the 20-page full warm runs in the background.
-    pub async fn fetch_all_markets(&self) -> Result<Vec<PrizePicksMarket>, String> {
+    pub async fn fetch_all_markets(&self) -> Result<Vec<PrizePicksMarketSummary>, String> {
         // Short-circuit on fresh full cache — return a clone without
         // doing any network I/O. This is the common case for the UI
         // hitting the dashboard while the 8s background warm is
@@ -669,7 +668,7 @@ impl PrizePicksClient {
         result
     }
 
-    async fn run_full_cache_fetch(&self) -> Result<Vec<PrizePicksMarket>, String> {
+    async fn run_full_cache_fetch(&self) -> Result<Vec<PrizePicksMarketSummary>, String> {
         let started = std::time::Instant::now();
         tracing::info!(
             "PrizePicks full cache refresh via nested /events ({} pages max)",
@@ -690,7 +689,7 @@ impl PrizePicksClient {
     /// When a competing fetch is already in progress, poll for the
     /// populated cache rather than running a second concurrent fetch.
     /// Bounded at 30s so a stuck fetch doesn't deadlock the caller.
-    async fn wait_for_in_flight_fetch(&self) -> Result<Vec<PrizePicksMarket>, String> {
+    async fn wait_for_in_flight_fetch(&self) -> Result<Vec<PrizePicksMarketSummary>, String> {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -723,9 +722,9 @@ impl PrizePicksClient {
         self.fetch_in_progress.store(false, Ordering::Release);
     }
 
-    /// Read-lock the cache and return a `&[PrizePicksMarket]` slice of
+    /// Read-lock the cache and return a `&[PrizePicksMarketSummary]` slice of
     /// the cached markets. Returns `None` if the cache is empty.
-    async fn cached_market_slice(&self) -> Option<Vec<PrizePicksMarket>> {
+    async fn cached_market_slice(&self) -> Option<Vec<PrizePicksMarketSummary>> {
         self.get_cached().await
     }
 
@@ -816,7 +815,7 @@ impl PrizePicksClient {
                     || m.event_ticker.to_lowercase().contains(&q)
             })
             .take(MAX_UI_MARKET_RESULTS)
-            .map(PrizePicksMarketSummary::from)
+            .cloned()
             .collect();
         Ok(results)
     }
@@ -837,11 +836,11 @@ impl PrizePicksClient {
                 if category == "All" {
                     true
                 } else {
-                    m.infer_category().eq_ignore_ascii_case(category)
+                    m.category.eq_ignore_ascii_case(category)
                 }
             })
             .take(MAX_UI_MARKET_RESULTS)
-            .map(PrizePicksMarketSummary::from)
+            .cloned()
             .collect();
         Ok(results)
     }
@@ -939,10 +938,10 @@ impl PrizePicksClient {
             std::collections::HashMap::new();
 
         for m in &markets {
-            let cat = m.infer_category();
-            let entry = stats.entry(cat).or_insert((0, 0.0));
+            let cat = &m.category;
+            let entry = stats.entry(cat.as_str()).or_insert((0, 0.0));
             entry.0 += 1;
-            entry.1 += m.volume_24h();
+            entry.1 += m.volume_24h;
         }
 
         let mut result: Vec<PrizePicksCategoryStat> = stats
@@ -973,12 +972,28 @@ mod tests {
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
-    fn make_market(ticker: &str, title: &str) -> PrizePicksMarket {
-        PrizePicksMarket {
+    fn make_market(ticker: &str, title: &str) -> PrizePicksMarketSummary {
+        PrizePicksMarketSummary {
             ticker: ticker.to_string(),
             event_ticker: format!("EVT-{ticker}"),
             title: title.to_string(),
-            ..Default::default()
+            category: "Test".to_string(),
+            status: "active".to_string(),
+            yes_prob_pct: 0.5,
+            yes_ask: 0.55,
+            yes_bid: 0.50,
+            no_ask: 0.50,
+            no_bid: 0.45,
+            last_price: 0.52,
+            volume_24h: 100.0,
+            total_volume: 1000.0,
+            liquidity: 500.0,
+            spread: 0.05,
+            close_time: None,
+            expiration_time: None,
+            result: "".to_string(),
+            can_close_early: false,
+            is_provisional: false,
         }
     }
 

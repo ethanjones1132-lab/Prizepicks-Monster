@@ -437,7 +437,7 @@ pub struct PrizePicksMarketsQuery {
 /// Cached markets data with timestamp
 #[derive(Debug, Clone)]
 pub struct PrizePicksCache {
-    pub markets: Vec<PrizePicksMarket>,
+    pub markets: Vec<PrizePicksMarketSummary>,
     pub fetched_at: u64,
     /// `false` when populated via quick dashboard load (partial catalog)
     pub full_catalog: bool,

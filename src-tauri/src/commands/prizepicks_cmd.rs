@@ -195,11 +195,7 @@ pub async fn prizepicks_refresh(
     }
     let client = prizepicks.lock().await;
     let markets = client.fetch_all_markets().await?;
-    let summaries: Vec<crate::prizepicks::PrizePicksMarketSummary> = markets
-        .iter()
-        .map(crate::prizepicks::PrizePicksMarketSummary::from)
-        .collect();
-    if let Err(e) = crate::prizepicks::price_tracker::snapshot_markets(&db_pool, &summaries).await {
+    if let Err(e) = crate::prizepicks::price_tracker::snapshot_markets(&db_pool, &markets).await {
         tracing::warn!(
             correlation_id = %cid,
             "[PrizePicks] refresh price snapshot failed: {}",
@@ -209,7 +205,7 @@ pub async fn prizepicks_refresh(
     tracing::info!(
         correlation_id = %cid,
         markets_count = markets.len(),
-        summaries_count = summaries.len(),
+        summaries_count = markets.len(),
         "[PrizePicks] refresh end"
     );
     Ok(markets.len())
@@ -333,11 +329,7 @@ pub async fn prizepicks_snapshot_prices(
 ) -> Result<crate::prizepicks::PrizePicksSnapshotBatch, String> {
     let client = prizepicks.lock().await;
     let markets = client.fetch_all_markets().await?;
-    let summaries: Vec<crate::prizepicks::PrizePicksMarketSummary> = markets
-        .iter()
-        .map(crate::prizepicks::PrizePicksMarketSummary::from)
-        .collect();
-    crate::prizepicks::price_tracker::snapshot_markets(&db_pool, &summaries).await
+    crate::prizepicks::price_tracker::snapshot_markets(&db_pool, &markets).await
 }
 
 #[tauri::command]
