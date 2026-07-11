@@ -161,6 +161,8 @@ export interface AppConfig {
   max_context_players: number;
   openweathermap_api_key: string;
   api_sports_key: string;
+  opticodds_api_key: string;
+  odds_api_key: string;
   risk_tolerance: string;
   preferred_leagues: string[];
   stat_weighting: string;

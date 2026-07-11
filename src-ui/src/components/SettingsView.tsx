@@ -10,6 +10,8 @@ const EMPTY_CONFIG: AppConfig = {
   max_context_players: 50,
   openweathermap_api_key: '',
   api_sports_key: '',
+  opticodds_api_key: '',
+  odds_api_key: '',
   risk_tolerance: 'moderate',
   preferred_leagues: ['NFL'],
   stat_weighting: 'balanced',
@@ -499,6 +501,24 @@ export function SettingsView() {
                 placeholder={config.api_sports_key ? 'Set' : 'Optional'}
                 value={config.api_sports_key}
                 onChange={(e) => setConfig({ ...config, api_sports_key: e.target.value })}
+              />
+            </label>
+            <label>
+              OpticOdds API key
+              <input
+                type="password"
+                placeholder={config.opticodds_api_key ? 'Set' : 'Optional'}
+                value={config.opticodds_api_key}
+                onChange={(e) => setConfig({ ...config, opticodds_api_key: e.target.value })}
+              />
+            </label>
+            <label>
+              The Odds API key
+              <input
+                type="password"
+                placeholder={config.odds_api_key ? 'Set' : 'Optional'}
+                value={config.odds_api_key}
+                onChange={(e) => setConfig({ ...config, odds_api_key: e.target.value })}
               />
             </label>
           </div>

@@ -1,12 +1,24 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-11 (maintenance pass — **SQLite cache persistence**: persisted market summary cache to SQLite for instant next-launch dashboard paint)
+Last updated: 2026-07-11 (maintenance pass #2 — **Settings UI: API key fields for OpticOdds & The Odds API**: added missing `opticodds_api_key` and `odds_api_key` fields to the Settings page for the multi-source data pipeline)
 
 Quick status: **All deferred items now done** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
 ## 2026-07-11 maintenance pass — SQLite cache persistence
 
 **Feature shipped (persisted PrizePicks market summary cache to SQLite for instant next-launch paint):** The app's market cache was purely in-memory behind `Arc<RwLock<>>` — every launch started with an empty cache, forcing the dashboard to wait for at least one HTTP fetch (quick-cache prefetch or full warm) before rendering props. With the slim-cache-to-`PrizePicksMarketSummary` refactor (2026-07-10) complete, the next step was persisting that cache to SQLite so returning users see their dashboard immediately on launch, even if the PrizePicks API is slow or unreachable. Shipped:
+
+---
+
+## 2026-07-11 maintenance pass #2 — Settings UI: API key fields for OpticOdds & The Odds API
+
+**Feature shipped (API key configuration UI for the multi-source data pipeline):** The multi-source data pipeline (shipped 2026-07-10) added two new API keys — `opticodds_api_key` and `odds_api_key` — to the Rust `AppConfig` struct, but the Settings UI never rendered them. Users who wanted to configure these keys had to manually edit `~/.openclaw/prizepicks-monster/config.json`. This pass closes the gap by adding both fields to the Settings tab's "PrizePicks & data keys" card.
+
+Shipped:
+
+- `src-ui/src/types/index.ts` — `AppConfig` interface gained `opticodds_api_key: string` and `odds_api_key: string`.
+- `src-ui/src/components/SettingsView.tsx` — `EMPTY_CONFIG` gained both fields (empty strings); new input fields for OpticOdds API key and The Odds API key placed right after the existing API-Sports key field, all using password masking and the same placeholder pattern.
+- **Ad-hoc verification**: `cargo check` clean. `npx tsc --noEmit` clean. **320 lib tests pass** (no Rust changes — purely UI additions). The change surfaces two existing config keys that were previously hidden from the UI, enabling users to configure the multi-source prop data pipeline (OpticOdds → The Odds API → ESPN → Sleeper → Mock) without editing JSON config files.
 
 - `src-tauri/src/prizepicks/cache_store.rs` — new module (106 lines). `init_cache_table()` creates a `prizepicks_cache` singleton table (id=1). `save_cache()` serializes `Vec<PrizePicksMarketSummary>` to JSON and writes via `INSERT OR REPLACE`. `load_cache()` reads and deserializes, returning `None` silently on missing row or schema-change deserialization failure (the caller falls through to a fresh HTTP fetch). All three are async, follow the same `&Pool<Sqlite>` pattern as `price_tracker::init_price_tables`.
 
