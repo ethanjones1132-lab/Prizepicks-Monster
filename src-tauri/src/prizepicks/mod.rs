@@ -1,3 +1,4 @@
+pub mod cache_store;
 pub mod client;
 pub mod grading;
 pub mod market_data_provider;

@@ -115,6 +115,31 @@ pub fn run() {
                 }
             });
 
+            // Initialize PrizePicks cache persistence table (SQLite backup)
+            let cache_pool = db_pool.clone();
+            rt.block_on(async {
+                if let Err(e) = prizepicks::cache_store::init_cache_table(&cache_pool).await {
+                    tracing::warn!("Failed to init cache persistence table: {}", e);
+                }
+            });
+
+            // Phase 4+: Restore cache from SQLite for instant first paint.
+            // Before any HTTP warm runs, try to load the previous session's
+            // cached market summaries from the DB and populate the in-memory
+            // cache. This means the dashboard can render immediately on launch
+            // even if the network is slow or the PrizePicks API is unreachable.
+            let restore_pool = db_pool.clone();
+            let restore_client = prizepicks_for_warm.clone();
+            rt.block_on(async {
+                if let Some(cached) = prizepicks::cache_store::load_cache(&restore_pool).await {
+                    let client = restore_client.lock().await;
+                    client.restore_cache(cached).await;
+                    tracing::info!("restored PrizePicks cache from SQLite for instant dashboard paint");
+                } else {
+                    tracing::info!("no persisted PrizePicks cache found — will fetch fresh");
+                }
+            });
+
             // Spawn notification polling background task
             notification::spawn_polling_task(
                 app.handle().clone(),
@@ -148,18 +173,28 @@ pub fn run() {
             // Phase 4: Immediate quick-cache prefetch at startup (before user opens dashboard)
             // This runs synchronously in the background so the quick cache is ready
             // by the time the user first navigates to the dashboard.
+            // On success, also persists the cache to SQLite for next-launch paint.
             let prizepicks_prefetch = prizepicks_for_warm.clone();
+            let prefetch_pool = db_pool.clone();
             tauri::async_runtime::spawn(async move {
                 let client = prizepicks_prefetch.lock().await;
                 if let Err(e) = client.ensure_quick_cache().await {
                     tracing::warn!("prizepicks startup quick-cache prefetch failed: {}", e);
                 } else {
                     tracing::info!("prizepicks quick cache prefetched at startup");
+                    // Persist to SQLite for next launch
+                    if let Some(cached) = client.clone_cache().await {
+                        if let Err(e) = prizepicks::cache_store::save_cache(&prefetch_pool, &cached).await {
+                            tracing::warn!("prizepicks quick cache persist failed: {}", e);
+                        }
+                    }
                 }
             });
 
             // Warm full PrizePicks catalog in the background (dashboard uses quick cache first)
+            // On success, persists the full cache to SQLite for next-launch paint.
             let prizepicks_warm = prizepicks_for_warm.clone();
+            let warm_pool = db_pool.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(8)).await;
                 let client = prizepicks_warm.lock().await;
@@ -168,6 +203,12 @@ pub fn run() {
                         tracing::warn!("prizepicks background cache warm failed: {}", e);
                     } else {
                         tracing::info!("prizepicks full catalog cache warmed");
+                        // Persist to SQLite for next launch
+                        if let Some(cached) = client.clone_cache().await {
+                            if let Err(e) = prizepicks::cache_store::save_cache(&warm_pool, &cached).await {
+                                tracing::warn!("prizepicks full cache persist failed: {}", e);
+                            }
+                        }
                     }
                 }
             });

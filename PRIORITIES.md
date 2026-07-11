@@ -1,8 +1,20 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-11 (overnight maintenance pass — **Capture CLV button**: added "Capture CLV" action to the predictions panel toolbar, wired to the existing `prizepicks_capture_clv` Tauri command)
+Last updated: 2026-07-11 (maintenance pass — **SQLite cache persistence**: persisted market summary cache to SQLite for instant next-launch dashboard paint)
 
-Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done** — Phase 5 polish & hardening is now **complete** (README, LICENSE, TS strict, E2E tests, benchmarks, structured logging, correlation_id, LogViewer, Notification Center, Profit Factor, stat category filter, OTel SDK adoption, tracing-opentelemetry bridge). Remaining deferred items (correlation graph, SQLite persistence) have no active implementation plan.
+Quick status: **All deferred items now done** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-11 maintenance pass — SQLite cache persistence
+
+**Feature shipped (persisted PrizePicks market summary cache to SQLite for instant next-launch paint):** The app's market cache was purely in-memory behind `Arc<RwLock<>>` — every launch started with an empty cache, forcing the dashboard to wait for at least one HTTP fetch (quick-cache prefetch or full warm) before rendering props. With the slim-cache-to-`PrizePicksMarketSummary` refactor (2026-07-10) complete, the next step was persisting that cache to SQLite so returning users see their dashboard immediately on launch, even if the PrizePicks API is slow or unreachable. Shipped:
+
+- `src-tauri/src/prizepicks/cache_store.rs` — new module (106 lines). `init_cache_table()` creates a `prizepicks_cache` singleton table (id=1). `save_cache()` serializes `Vec<PrizePicksMarketSummary>` to JSON and writes via `INSERT OR REPLACE`. `load_cache()` reads and deserializes, returning `None` silently on missing row or schema-change deserialization failure (the caller falls through to a fresh HTTP fetch). All three are async, follow the same `&Pool<Sqlite>` pattern as `price_tracker::init_price_tables`.
+
+- `src-tauri/src/prizepicks/client.rs` — two new public methods: `clone_cache()` read-locks and clones the full `PrizePicksCache` (markets + fetched_at + full_catalog); `restore_cache()` write-locks and replaces the in-memory cache from an external source (used at startup to load the SQLite backup).
+
+- `src-tauri/src/lib.rs` — three integration points: (1) **Init**: `cache_store::init_cache_table()` called in `.setup()` after the notifications table init. (2) **Restore**: before any HTTP warm runs, `cache_store::load_cache()` is called — if a persisted cache exists, it's written into the client's in-memory cache via `restore_cache()` so the first dashboard mount sees data instantly. (3) **Persist**: after each successful `ensure_quick_cache()` (immediate startup) AND after each successful `fetch_all_markets()` (8s-delayed full warm), the cache is saved to SQLite via `cache_store::save_cache()`. Both persist paths are fire-and-forget — a DB write failure logs a warning but doesn't block the response.
+
+- **Ad-hoc verification**: `cargo check` clean (14 pre-existing warnings). `npx tsc --noEmit` clean. **320 lib tests pass** (no new tests — the cache_store functions follow the established `sqlx` pattern and the startup integration is purely additive wiring). End-to-end wiring: 1 new Rust module (106 lines), 1 `mod` declaration, 16 lines of public API on `PrizePicksClient`, 41 lines of startup orchestration in `lib.rs`. The Phase 3 deferred item "Persist summary cache to SQLite" is now **done**.
 
 ## 2026-07-11 overnight pass — Capture CLV button on predictions panel
 

@@ -121,6 +121,22 @@ impl PrizePicksClient {
         guard.as_ref().map(|c| c.markets.clone())
     }
 
+    /// Read-lock and clone the entire cache struct (markets + metadata).
+    /// Returns `None` if the cache is empty.
+    /// Used by `cache_store` to persist the cache to SQLite.
+    pub async fn clone_cache(&self) -> Option<PrizePicksCache> {
+        let guard = self.cache.read().await;
+        guard.clone()
+    }
+
+    /// Write-lock and replace the in-memory cache from an external source
+    /// (e.g. SQLite persist restore at startup). Enables instant next-launch
+    /// paint by populating the cache before any HTTP fetch runs.
+    pub async fn restore_cache(&self, cache: PrizePicksCache) {
+        let mut guard = self.cache.write().await;
+        *guard = Some(cache);
+    }
+
     fn is_token_valid(&self) -> bool {
         match (&self.token, self.token_expiry) {
             (Some(_), Some(expiry)) => Self::now_secs() + 60 < expiry,

@@ -1,6 +1,6 @@
 # PrizePicks Monster — Phased Roadmap
 
-Last updated: 2026-07-10 (evening maintenance pass — props sort dropdown on dashboard)
+Last updated: 2026-07-11 (maintenance pass — SQLite cache persistence shipped)
 
 This roadmap derives from `PRIORITIES.md` (ranked backlog), `AGENTS.md` (working rules), and commit history. Milestones are checkable items with explicit status.
 
@@ -60,7 +60,7 @@ Visualization shipped:
 | Startup prefetch (instant quick cache) | ✅ Done 2026-06-28 | Spawned at app startup, no 8s delay |
 | **Decouple cache reads from long fetches** | ✅ Done 2026-07-03 | `Arc<RwLock<Option<PrizePicksCache>>>` + `AtomicBool` fetch guard — UI reads clone the cache under a read-lock, full warm (10s+ of 20 pages) runs without holding the write-lock, fetch dedup prevents concurrent 20-page sweeps. New `try_begin_fetch` / `end_fetch` / `wait_for_in_flight_fetch` helpers. 15 new unit tests. |
 | Slim cache to `PrizePicksMarketSummary` | ✅ Done 2026-07-10 | Overnight pass: cache storage changed from `Vec<PrizePicksMarket>` to `Vec<PrizePicksMarketSummary>` |
-| Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint |
+|| Persist summary cache to SQLite | ✅ Done 2026-07-11 | SQLite persistence + startup restore — instant next-launch paint |
 
 ---
 
@@ -105,7 +105,7 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-|Last updated: 2026-07-10 (evening maintenance pass — props sort dropdown on dashboard)
+|Last updated: 2026-07-11 (maintenance pass — SQLite cache persistence shipped)
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
@@ -117,7 +117,7 @@ Visualization shipped:
 || 6 | ~~`tracing-opentelemetry` bridge~~ | ✅ Done 2026-07-09 | `tracing-opentelemetry = "0.33"` added. `otel_layer` wired into both JSON and Human subscriber arms in `logging.rs`. No trait-bound workaround needed. `cargo check` clean. |
 || 7 | Correlation engine — event/series/macro graph | ⬜ Deferred | The P1 partial is the ticker-prefix heuristic. No data source identified for the full graph. Accepted limitation. |
 || 8 | ~~Slim cache to `PrizePicksMarketSummary`~~ | ✅ Done 2026-07-10 | Cache storage changed from `Vec<PrizePicksMarket>` to `Vec<PrizePicksMarketSummary>`. Compilation errors fixed same-day. |
-|| 9 | Persist summary cache to SQLite | ⬜ Deferred | Instant next-launch paint. Depends on the slim-cache item above. |
+|| 9 | ~~Persist summary cache to SQLite~~ | ✅ Done 2026-07-11 | SQLite table + startup restore — instant next-launch paint. |
 || 10 | Props sort dropdown (Edge/Confidence/Projection/Name) | ✅ Done 2026-07-10 | Compact select + direction toggle in the All Props section header. `sortedProps` useMemo with 4-case switch. |
 ## Milestone Tracking Format
 
