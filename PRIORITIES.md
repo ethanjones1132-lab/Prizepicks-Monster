@@ -1,8 +1,17 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-10 (evening maintenance pass — **props sort dropdown**: Edge/Confidence/Projection/Name sort controls on the dashboard props grid)
+Last updated: 2026-07-11 (overnight maintenance pass — **Capture CLV button**: added "Capture CLV" action to the predictions panel toolbar, wired to the existing `prizepicks_capture_clv` Tauri command)
 
 Quick status: **P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done** — Phase 5 polish & hardening is now **complete** (README, LICENSE, TS strict, E2E tests, benchmarks, structured logging, correlation_id, LogViewer, Notification Center, Profit Factor, stat category filter, OTel SDK adoption, tracing-opentelemetry bridge). Remaining deferred items (correlation graph, SQLite persistence) have no active implementation plan.
+
+## 2026-07-11 overnight pass — Capture CLV button on predictions panel
+
+**Feature shipped (on-demand CLV capture for resolved predictions):** The backend has supported closing-line value (CLV) capture since 2026-06-25 — a background task (`spawn_clv_capture_task` in `predictions/clv.rs`) polls resolved predictions and links them to their latest price snapshot at-or-before `resolved_at`, computing `clv_points = closing_price_pct - entry_price_pct`. A Tauri command `prizepicks_capture_clv` was also exposed for on-demand sweeps. However, there was no UI affordance to trigger it — users had to wait for the background poll interval (shared with auto-grade, default 8 minutes) or call the command manually. This pass adds a **Capture CLV** button in the paper trading panel toolbar, right next to **Grade pending**, so users can manually sweep CLV for any newly-resolved predictions immediately after they're graded.
+
+Shipped:
+
+- `src-ui/src/components/PrizePicksPredictionsPanel.tsx` — new `capturingClv` state + `captureClv()` async handler. Calls `prizepicksApi.captureClv()` (returns `number` = count of predictions updated), shows a toast-style message (e.g., "Captured CLV for 3 resolved predictions"), and reloads the panel so the updated CLV fields (`clv_points`, `closing_price_pct`, `clv_ticker`, `clv_captured_at`) are reflected in the prediction list. Button disabled during capture with "Capturing…" label.
+- **Ad-hoc verification**: `cargo check` clean (14 pre-existing warnings). `npx tsc --noEmit` clean. **320 lib tests pass** (no Rust changes — purely additive UI). End-to-end wiring: 1 React state variable, 1 async handler, 1 toolbar button, ~42 net insertions.
 
 ## 2026-07-10 evening pass — Props sort dropdown on dashboard
 
