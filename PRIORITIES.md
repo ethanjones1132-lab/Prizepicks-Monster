@@ -1,12 +1,23 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-11 (maintenance pass #2 — **Settings UI: API key fields for OpticOdds & The Odds API**: added missing `opticodds_api_key` and `odds_api_key` fields to the Settings page for the multi-source data pipeline)
+Last updated: 2026-07-11 (maintenance pass #3 — **Notification Settings UI**: surfaced in-app notification type toggles, poll interval, game-starting lead time, and OS notification toggle in the Settings page)
 
 Quick status: **All deferred items now done** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
 ## 2026-07-11 maintenance pass — SQLite cache persistence
 
 **Feature shipped (persisted PrizePicks market summary cache to SQLite for instant next-launch paint):** The app's market cache was purely in-memory behind `Arc<RwLock<>>` — every launch started with an empty cache, forcing the dashboard to wait for at least one HTTP fetch (quick-cache prefetch or full warm) before rendering props. With the slim-cache-to-`PrizePicksMarketSummary` refactor (2026-07-10) complete, the next step was persisting that cache to SQLite so returning users see their dashboard immediately on launch, even if the PrizePicks API is slow or unreachable. Shipped:
+
+---
+
+## 2026-07-11 maintenance pass #3 — Notification Settings UI: in-app notification type toggles
+
+**Feature shipped (Notification Settings UI surfaced in the Settings page):** The Notification Center (shipped 2026-07-08) had a full backend engine and frontend tab — users could view and dismiss notifications, but had no way to control *which* notifications they receive, how often the system polls for updates, or whether OS-level pop-ups were enabled. The backend `get_notification_settings` / `save_notification_settings` commands and frontend API wrappers existed but were never wired to a UI. This pass adds a dedicated "In-app notifications" card to the Settings page.
+
+Shipped:
+
+- `src-ui/src/components/SettingsView.tsx` — new imports for `prizepicksApi` and `NotificationSettings` type. New `notifSettings` state (initialized from `DEFAULT_NOTIFICATION_SETTINGS`) loaded in parallel with the existing config/bankroll/models loads. New `handleSaveNotif` handler calls `prizepicksApi.saveNotificationSettings()`. New "In-app notifications" card placed between the existing "Notifications & bot" card and the "System prompt" card. The card includes: master **Enable notifications** toggle, **OS notifications** toggle, individual toggles for **Game starting** / **Game final** / **Prediction graded** / **Grading complete** (disabled when master toggle is off), **Poll interval** number input (15–600s, disabled when master off), and **Game starting alert (minutes before)** number input (0–120, disabled when master off or game-starting alert off). Save button with per-section status message. The separate save button avoids coupling notification settings to the main config save path (which saves `AppConfig`, not `NotificationSettings`).
+- **Ad-hoc verification**: `cargo check` clean. `npx tsc --noEmit` clean. **320 lib tests pass** (no Rust changes — purely UI additions that wire existing commands). End-to-end wiring: 1 file, ~80 net insertions. The card completes the Notification Center UX: users can now see notifications (tab) AND control them (settings).
 
 ---
 

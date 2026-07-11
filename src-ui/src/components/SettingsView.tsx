@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { bankrollApi, configApi } from '../services/tauri';
 import type { ApiStatus, AppConfig, BankrollConfig, ModelInfo } from '../types';
+import { prizepicksApi } from '../services/prizepicks';
+import type { NotificationSettings } from '../types/prizepicks';
 
 const EMPTY_CONFIG: AppConfig = {
   openrouter_api_key: '',
@@ -42,6 +44,17 @@ const EMPTY_BANKROLL_CONFIG: BankrollConfig = {
   weekly_bet_limit: 500,
 };
 
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  game_starting_enabled: true,
+  game_final_enabled: true,
+  prediction_graded_enabled: true,
+  grading_complete_enabled: true,
+  poll_interval_secs: 60,
+  game_starting_minutes_before: 30,
+  show_os_notifications: true,
+};
+
 function maskSecret(value: string): string {
   if (!value) return '';
   if (value.length <= 8) return '••••••••';
@@ -66,16 +79,20 @@ export function SettingsView() {
   const [message, setMessage] = useState<string | null>(null);
   const [bankrollMessage, setBankrollMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notifSettings, setNotifSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
+  const [savingNotif, setSavingNotif] = useState(false);
+  const [notifMessage, setNotifMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     setBankrollMessage(null);
     try {
-      const [cfg, modelList, bankroll] = await Promise.all([
+      const [cfg, modelList, bankroll, notif] = await Promise.all([
         configApi.get(),
         configApi.getAvailableModels(),
         bankrollApi.getConfig(),
+        prizepicksApi.getNotificationSettings(),
       ]);
       setConfig(cfg);
       setBankrollConfig(bankroll);
@@ -85,6 +102,7 @@ export function SettingsView() {
       setPrizePicksPasswordInput('');
       setDiscordInput('');
       setTelegramTokenInput('');
+      setNotifSettings(notif);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -137,6 +155,20 @@ export function SettingsView() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingBankroll(false);
+    }
+  };
+
+  const handleSaveNotif = async () => {
+    setSavingNotif(true);
+    setNotifMessage(null);
+    setError(null);
+    try {
+      await prizepicksApi.saveNotificationSettings(notifSettings);
+      setNotifMessage('Notification settings saved.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingNotif(false);
     }
   };
 
@@ -586,6 +618,122 @@ export function SettingsView() {
               />
               Grading results
             </label>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>In-app notifications</h3>
+          <p className="muted">
+            Configure which in-app events trigger notifications in the Notification Center. See the{' '}
+            <code>🔔 Notifications</code> tab to view history.
+          </p>
+          <div className="toggleRow">
+            <label className="toggleLabel">
+              <input
+                type="checkbox"
+                checked={notifSettings.enabled}
+                onChange={(e) => setNotifSettings({ ...notifSettings, enabled: e.target.checked })}
+              />
+              Enable notifications
+            </label>
+            <label className="toggleLabel">
+              <input
+                type="checkbox"
+                checked={notifSettings.show_os_notifications}
+                onChange={(e) =>
+                  setNotifSettings({ ...notifSettings, show_os_notifications: e.target.checked })
+                }
+              />
+              OS notifications
+            </label>
+          </div>
+          <div className="toggleRow">
+            <label className="toggleLabel">
+              <input
+                type="checkbox"
+                checked={notifSettings.game_starting_enabled}
+                disabled={!notifSettings.enabled}
+                onChange={(e) =>
+                  setNotifSettings({ ...notifSettings, game_starting_enabled: e.target.checked })
+                }
+              />
+              Game starting
+            </label>
+            <label className="toggleLabel">
+              <input
+                type="checkbox"
+                checked={notifSettings.game_final_enabled}
+                disabled={!notifSettings.enabled}
+                onChange={(e) =>
+                  setNotifSettings({ ...notifSettings, game_final_enabled: e.target.checked })
+                }
+              />
+              Game final
+            </label>
+            <label className="toggleLabel">
+              <input
+                type="checkbox"
+                checked={notifSettings.prediction_graded_enabled}
+                disabled={!notifSettings.enabled}
+                onChange={(e) =>
+                  setNotifSettings({ ...notifSettings, prediction_graded_enabled: e.target.checked })
+                }
+              />
+              Prediction graded
+            </label>
+            <label className="toggleLabel">
+              <input
+                type="checkbox"
+                checked={notifSettings.grading_complete_enabled}
+                disabled={!notifSettings.enabled}
+                onChange={(e) =>
+                  setNotifSettings({ ...notifSettings, grading_complete_enabled: e.target.checked })
+                }
+              />
+              Grading complete
+            </label>
+          </div>
+          <div className="formGrid">
+            <label>
+              Poll interval (seconds)
+              <input
+                type="number"
+                min={15}
+                max={600}
+                value={notifSettings.poll_interval_secs}
+                disabled={!notifSettings.enabled}
+                onChange={(e) =>
+                  setNotifSettings({ ...notifSettings, poll_interval_secs: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label>
+              Game starting alert (minutes before)
+              <input
+                type="number"
+                min={0}
+                max={120}
+                value={notifSettings.game_starting_minutes_before}
+                disabled={!notifSettings.enabled || !notifSettings.game_starting_enabled}
+                onChange={(e) =>
+                  setNotifSettings({
+                    ...notifSettings,
+                    game_starting_minutes_before: Number(e.target.value),
+                  })
+                }
+              />
+            </label>
+          </div>
+          <div className="settingsActions">
+            <button
+              type="button"
+              className="primaryBtn"
+              disabled={savingNotif}
+              onClick={() => void handleSaveNotif()}
+            >
+              {savingNotif ? 'Saving…' : 'Save notification settings'}
+            </button>
+            {notifMessage && <span className="statusPill ok">{notifMessage}</span>}
           </div>
         </div>
 
