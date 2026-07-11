@@ -1746,6 +1746,7 @@ export function PrizePicksPredictionsPanel() {
   const [range, setRange] = useState<EquityRange>('30d');
   const [loading, setLoading] = useState(true);
   const [grading, setGrading] = useState(false);
+  const [capturingClv, setCapturingClv] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -1787,21 +1788,35 @@ export function PrizePicksPredictionsPanel() {
     });
   }, [equityHistory, range]);
 
-  const gradePending = async () => {
-    setGrading(true);
-    setMessage(null);
-    try {
-      const summary = await prizepicksApi.gradePending();
-      setMessage(`Graded ${summary.graded} (${summary.wins}W/${summary.losses}L, $${summary.total_pnl.toFixed(2)})`);
-      await load();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGrading(false);
-    }
-  };
+    const gradePending = async () => {
+      setGrading(true);
+      setMessage(null);
+      try {
+        const summary = await prizepicksApi.gradePending();
+        setMessage(`Graded ${summary.graded} (${summary.wins}W/${summary.losses}L, $${summary.total_pnl.toFixed(2)})`);
+        await load();
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : String(e));
+      } finally {
+        setGrading(false);
+      }
+    };
 
-  // Reflect an updated paper lot (notes/tags save) back into the journal
+    const captureClv = async () => {
+      setCapturingClv(true);
+      setMessage(null);
+      try {
+        const updated = await prizepicksApi.captureClv();
+        setMessage(`Captured CLV for ${updated} resolved prediction${updated === 1 ? '' : 's'}`);
+        await load();
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : String(e));
+      } finally {
+        setCapturingClv(false);
+      }
+    };
+
+    // Reflect an updated paper lot (notes/tags save) back into the journal
   // state without a full reload — keeps the editor responsive and avoids
   // a network round-trip on every Save.
   const handleLotUpdated = useCallback((updated: PaperLot) => {
@@ -1809,16 +1824,19 @@ export function PrizePicksPredictionsPanel() {
   }, []);
 
   return (
-    <section className="predictionsPanel">
-      <div className="panelToolbar">
-        <h4>Player prop picks</h4>
-        <button type="button" className="ghostBtn" onClick={() => void load()} disabled={loading}>
-          Refresh
-        </button>
-        <button type="button" className="primaryBtn" onClick={() => void gradePending()} disabled={grading}>
-          {grading ? 'Grading…' : 'Grade pending'}
-        </button>
-      </div>
+      <section className="predictionsPanel">
+        <div className="panelToolbar">
+          <h4>Player prop picks</h4>
+          <button type="button" className="ghostBtn" onClick={() => void load()} disabled={loading}>
+            Refresh
+          </button>
+          <button type="button" className="primaryBtn" onClick={() => void gradePending()} disabled={grading}>
+            {grading ? 'Grading…' : 'Grade pending'}
+          </button>
+          <button type="button" className="primaryBtn" onClick={() => void captureClv()} disabled={capturingClv}>
+            {capturingClv ? 'Capturing…' : 'Capture CLV'}
+          </button>
+        </div>
       {analytics && (
         <div className="paperSummary">
           <div>
