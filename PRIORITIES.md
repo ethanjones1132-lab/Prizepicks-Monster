@@ -1,6 +1,6 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-11 (maintenance pass #3 — **Notification Settings UI**: surfaced in-app notification type toggles, poll interval, game-starting lead time, and OS notification toggle in the Settings page)
+Last updated: 2026-07-12 (overnight maintenance pass — **Historical Kelly Fraction**: added `historical_kelly_fraction` to paper analytics, computed from the user's track record (p - (1-p)/b), displayed in the paper summary card as a sanity check for per-prop Kelly stakes)
 
 Quick status: **All deferred items now done** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
