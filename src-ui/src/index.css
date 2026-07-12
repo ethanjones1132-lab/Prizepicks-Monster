@@ -573,6 +573,13 @@ button {
   flex: 0 0 auto;
 }
 
+.sourceChip {
+  font-variant-numeric: tabular-nums;
+  border-color: rgba(110, 200, 163, 0.35);
+  background: rgba(110, 200, 163, 0.08);
+  color: #8ee0bd;
+}
+
 .propsSortSelect {
   min-height: 26px;
   padding: 0 8px;

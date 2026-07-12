@@ -1,12 +1,24 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-12 (overnight maintenance pass — **Historical Kelly Fraction**: added `historical_kelly_fraction` to paper analytics, computed from the user's track record (p - (1-p)/b), displayed in the paper summary card as a sanity check for per-prop Kelly stakes)
+Last updated: 2026-07-12 (maintenance pass — **Data source indicator chip**: added a `sourceChip` badge in the dashboard header showing which data source (OpticOdds, The Odds API, ESPN, Sleeper, or Mock) is serving the current props. Uses the existing `PropPick.source` field — pure frontend change, zero backend work. `dataSource` `useMemo` derives the label from unique `props[].source` values and renders a `chip small sourceChip` next to the cache status badge with a green tint.)
 
 Quick status: **All deferred items now done** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
-## 2026-07-11 maintenance pass — SQLite cache persistence
+## 2026-07-12 maintenance pass — Data source indicator chip on dashboard header
 
-**Feature shipped (persisted PrizePicks market summary cache to SQLite for instant next-launch paint):** The app's market cache was purely in-memory behind `Arc<RwLock<>>` — every launch started with an empty cache, forcing the dashboard to wait for at least one HTTP fetch (quick-cache prefetch or full warm) before rendering props. With the slim-cache-to-`PrizePicksMarketSummary` refactor (2026-07-10) complete, the next step was persisting that cache to SQLite so returning users see their dashboard immediately on launch, even if the PrizePicks API is slow or unreachable. Shipped:
+**Feature shipped (Data source indicator chip on the dashboard header):** The multi-source data pipeline (shipped 2026-07-10) has 5 fallback levels — OpticOdds → The Odds API → ESPN → Sleeper → Mock — but the user had no way to see which source was currently serving their props. The `PrizePicksProp.source` field already carried this data from the backend; it just wasn't surfaced in the UI. This pass adds a `dataSource` `useMemo` that extracts unique `source` values from the loaded props array and renders a green-tinted `chip small sourceChip` badge next to the cache status badge in the dashboard header.
+
+Shipped:
+
+- `src-ui/src/components/PrizePicksView.tsx` — new `dataSource` `useMemo` (23 lines). Maps source strings to emoji-labeled display names (`🔮 OpticOdds`, `📊 The Odds API`, `📺 ESPN`, `😴 Sleeper`, `🧪 Mock`). Falls back to `🔄 Multi-source` if props come from multiple sources (defensive — the fallback chain uses one source per fetch). New render branch in the `prizepicksHeaderActions` area: `<span className="chip small sourceChip">` placed between the cache status badge and the Refresh button, with a `title` attribute showing `Data provided by <source>`.
+
+- `src-ui/src/index.css` — new `.sourceChip` class (4 lines). Green-tinted border, background, and text (`#8ee0bd`) matching the existing `--pos` / green-accent palette used throughout the app.
+
+- **Ad-hoc verification**: `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes). End-to-end wiring: 1 component file, 1 CSS file, ~27 net insertions.
+
+---
+
+
 
 ---
 

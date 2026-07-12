@@ -30,6 +30,25 @@ export function PrizePicksView() {
 
   const leagues = ['All', 'NFL', 'NBA', 'MLB', 'NHL'];
 
+  // Derive the active data source label from current props
+  // (all props from a single fetch share the same source)
+  const dataSource = useMemo(() => {
+    const sources = new Set(props.map((p) => p.source).filter(Boolean));
+    if (sources.size === 0) return null;
+    if (sources.size === 1) {
+      const s = sources.values().next().value!;
+      const labels: Record<string, string> = {
+        opticodds: '🔮 OpticOdds',
+        'the-odds-api': '📊 The Odds API',
+        espn: '📺 ESPN',
+        sleeper: '😴 Sleeper',
+        mock: '🧪 Mock',
+      };
+      return labels[s] ?? s;
+    }
+    return '🔄 Multi-source';
+  }, [props]);
+
   // Reset category filter when props are reloaded (e.g. league change)
   useEffect(() => {
     setSelectedCategory('All');
@@ -176,6 +195,11 @@ export function PrizePicksView() {
                 : cacheStatus.has_cache
                   ? `📦 ${cacheStatus.markets_count}*`
                   : '📦 empty'}
+            </span>
+          )}
+          {dataSource && (
+            <span className="chip small sourceChip" title={`Data provided by ${dataSource}`}>
+              {dataSource}
             </span>
           )}
           <button type="button" className="primaryBtn" onClick={() => void refreshAll()} disabled={refreshing || loading}>
