@@ -1,8 +1,8 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-12 (maintenance pass #2 — **Team & game context on prop cards**: added team abbreviation (gold `.teamTag` badge) and game string to every prop card on the dashboard, removed the duplicate player name from the `<h3>`, and improved recommendation text readability.)
+Last updated: 2026-07-12 (maintenance pass #3 — **Min edge threshold filter on dashboard**: added a minimum edge number input that hides low-edge props from the All Props grid.)
 
-Quick status: **All deferred items now done** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All deferred items now done + min-edge threshold filter** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
 
 ## 2026-07-12 maintenance pass #2 — Team & game context on prop cards
@@ -16,6 +16,18 @@ Shipped:
 - `src-ui/src/index.css` — New `.marketCardMeta` (flex row, gap 6px, -4px negative top margin to keep card compact) and `.teamTag` (gold `#c9a84c` uppercase mono badge with subtle border + translucent background matching the app's dark aesthetic). ~16 CSS lines.
 
 - **Ad-hoc verification**: `npx tsc --noEmit` clean, `cargo check` clean (14 pre-existing warnings), **320 lib tests pass** (no Rust changes — purely frontend). No literal-`\\n` corruption detected via byte-level scan. End-to-end wiring: 1 component file, 1 CSS file, ~23 net insertions.
+
+## 2026-07-12 maintenance pass #3 — Min edge threshold filter on dashboard
+
+**Feature shipped (minimum edge threshold filter on the dashboard):** The All Props grid had league tabs, a stat category filter, and a sort dropdown (Edge / Confidence / Projection / Name) — but no way to filter out low-edge props. A user scanning many props who only wants to see picks with edge ≥ 5% had to visually scan the grid and mentally discard every card below threshold. This pass adds a “Min edge:” number input in the props section header (next to the sort controls) that client-side filters the `displayProps` array: props with `edge_pct < minEdge` are hidden. When `minEdge` is 0 (default), no filtering occurs. The empty-state message differentiates between “no props at all”, “no matching category”, and “no props meet the min edge threshold.”
+
+Shipped:
+
+- `src-ui/src/components/PrizePicksView.tsx` — New `minEdge` `useState(0)` state. `displayProps` converted from a plain ternary to a `useMemo` with `[props, selectedCategory, minEdge]` deps that applies both the stat category filter and the min edge filter (`(p.edge_pct ?? 0) >= minEdge`). New `.minEdgeFilter` span in the section header containing a compact number `<input>` (`min=0 max=100 step=1`) and a `%` label. Empty-state updated with a `minEdge > 0` branch. ~15 net insertions.
+
+- `src-ui/src/index.css` — New `.minEdgeFilter` (inline-flex row, 12px margin-left, 0.8rem), `.minEdgeInput` (48px wide, 26px min-height, dark-theme border/background matching `.propsSortSelect`), and `.minEdgeInput:focus` (green accent border). ~20 CSS lines.
+
+- **Ad-hoc verification**: `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes — purely frontend). 0 literal-`\n` corruption (confirmed via byte-level scan). End-to-end wiring: 1 component file, 1 CSS file, ~35 net insertions.
 
 ## 2026-07-12 maintenance pass — Data source indicator chip on dashboard header
 

@@ -3124,3 +3124,29 @@ button {
   background: rgba(255, 255, 255, 0.1);
   color: #e57373;
 }
+
+.minEdgeFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.minEdgeInput {
+  width: 48px;
+  min-height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #f5f5f0;
+  padding: 0 6px;
+  text-align: center;
+  outline: none;
+  font-size: 0.78rem;
+}
+
+.minEdgeInput:focus {
+  border-color: rgba(110, 200, 163, 0.5);
+}

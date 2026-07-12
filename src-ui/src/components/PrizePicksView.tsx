@@ -22,6 +22,7 @@ export function PrizePicksView() {
   type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
   const [sortKey, setSortKey] = useState<PropsSortKey>('edge');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [minEdge, setMinEdge] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,10 +143,16 @@ export function PrizePicksView() {
     }
   };
 
-  // Client-side filter by stat category
-  const displayProps = selectedCategory === 'All'
-    ? props
-    : props.filter((p) => p.prop_type === selectedCategory);
+  // Client-side filter by stat category and minimum edge
+  const displayProps = useMemo(() => {
+    let filtered = selectedCategory === 'All'
+      ? props
+      : props.filter((p) => p.prop_type === selectedCategory);
+    if (minEdge > 0) {
+      filtered = filtered.filter((p) => (p.edge_pct ?? 0) >= minEdge);
+    }
+    return filtered;
+  }, [props, selectedCategory, minEdge]);
 
   // Client-side sort by edge/confidence/name/projection
   const sortedProps = useMemo(() => {
@@ -313,6 +320,18 @@ export function PrizePicksView() {
                 {sortDir === 'desc' ? '↓' : '↑'}
               </button>
             </span>
+            <span className="minEdgeFilter">
+              <label>Min edge:</label>
+              <input
+                type="number"
+                className="minEdgeInput"
+                min="0" max="100" step="1"
+                value={minEdge}
+                onChange={(e) => setMinEdge(Math.max(0, Number(e.target.value) || 0))}
+                aria-label="Minimum edge percentage"
+              />
+              <span className="muted small">%</span>
+            </span>
           </h3>
           <div className="marketGrid">
             {sortedProps.map((prop) => (
@@ -343,7 +362,9 @@ export function PrizePicksView() {
         <p className="muted pad">
           {props.length === 0
             ? 'No props found.'
-            : `No ${selectedCategory} props match the current filters.`}
+            : minEdge > 0
+              ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+              : `No ${selectedCategory} props match the current filters.`}
         </p>
       )}
     </div>
