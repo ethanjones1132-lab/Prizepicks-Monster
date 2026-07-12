@@ -392,9 +392,17 @@ export interface PaperAnalytics {
    */
   top_losers: PaperTopLot[];
   /** Per-window equity change (today / 7d) for the summary card. */
-  session_pnl: SessionPnl;
-  fetched_at: string;
-}
+    session_pnl: SessionPnl;
+    /** Historical optimal Kelly fraction derived from the user's paper trading track record.
+     * Computed as `f* = p - (1-p)/b` where `p = win_rate/100` and `b = avg_winner/avg_loser`.
+     * Clamped to `[0.0, 1.0]`. Returns `0.0` when there are no closed trades or no losses yet.
+     * This answers: "what fraction of my bankroll should I have been risking per bet to maximize
+     * long-term growth, given my actual historical edge?" — a powerful sanity check for the
+     * per-prop Kelly stakes the engine computes.
+     */
+    historical_kelly_fraction: number;
+    fetched_at: string;
+  }
 
 /**
  * One closed paper lot projected for the "top winners / top losers"

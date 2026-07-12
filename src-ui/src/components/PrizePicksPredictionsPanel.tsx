@@ -1876,11 +1876,15 @@ export function PrizePicksPredictionsPanel() {
             <SessionDeltaChip delta={analytics.session_pnl?.today ?? null} />
           </div>
           <div>
-            <span className="muted">7d PnL</span>
-            <SessionDeltaChip delta={analytics.session_pnl?.this_week ?? null} />
-          </div>
-        </div>
-      )}
+                      <span className="muted">7d PnL</span>
+                      <SessionDeltaChip delta={analytics.session_pnl?.this_week ?? null} />
+                    </div>
+                    <div>
+                      <span className="muted">Hist. Kelly</span>
+                      <strong>{(analytics.historical_kelly_fraction * 100).toFixed(1)}%</strong>
+                    </div>
+                  </div>
+                )}
       <div className="equityChartToolbar">
         <span className="muted small">Equity range:</span>
         {(['7d', '30d', '90d', 'all'] as EquityRange[]).map((r) => (

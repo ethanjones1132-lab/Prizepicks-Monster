@@ -261,10 +261,21 @@ pub struct PaperAnalytics {
     /// "what to learn from" mirror panel.
     pub top_losers: Vec<PaperTopLot>,
     /// Today and 7-day equity deltas for the summary card. Both windows are
-    /// `None` when no baseline snapshot exists (e.g. a brand-new account).
-    pub session_pnl: SessionPnl,
-    pub fetched_at: String,
-}
+        /// `None` when no baseline snapshot exists (e.g. a brand-new account).
+        pub session_pnl: SessionPnl,
+        /// Historical optimal Kelly fraction derived from the user's paper trading
+        /// track record. Computed as `f* = p - (1-p)/b` where `p = win_rate/100`
+        /// and `b = avg_winner/avg_loser`. Returns `0.0` when there are no closed
+        /// trades or when `avg_loser == 0` (no losses yet — infinite edge).
+        /// Clamped to `[0.0, 1.0]` since negative Kelly means don't bet (negative
+        /// expectation) and >1.0 is nonsensical for bankroll management.
+        /// This answers the question: "what fraction of my bankroll should I have
+        /// been risking per bet to maximize long-term growth, given my actual
+        /// historical edge?" — a powerful sanity check for the per-prop Kelly
+        /// stakes the engine computes.
+        pub historical_kelly_fraction: f64,
+        pub fetched_at: String,
+    }
 
 /// One closed (decided) paper lot projected onto a 2-D calibration plane.
 /// `fair_probability_pct` is the model's "true" probability for the selected
@@ -2809,17 +2820,28 @@ pub async fn get_analytics(
     };
 
     let avg_winner = if wins > 0 {
-        gross_wins / wins as f64
-    } else {
-        0.0
-    };
-    let avg_loser = if losses > 0 {
-        -gross_losses / losses as f64
-    } else {
-        0.0
-    };
+            gross_wins / wins as f64
+        } else {
+            0.0
+        };
+        let avg_loser = if losses > 0 {
+            -gross_losses / losses as f64
+        } else {
+            0.0
+        };
 
-    let positions = aggregate_positions(pool, client).await?;
+        // Historical Kelly fraction: f* = p - (1-p)/b
+        // where p = win_rate/100 (probability of win), b = avg_winner/avg_loser (payoff ratio)
+        let historical_kelly_fraction = if wins + losses > 0 && avg_loser > 0.0 {
+            let p = win_rate / 100.0;
+            let b = avg_winner / avg_loser;
+            let kelly = p - (1.0 - p) / b;
+            kelly.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        let positions = aggregate_positions(pool, client).await?;
     let open_market_value: f64 = positions
         .iter()
         .filter_map(|p| p.market_value_dollars)
@@ -2862,40 +2884,41 @@ pub async fn get_analytics(
     };
 
     Ok(PaperAnalytics {
-        starting_balance: account.total_deposits,
-        cash_balance: account.balance_dollars,
-        open_market_value,
-        equity,
-        realized_pnl,
-        unrealized_pnl,
-        total_return_pct,
-        total_trades: all.len() as u32,
-        open_positions,
-        win_rate,
-        wins,
-        losses,
-        profit_factor,
-        avg_winner,
-        avg_loser,
-        largest_winner,
-        largest_loser,
-        max_drawdown_pct: max_dd,
-        current_streak,
-        category_stats,
-        side_stats,
-        hold_time_stats,
-        player_stats,
-        entry_price_stats,
-        calibration_points,
-        paper_disagreement_stats,
-        tag_stats,
-        confidence_tier_stats,
-        source_stats,
-        top_winners,
-        top_losers,
-        session_pnl,
-        fetched_at: Utc::now().to_rfc3339(),
-    })
+            starting_balance: account.total_deposits,
+            cash_balance: account.balance_dollars,
+            open_market_value,
+            equity,
+            realized_pnl,
+            unrealized_pnl,
+            total_return_pct,
+            total_trades: all.len() as u32,
+            open_positions,
+            win_rate,
+            wins,
+            losses,
+            profit_factor,
+            avg_winner,
+            avg_loser,
+            largest_winner,
+            largest_loser,
+            max_drawdown_pct: max_dd,
+            current_streak,
+            category_stats,
+            side_stats,
+            hold_time_stats,
+            player_stats,
+            entry_price_stats,
+            calibration_points,
+            paper_disagreement_stats,
+            tag_stats,
+            confidence_tier_stats,
+            source_stats,
+            top_winners,
+            top_losers,
+            session_pnl,
+            historical_kelly_fraction,
+            fetched_at: Utc::now().to_rfc3339(),
+        })
 }
 
 async fn max_drawdown_pct(pool: &Pool<Sqlite>) -> Result<f64, String> {
