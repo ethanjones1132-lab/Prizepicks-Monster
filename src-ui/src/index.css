@@ -656,6 +656,26 @@ button {
   color: #8f8f86;
 }
 
+.marketCardMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 10px;
+  font-size: 13px;
+}
+
+.teamTag {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: #c9a84c;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .marketCard h3 {
   margin: 0 0 10px;
   font-size: 15px;

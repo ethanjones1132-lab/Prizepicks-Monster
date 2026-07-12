@@ -321,14 +321,18 @@ export function PrizePicksView() {
                   <code>{prop.player}</code>
                   <span className="chip small">{prop.league}</span>
                 </div>
-                <h3>{prop.player} — {prop.prop_type}</h3>
+                <h3>{prop.prop_type}</h3>
+                <div className="marketCardMeta">
+                  {prop.team && <span className="teamTag">{prop.team}</span>}
+                  {prop.game && <span className="muted">{prop.game}</span>}
+                </div>
                 <div className="marketStats">
                   <span>Line: {prop.line}</span>
                   <span>Proj: {prop.projection.toFixed(1)}</span>
                   <span>Edge: {formatEdge(prop.edge_pct)}</span>
                   <span>Conf: {prop.confidence}%</span>
                 </div>
-                <p className="muted small">{prop.recommendation}</p>
+                <p className="small">{prop.recommendation}</p>
               </div>
             ))}
           </div>
