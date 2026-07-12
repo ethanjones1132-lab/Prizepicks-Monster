@@ -1,8 +1,21 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-12 (maintenance pass — **Data source indicator chip**: added a `sourceChip` badge in the dashboard header showing which data source (OpticOdds, The Odds API, ESPN, Sleeper, or Mock) is serving the current props. Uses the existing `PropPick.source` field — pure frontend change, zero backend work. `dataSource` `useMemo` derives the label from unique `props[].source` values and renders a `chip small sourceChip` next to the cache status badge with a green tint.)
+Last updated: 2026-07-12 (maintenance pass #2 — **Team & game context on prop cards**: added team abbreviation (gold `.teamTag` badge) and game string to every prop card on the dashboard, removed the duplicate player name from the `<h3>`, and improved recommendation text readability.)
 
 Quick status: **All deferred items now done** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+
+## 2026-07-12 maintenance pass #2 — Team & game context on prop cards
+
+**Feature shipped (team abbreviation and game info on every prop card):** The dashboard's prop cards showed the player name, league, stat category, line, projection, edge, and confidence — but not the **team** the player plays for or the **game** they're playing in. A user scanning 50+ props had no way to tell at a glance whether a prop belongs to a favorable matchup without clicking into a separate view. Both `team` and `game` fields were already present in the `PropPick` struct from all data sources (OpticOdds, The Odds API, ESPN, Sleeper, Mock) but went unused in the card rendering. This pass surfaces them.
+
+Shipped:
+
+- `src-ui/src/components/PrizePicksView.tsx` (prop card JSX) — Removed the duplicate player name from the `<h3>` (it was already in `marketCardTop`'s `<code>` tag) and replaced it with just the `prop_type`. Added a `.marketCardMeta` div between the `<h3>` and `.marketStats` that conditionally renders the `team` abbreviation as a gold-toned `.teamTag` badge and the `game` string (e.g., "LAL @ BOS") as muted text. Changed the recommendation `<p>` from `muted small` to just `small` for improved readability. ~7 net insertions.
+
+- `src-ui/src/index.css` — New `.marketCardMeta` (flex row, gap 6px, -4px negative top margin to keep card compact) and `.teamTag` (gold `#c9a84c` uppercase mono badge with subtle border + translucent background matching the app's dark aesthetic). ~16 CSS lines.
+
+- **Ad-hoc verification**: `npx tsc --noEmit` clean, `cargo check` clean (14 pre-existing warnings), **320 lib tests pass** (no Rust changes — purely frontend). No literal-`\\n` corruption detected via byte-level scan. End-to-end wiring: 1 component file, 1 CSS file, ~23 net insertions.
 
 ## 2026-07-12 maintenance pass — Data source indicator chip on dashboard header
 
