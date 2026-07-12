@@ -1,6 +1,6 @@
 # PrizePicks Monster — Phased Roadmap
 
-Last updated: 2026-07-11 (maintenance pass — SQLite cache persistence shipped)
+Last updated: 2026-07-12 (maintenance pass — data source indicator chip on dashboard header)
 
 This roadmap derives from `PRIORITIES.md` (ranked backlog), `AGENTS.md` (working rules), and commit history. Milestones are checkable items with explicit status.
 
@@ -105,7 +105,7 @@ Visualization shipped:
 
 ## Next Actionable Items (Priority Order)
 
-|Last updated: 2026-07-11 (maintenance pass — SQLite cache persistence shipped)
+|Last updated: 2026-07-12 (maintenance pass — data source indicator chip on dashboard header)
 
 | # | Item | Status | Notes |
 |---|------|--------|-------|
