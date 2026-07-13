@@ -585,6 +585,58 @@ pub async fn prizepicks_search_props(
     Ok(response.props)
 }
 
+/// Export current props as CSV.
+/// Returns a UTF-8 CSV string with all columns from `PrizePicksProp`.
+#[tauri::command]
+pub async fn prizepicks_export_props_csv(
+    league: Option<String>,
+    prizepicks_fetcher: State<'_, Arc<Mutex<crate::prizepicks::PrizePicksFetcher>>>,
+) -> Result<String, String> {
+    let mut fetcher = prizepicks_fetcher.lock().await;
+    let league_opt = league.as_deref().filter(|l| *l != "All");
+    let response = fetcher.fetch_props(league_opt, false).await?;
+    let props = response.props;
+
+    use super::csv_export;
+    csv_export(
+        &[
+            "external_id",
+            "player_name",
+            "team",
+            "opponent",
+            "stat_category",
+            "line",
+            "league",
+            "projection",
+            "source",
+            "game_time",
+            "over_odds",
+            "under_odds",
+        ],
+        |wtr| {
+            for prop in &props {
+                wtr.write_record(&[
+                    &prop.external_id,
+                    &prop.player_name,
+                    &prop.team,
+                    &prop.opponent,
+                    &prop.stat_category,
+                    &prop.line.to_string(),
+                    &prop.league,
+                    &prop.projection.map(|v| v.to_string()).unwrap_or_default(),
+                    &prop.source,
+                    &prop.game_time.clone().unwrap_or_default(),
+                    &prop.over_odds.map(|v| v.to_string()).unwrap_or_default(),
+                    &prop.under_odds.map(|v| v.to_string()).unwrap_or_default(),
+                ])
+                .map_err(|e| crate::error::AppError::Io(format!("CSV row error: {e}")))?;
+            }
+            Ok(())
+        },
+    )
+    .map_err(Into::into)
+}
+
 #[tauri::command]
 pub async fn prizepicks_get_scored_props(
     prizepicks_fetcher: State<'_, Arc<Mutex<crate::prizepicks::PrizePicksFetcher>>>,

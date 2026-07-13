@@ -331,6 +331,7 @@ pub fn run() {
             commands::prizepicks_get_props,
             commands::prizepicks_get_top_props,
             commands::prizepicks_search_props,
+            commands::prizepicks_export_props_csv,
             commands::prizepicks_get_scored_props,
             // Bot integration
             commands::get_bot_config,
