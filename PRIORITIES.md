@@ -1,9 +1,22 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-12 (maintenance pass #3 — **Min edge threshold filter on dashboard**: added a minimum edge number input that hides low-edge props from the All Props grid.)
+Last updated: 2026-07-13 (maintenance pass — **CSV export for props**: added `prizepicks_export_props_csv` Tauri command + 📥 Export CSV button on the dashboard.)
 
 Quick status: **All deferred items now done + min-edge threshold filter** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
+
+## 2026-07-13 maintenance pass — CSV export for props
+
+**Feature shipped (Export Downloaded CSV for player props on the dashboard):** The `prizepicks_export_props_csv` Tauri command was written but unregistered and unreachable from the frontend. This pass completes the wiring end-to-end: registers the command in the invoke_handler, adds the API wrapper in the frontend service, and places a 📥 CSV download button in the props section header (next to the Min edge filter). The button uses the same Blob + download-link pattern as the existing paper lots CSV export. When a league tab is active (NFL/NBA/MLB/NHL), the export scopes to that league; when "All" is selected, all props are exported.
+
+Shipped:
+
+- `src-tauri/src/commands/prizepicks_cmd.rs` — Fixed borrow error (`E0507`): `prop.game_time.clone().unwrap_or_default()` since `prop` is behind a shared reference in the iterator. The `prizepicks_export_props_csv` function was previously uncommitted in the working tree.
+- `src-tauri/src/lib.rs` — Registered `prizepicks_export_props_csv` in the invoke_handler (Player Prop section).
+- `src-ui/src/services/prizepicks.ts` — New `exportPropsCsv(league?)` API wrapper.
+- `src-ui/src/components/PrizePicksView.tsx` — 📥 CSV button in the section header, triggered file download via Blob/URL pattern.
+
+**Ad-hoc verification:** `cargo check` clean (14 pre-existing warnings). `npx tsc --noEmit` clean. **320 lib tests pass** (unchanged). End-to-end wiring: 2 Rust files (1 borrow fix, 1 registration), 2 TS files (1 API wrapper, 1 button). ~53 net insertions.
 
 ## 2026-07-12 maintenance pass #2 — Team & game context on prop cards
 
