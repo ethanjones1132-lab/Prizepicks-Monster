@@ -13,6 +13,15 @@ function formatProb(value: number | undefined | null): string {
   return Number.isFinite(value) ? `${value!.toFixed(1)}%` : '—';
 }
 
+function edgeLevelClass(edge: number | undefined | null): string {
+  if (edge == null || !Number.isFinite(edge)) return '';
+  if (edge >= 10) return 'edge-high';
+  if (edge >= 5) return 'edge-good';
+  if (edge >= 2) return 'edge-modest';
+  if (edge <= -2) return 'edge-poor';
+  return '';
+}
+
 function formatTimeAgo(ts: number): string {
   if (!ts) return 'never';
   const seconds = Math.floor(Date.now() / 1000 - ts);
@@ -380,7 +389,7 @@ export function PrizePicksView() {
           </h3>
           <div className="marketGrid">
             {sortedProps.map((prop) => (
-              <div key={prop.id} className="marketCard">
+              <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`}>
                 <div className="marketCardTop">
                   <code>{prop.player}</code>
                   <span className="chip small">{prop.league}</span>

@@ -658,6 +658,21 @@ button {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
 }
 
+/* Edge-strength visual indicator — colored left border for quick scanning */
+.marketCard.edge-high {
+  border-left: 4px solid #4ade80;
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.08), 0 0 12px rgba(74, 222, 128, 0.06);
+}
+.marketCard.edge-good {
+  border-left: 3px solid #6ec8a3;
+}
+.marketCard.edge-modest {
+  border-left: 3px solid rgba(110, 200, 163, 0.45);
+}
+.marketCard.edge-poor {
+  border-left: 3px solid #e57373;
+}
+
 .marketCardTop {
   display: flex;
   justify-content: space-between;
