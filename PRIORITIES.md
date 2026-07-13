@@ -1,9 +1,19 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-13 (maintenance pass #2 — **Last updated timestamp on dashboard**: shows `Updated Xm ago` text next to the cache badge so users can see data freshness at a glance. Stale cache gets an amber tinted chip.)
+Last updated: 2026-07-13 (maintenance pass #3 — **Edge-strength visual coloring on prop cards**: colored left-border indicator on each prop card so users can visually scan the grid by edge strength)
 
 Quick status: **All deferred items now done + min-edge threshold filter** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
+
+## 2026-07-13 maintenance pass #3 — Edge-strength visual coloring on prop cards
+
+**Feature shipped (colored left-border indicator on each prop card based on edge strength):** The dashboard prop grid showed edge_pct as text on every card, but users scanning 50+ props had to read each edge number to find high-value picks. This pass adds a visual left-border indicator: cards with edge ≥ 10% get a strong green 4px border + subtle glow (`edge-high`), ≥ 5% get a 3px green border (`edge-good`), ≥ 2% get a 3px muted green border (`edge-modest`), and ≤ -2% get a red 3px border (`edge-poor`). Cards between -2% and 2% have no left-border tint (neutral). The indicator is purely visual — no new UI elements, no backend changes, no new API calls.
+
+Shipped:
+
+- `src-ui/src/components/PrizePicksView.tsx` — New `edgeLevelClass(edge: number | undefined | null): string` helper (15 lines) with 5 tiers: edge-high (≥10%), edge-good (≥5%), edge-modest (≥2%), edge-poor (≤-2%), default '' (neutral). Applied to the prop card's `className` template: `className={\`marketCard ${edgeLevelClass(prop.edge_pct)}\`}`. 1 line changed.
+- `src-ui/src/index.css` — 4 new CSS rule blocks: `.marketCard.edge-high` (4px green `#4ade80` border + subtle green glow/box-shadow), `.marketCard.edge-good` (3px `#6ec8a3` border), `.marketCard.edge-modest` (3px `rgba(110,200,163,0.45)` border), `.marketCard.edge-poor` (3px `#e57373` border). 15 CSS lines.
+- **Ad-hoc verification**: `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes — purely frontend). 0 literal-`\n` corruption (confirmed via byte-level scan). End-to-end wiring: 1 component file, 1 CSS file, ~25 net insertions. The grid is now scannable at a glance: green-bordered cards = good edge, red-bordered cards = poor edge, no tint = neutral.
 
 ## 2026-07-13 maintenance pass #2 — Last updated timestamp on dashboard header
 
