@@ -74,6 +74,9 @@ export const prizepicksApi = {
   getScoredProps: () =>
     invoke<ScoredProp[]>('prizepicks_get_scored_props'),
 
+  exportPropsCsv: (league?: string) =>
+    invoke<string>('prizepicks_export_props_csv', { league: league ?? null }),
+
   // ── PrizePicks feed / odds comparison ──
 
   getMarkets: (category: string) =>

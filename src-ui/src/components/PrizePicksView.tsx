@@ -332,6 +332,33 @@ export function PrizePicksView() {
               />
               <span className="muted small">%</span>
             </span>
+            <button
+              type="button"
+              className="ghostBtn small"
+              onClick={async () => {
+                try {
+                  const csv = await prizepicksApi.exportPropsCsv(selectedLeague === 'All' ? undefined : selectedLeague);
+                  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                  const link = document.createElement('a');
+                  const url = URL.createObjectURL(blob);
+                  link.setAttribute('href', url);
+                  const now = new Date();
+                  const dateStr = now.toISOString().split('T')[0];
+                  link.setAttribute('download', `props-${dateStr}.csv`);
+                  link.style.visibility = 'hidden';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  console.error('[PrizePicks] Failed to export props CSV:', e);
+                }
+              }}
+              title="Export visible props to CSV"
+              aria-label="Export visible props to CSV"
+            >
+              📥 CSV
+            </button>
           </h3>
           <div className="marketGrid">
             {sortedProps.map((prop) => (
