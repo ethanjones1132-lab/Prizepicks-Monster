@@ -1,11 +1,21 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-13 (maintenance pass — **CSV export for props**: added `prizepicks_export_props_csv` Tauri command + 📥 Export CSV button on the dashboard.)
+Last updated: 2026-07-13 (maintenance pass #2 — **Last updated timestamp on dashboard**: shows `Updated Xm ago` text next to the cache badge so users can see data freshness at a glance. Stale cache gets an amber tinted chip.)
 
 Quick status: **All deferred items now done + min-edge threshold filter** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
 
-## 2026-07-13 maintenance pass — CSV export for props
+## 2026-07-13 maintenance pass #2 — Last updated timestamp on dashboard header
+
+**Feature shipped (human-readable "Updated X ago" timestamp on the dashboard header):** The `PrizePicksCacheStatus` struct has carried a `fetched_at` (unix seconds) field since the initial cache implementation, passed through the dashboard bootstrap response, and surfaced only in the cache badge tooltip. Users had no way to tell at a glance whether their data was 2 minutes or 2 hours old without hovering the badge. This pass adds a compact `<span className="chip small lastUpdated">` next to the existing 📦 cache badge that reads `Updated Nm ago` / `Updated Nh ago` / `Updated Nd ago` in real time. When the `is_stale` flag is set, the chip switches from neutral gray to an amber `#e5a060` tint so staleness is immediately visible.
+
+Shipped:
+
+- `src-ui/src/components/PrizePicksView.tsx` — New `formatTimeAgo(ts: number): string` helper (15 lines) that converts unix-seconds timestamps to relative time labels (`just now`, `Ns ago`, `Nm ago`, `Nh ago`, `Nd ago`, `never`). New `<span className="chip small lastUpdated">` render branch gated on `cacheStatus?.has_cache`, placed between the 📦 cache badge and the source indicator chip. The `title` attribute shows the absolute timestamp (`Last fetched at {locale time}`). The `className` includes ` stale` when `cacheStatus.is_stale` triggers the amber visual. ~8 net JSX insertions.
+
+- `src-ui/src/index.css` — New `.lastUpdated` base rule (neutral gray, low-opacity chip) and `.lastUpdated.stale` modifier (amber `#e5a060` border/background/text). 15 CSS lines.
+
+- **Ad-hoc verification**: `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes — purely frontend). 0 literal-`\\n` corruption (confirmed via byte-level scan with `rb'\\\\n'` pattern). End-to-end wiring: 1 component file, 1 CSS file, ~33 net insertions.
 
 **Feature shipped (Export Downloaded CSV for player props on the dashboard):** The `prizepicks_export_props_csv` Tauri command was written but unregistered and unreachable from the frontend. This pass completes the wiring end-to-end: registers the command in the invoke_handler, adds the API wrapper in the frontend service, and places a 📥 CSV download button in the props section header (next to the Min edge filter). The button uses the same Blob + download-link pattern as the existing paper lots CSV export. When a league tab is active (NFL/NBA/MLB/NHL), the export scopes to that league; when "All" is selected, all props are exported.
 

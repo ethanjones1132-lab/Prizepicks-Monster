@@ -13,6 +13,16 @@ function formatProb(value: number | undefined | null): string {
   return Number.isFinite(value) ? `${value!.toFixed(1)}%` : '—';
 }
 
+function formatTimeAgo(ts: number): string {
+  if (!ts) return 'never';
+  const seconds = Math.floor(Date.now() / 1000 - ts);
+  if (seconds < 0) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
 export function PrizePicksView() {
   const [props, setProps] = useState<PropPick[]>([]);
   const [scoredProps, setScoredProps] = useState<ScoredProp[]>([]);
@@ -202,6 +212,14 @@ export function PrizePicksView() {
                 : cacheStatus.has_cache
                   ? `📦 ${cacheStatus.markets_count}*`
                   : '📦 empty'}
+            </span>
+          )}
+          {cacheStatus?.has_cache && (
+            <span
+              className={`chip small lastUpdated${cacheStatus.is_stale ? ' stale' : ''}`}
+              title={`Last fetched at ${new Date(cacheStatus.fetched_at * 1000).toLocaleString()}`}
+            >
+              Updated {formatTimeAgo(cacheStatus.fetched_at)}
             </span>
           )}
           {dataSource && (

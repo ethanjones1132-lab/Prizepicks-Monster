@@ -580,6 +580,21 @@ button {
   color: #8ee0bd;
 }
 
+.lastUpdated {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  opacity: 0.85;
+  border-color: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.04);
+  color: #bbb;
+}
+
+.lastUpdated.stale {
+  border-color: rgba(229, 160, 96, 0.35);
+  background: rgba(229, 160, 96, 0.08);
+  color: #e5a060;
+}
+
 .propsSortSelect {
   min-height: 26px;
   padding: 0 8px;
