@@ -3180,3 +3180,37 @@ button {
 .minEdgeInput:focus {
   border-color: rgba(110, 200, 163, 0.5);
 }
+
+/* Game-grouped prop sections */
+.gameGroup {
+  margin-bottom: 20px;
+}
+
+.gameGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+}
+
+.gameGroupTitle {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #f5f5f0;
+}
+
+.gameGroupCount {
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: rgba(110, 200, 163, 0.10);
+  border: 1px solid rgba(110, 200, 163, 0.30);
+  color: #8ee0bd;
+}
+
+.gameGroupTime {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.45);
+}

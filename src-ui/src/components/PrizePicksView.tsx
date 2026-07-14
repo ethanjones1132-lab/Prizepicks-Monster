@@ -197,6 +197,34 @@ export function PrizePicksView() {
     return copy;
   }, [displayProps, sortKey, sortDir]);
 
+  // Group sorted props by game, sorted chronologically by game_time
+  // Props without a game label fall into a trailing "Other" group
+  const groupedGames = useMemo(() => {
+    const groups = new Map<string, PropPick[]>();
+    for (const prop of sortedProps) {
+      const key = prop.game || 'Other';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(prop);
+    }
+    const entries = Array.from(groups.entries());
+    entries.sort((a, b) => {
+      const propsA = a[1];
+      const propsB = b[1];
+      const ta = propsA[0]?.game_time;
+      const tb = propsB[0]?.game_time;
+      // "Other" (no game label) sorts to the very end
+      if (a[0] === 'Other') return 1;
+      if (b[0] === 'Other') return -1;
+      // Games with a known game_time sort chronologically
+      if (ta && tb) return ta.localeCompare(tb);
+      if (ta) return -1;
+      if (tb) return 1;
+      // Fallback: alphabetical by game label
+      return a[0].localeCompare(b[0]);
+    });
+    return entries;
+  }, [sortedProps]);
+
   return (
     <div className="prizepicksPage">
       <header className="prizepicksHeader">
@@ -315,7 +343,7 @@ export function PrizePicksView() {
         </>
       )}
 
-      {/* All props — filtered by stat category */}
+      {/* All props — filtered by stat category, grouped by game */}
       {!loading && (
         <>
           <h3 className="sectionHeader">
@@ -387,32 +415,58 @@ export function PrizePicksView() {
               📥 CSV
             </button>
           </h3>
-          <div className="marketGrid">
-            {sortedProps.map((prop) => (
-              <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`}>
-                <div className="marketCardTop">
-                  <code>{prop.player}</code>
-                  <span className="chip small">{prop.league}</span>
+          {groupedGames.length === 0 ? (
+            <p className="muted pad">
+              {props.length === 0
+                ? 'No props found.'
+                : minEdge > 0
+                  ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+                  : `No ${selectedCategory} props match the current filters.`}
+            </p>
+          ) : (
+            groupedGames.map(([game, gameProps]) => (
+              <div key={game} className="gameGroup">
+                <div className="gameGroupHeader">
+                  <span className="gameGroupTitle">{game}</span>
+                  <span className="chip small gameGroupCount">{gameProps.length}</span>
+                  {gameProps[0]?.game_time && (
+                    <span className="gameGroupTime muted small">
+                      {new Date(gameProps[0].game_time).toLocaleString(undefined, {
+                        weekday: 'short', month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit',
+                      })}
+                    </span>
+                  )}
                 </div>
-                <h3>{prop.prop_type}</h3>
-                <div className="marketCardMeta">
-                  {prop.team && <span className="teamTag">{prop.team}</span>}
-                  {prop.game && <span className="muted">{prop.game}</span>}
+                <div className="marketGrid">
+                  {gameProps.map((prop) => (
+                    <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`}>
+                      <div className="marketCardTop">
+                        <code>{prop.player}</code>
+                        <span className="chip small">{prop.league}</span>
+                      </div>
+                      <h3>{prop.prop_type}</h3>
+                      <div className="marketCardMeta">
+                        {prop.team && <span className="teamTag">{prop.team}</span>}
+                        {prop.game && <span className="muted">{prop.game}</span>}
+                      </div>
+                      <div className="marketStats">
+                        <span>Line: {prop.line}</span>
+                        <span>Proj: {prop.projection.toFixed(1)}</span>
+                        <span>Edge: {formatEdge(prop.edge_pct)}</span>
+                        <span>Conf: {prop.confidence}%</span>
+                      </div>
+                      <p className="small">{prop.recommendation}</p>
+                    </div>
+                  ))}
                 </div>
-                <div className="marketStats">
-                  <span>Line: {prop.line}</span>
-                  <span>Proj: {prop.projection.toFixed(1)}</span>
-                  <span>Edge: {formatEdge(prop.edge_pct)}</span>
-                  <span>Conf: {prop.confidence}%</span>
-                </div>
-                <p className="small">{prop.recommendation}</p>
               </div>
-            ))}
-          </div>
+            ))
+          )}
         </>
       )}
 
-      {!loading && displayProps.length === 0 && !error && (
+      {!loading && groupedGames.length === 0 && displayProps.length === 0 && !error && (
         <p className="muted pad">
           {props.length === 0
             ? 'No props found.'
