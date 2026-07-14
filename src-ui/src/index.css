@@ -528,6 +528,30 @@ button {
   padding: 5px 10px;
 }
 
+/* Team filter chips — use a gold/amber accent to differentiate from stat category chips */
+.categoryRowTeams {
+  margin-top: -8px;
+  margin-bottom: 8px;
+}
+
+.categoryRowTeams .chip.small {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-color: rgba(201, 168, 76, 0.2);
+}
+
+.categoryRowTeams .chip.small:hover {
+  border-color: rgba(201, 168, 76, 0.5);
+  background: rgba(201, 168, 76, 0.08);
+}
+
+.categoryRowTeams .chip.small.active {
+  background: rgba(201, 168, 76, 0.2);
+  border-color: #c9a84c;
+  color: #c9a84c;
+}
+
 .chip {
   padding: 7px 12px;
   border-radius: 999px;

@@ -1,8 +1,18 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-14 (maintenance pass #6 — **Collapsible game groups**: game group headers are now clickable to collapse/expand, with collapse state persisted in localStorage)
+Last updated: 2026-07-14 (maintenance pass #7 — **Team filter chips**: clickable gold-accent team abbreviation filter chips on the dashboard, below the stat category chips)
 
-Quick status: **All deferred items now done + min-edge threshold filter + cache invalidation button + game-grouped prop grid + collapsible game groups** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All deferred items now done + min-edge threshold filter + cache invalidation button + game-grouped prop grid + collapsible game groups + team filter chips** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-14 maintenance pass #7 — Team filter chips on the dashboard
+
+**Feature shipped (clickable gold-accent team abbreviation filter chips on the dashboard, below the stat category chips):** The dashboard had league tabs, stat category chips, a min-edge filter, and a sort dropdown — but no way to narrow props by team. A DFS user who wants to see all props for a specific team (e.g. every Chiefs prop across all categories) had to visually scan the grid and filter mentally. This pass adds a second chip row below the stat category chips that extracts unique `team` values from the loaded props and renders them as clickable gold-accent chips. Clicking a team chip filters the `displayProps` array to only props with `p.team === selectedTeam`. The default is `"All"` (no filtering). The team filter resets to `"All"` when props are reloaded (league change, search, refresh). Empty-state messages include the team name when the filter is active.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `selectedTeam` state (default `"All"`). New `teams` useMemo extracting unique `team` values from props via `new Set(props.map((p) => p.team).filter(Boolean))`. Team filter added to the `displayProps` pipeline (gated on `selectedTeam !== 'All'`) with `selectedTeam` added to the dep array. `useEffect` that resets category on prop reload now also resets `selectedTeam`. New `categoryRowTeams` chip row rendered below the category chips, using the same `chip small` pattern with gold/amber accent color (`#c9a84c`). Empty-state messages branched on `selectedTeam !== 'All'` for "No X props for Y match the current filters." ~25 net insertions.
+- `src-ui/src/index.css` — 5 new rule blocks: `.categoryRowTeams` (margin: -8px top, 8px bottom), `.categoryRowTeams .chip.small` (gold-tinted border `rgba(201,168,76,0.2)`), hover state (brighter gold border + 8% gold background), active state (20% gold background, solid `#c9a84c` border and text). ~20 lines.
+
+**Ad-hoc verification:** 14/14 structural checks pass (state declaration, default value, teams useMemo, filter pipeline, dep array, reset on reload, JSX chip row, gold CSS class, empty-state branch). `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes). 0 literal-`\n` corruption. End-to-end wiring: 1 component file, 1 CSS file, ~45 net insertions.
 
 ## 2026-07-14 maintenance pass #6 — Collapsible game groups on the dashboard
 

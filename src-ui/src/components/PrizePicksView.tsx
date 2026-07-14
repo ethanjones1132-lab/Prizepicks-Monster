@@ -55,6 +55,7 @@ export function PrizePicksView() {
   const [scoredProps, setScoredProps] = useState<ScoredProp[]>([]);
   const [selectedLeague, setSelectedLeague] = useState('All');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedTeam, setSelectedTeam] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
   const [sortKey, setSortKey] = useState<PropsSortKey>('edge');
@@ -96,15 +97,22 @@ export function PrizePicksView() {
     return '🔄 Multi-source';
   }, [props]);
 
-  // Reset category filter when props are reloaded (e.g. league change)
+  // Reset category and team filters when props are reloaded (e.g. league change)
   useEffect(() => {
     setSelectedCategory('All');
+    setSelectedTeam('All');
   }, [props]);
 
   // Compute unique stat categories from the loaded props
   const categories = useMemo(() => {
     const cats = new Set(props.map((p) => p.prop_type).filter(Boolean));
     return ['All', ...Array.from(cats).sort()];
+  }, [props]);
+
+  // Compute unique team abbreviations from the loaded props
+  const teams = useMemo(() => {
+    const tm = new Set(props.map((p) => p.team).filter(Boolean));
+    return ['All', ...Array.from(tm).sort()];
   }, [props]);
 
   const loadProps = useCallback(async (opts?: { query?: string; league?: string }) => {
@@ -189,16 +197,19 @@ export function PrizePicksView() {
     }
   };
 
-  // Client-side filter by stat category and minimum edge
+  // Client-side filter by stat category, team, and minimum edge
   const displayProps = useMemo(() => {
     let filtered = selectedCategory === 'All'
       ? props
       : props.filter((p) => p.prop_type === selectedCategory);
+    if (selectedTeam !== 'All') {
+      filtered = filtered.filter((p) => p.team === selectedTeam);
+    }
     if (minEdge > 0) {
       filtered = filtered.filter((p) => (p.edge_pct ?? 0) >= minEdge);
     }
     return filtered;
-  }, [props, selectedCategory, minEdge]);
+  }, [props, selectedCategory, selectedTeam, minEdge]);
 
   // Client-side sort by edge/confidence/name/projection
   const sortedProps = useMemo(() => {
@@ -342,6 +353,23 @@ export function PrizePicksView() {
         </div>
       )}
 
+      {/* Team filter chips (appear once props are loaded) */}
+      {!loading && teams.length > 1 && (
+        <div className="categoryRow categoryRowTeams">
+          {teams.map((tm) => (
+            <button
+              key={tm}
+              type="button"
+              className={`chip small ${selectedTeam === tm ? 'active' : ''}`}
+              onClick={() => setSelectedTeam(tm)}
+              disabled={loading || props.length === 0}
+            >
+              {tm}
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && <p className="muted pad">Loading props…</p>}
       {error && <p className="error pad">{error}</p>}
 
@@ -448,7 +476,9 @@ export function PrizePicksView() {
                 ? 'No props found.'
                 : minEdge > 0
                   ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
-                  : `No ${selectedCategory} props match the current filters.`}
+                  : selectedTeam !== 'All'
+                    ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
+                    : `No ${selectedCategory} props match the current filters.`}
             </p>
           ) : (
             groupedGames.map(([game, gameProps]) => (
@@ -514,7 +544,9 @@ export function PrizePicksView() {
             ? 'No props found.'
             : minEdge > 0
               ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
-              : `No ${selectedCategory} props match the current filters.`}
+              : selectedTeam !== 'All'
+                ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
+                : `No ${selectedCategory} props match the current filters.`}
         </p>
       )}
     </div>
