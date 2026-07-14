@@ -545,19 +545,35 @@ export function SettingsView() {
               />
             </label>
             <label>
-              The Odds API key
-              <input
-                type="password"
-                placeholder={config.odds_api_key ? 'Set' : 'Optional'}
-                value={config.odds_api_key}
-                onChange={(e) => setConfig({ ...config, odds_api_key: e.target.value })}
-              />
-            </label>
-          </div>
-        </div>
+                          The Odds API key
+                          <input
+                            type="password"
+                            placeholder={config.odds_api_key ? 'Set' : 'Optional'}
+                            value={config.odds_api_key}
+                            onChange={(e) => setConfig({ ...config, odds_api_key: e.target.value })}
+                          />
+                        </label>
+                                                <div className="settingsActions">
+                                                  <button
+                                                    type="button"
+                                                    className="ghostBtn"
+                                                    onClick={async () => {
+                                                      try {
+                                                        await prizepicksApi.invalidateCache();
+                                                        setMessage('Cache cleared — next dashboard load will refetch.');
+                                                      } catch (e) {
+                                                        setError(e instanceof Error ? e.message : String(e));
+                                                      }
+                                                    }}
+                                                  >
+                                                    Clear PrizePicks cache
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            </div>
 
-        <div className="card">
-          <h3>Notifications & bot</h3>
+                                <div className="card">
+                                  <h3>Notifications & bot</h3>
           <div className="formGrid">
             <label>
               Discord webhook

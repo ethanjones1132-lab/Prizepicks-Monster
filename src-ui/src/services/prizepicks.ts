@@ -126,10 +126,13 @@ export const prizepicksApi = {
     invoke<KellyShrinkageReport>('prizepicks_kelly_shrinkage_report'),
 
   getCacheStatus: () =>
-    invoke<PrizePicksCacheStatus>('prizepicks_get_cache_status'),
+      invoke<PrizePicksCacheStatus>('prizepicks_get_cache_status'),
 
-  /**
-   * Single-call dashboard payload: top props + scored props + cache
+    invalidateCache: () =>
+      invoke<void>('prizepicks_invalidate_cache'),
+
+    /**
+     * Single-call dashboard payload: top props + scored props + cache
    * status. Replaces the previous `getTopProps` + `getScoredProps` +
    * `getCacheStatus` fan-out on `PrizePicksView` mount. Pass `limit`
    * to control how many top props come back (default 50, max 100).

@@ -100,6 +100,19 @@ pub async fn prizepicks_get_cache_status(
     Ok(client.cache_status().await)
 }
 
+/// Invalidate the PrizePicks in-memory cache (quick cache + full catalog).
+/// Does NOT trigger a refresh — the next dashboard load or explicit Refresh
+/// will repopulate. Useful when API keys change or the user wants to force
+/// a clean fetch without the full 20-page warm cycle.
+#[tauri::command]
+pub async fn prizepicks_invalidate_cache(
+    prizepicks: State<'_, PrizePicksState>,
+) -> Result<(), String> {
+    let mut client = prizepicks.lock().await;
+    client.invalidate_cache().await;
+    Ok(())
+}
+
 /// Combined dashboard payload — returns top props, scored props, and
 /// cache status in a single IPC round-trip. Replaces the previous
 /// `getTopProps` + `getScoredProps` + `getCacheStatus` fan-out that

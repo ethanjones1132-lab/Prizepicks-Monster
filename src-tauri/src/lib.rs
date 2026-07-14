@@ -317,6 +317,7 @@ pub fn run() {
             commands::prizepicks_capture_clv,
             commands::prizepicks_kelly_shrinkage_report,
             commands::prizepicks_get_cache_status,
+            commands::prizepicks_invalidate_cache,
             commands::prizepicks_get_dashboard_bootstrap,
             commands::prizepicks_record_paper_decision,
             commands::paper_get_analytics,
