@@ -1,8 +1,19 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-14 (maintenance pass #5 — **Game-grouped prop grid on the dashboard**: props are now organized by matchup with chronological headers, prop count, and game time)
+Last updated: 2026-07-14 (maintenance pass #6 — **Collapsible game groups**: game group headers are now clickable to collapse/expand, with collapse state persisted in localStorage)
 
-Quick status: **All deferred items now done + min-edge threshold filter + cache invalidation button + game-grouped prop grid** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All deferred items now done + min-edge threshold filter + cache invalidation button + game-grouped prop grid + collapsible game groups** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-14 maintenance pass #6 — Collapsible game groups on the dashboard
+
+**Feature shipped (game group headers are now clickable to collapse/expand the prop cards within):** The game-grouped prop grid (shipped pass #5) showed every game expanded by default — useful for finding the best picks across all matchups, but users with 10+ games on a busy slate had to scroll past games they'd already scanned. This pass adds the ability to collapse game groups: clicking a game group header toggles its prop cards, and the collapse state persists in localStorage under `prizepicks_collapsed_games` so it survives page reloads. Each header shows a ▶ collapse arrow (rotates 90° when collapsed) and an italic "(N props hidden)" label for collapsed groups. Keyboard accessible (Enter/Space via onKeyDown, aria-expanded, role=button, tabIndex).
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — `loadCollapsed()`/`saveCollapsed()` helpers reading/writing `localStorage` key `prizepicks_collapsed_games`. `collapsedGames` state initialized from localStorage. `toggleGameGroup(key)` toggles and persists. Game group header gains `onClick`, `aria-expanded`, `role="button"`, `tabIndex={0}`, `onKeyDown` (Enter/Space). ▶ arrow indicator with `gameGroupCollapseArrow` class (rotated 90° via `.collapsed` modifier). Conditional `{!collapsedGames[game] && (...)}` around the marketGrid. Hidden-label span when collapsed. ~46 net insertions.
+- `src-ui/src/index.css` — `.gameGroupHeader` gains `cursor: pointer`, `user-select: none`, `transition: opacity 0.15s`, and a `:hover` rule (opacity 0.85). New `.gameGroupCollapseArrow` (0.6rem, muted color, `transition: transform 0.2s ease`) and `.gameGroupCollapseArrow.collapsed` (`transform: rotate(90deg)`). New `.gameGroupHidden` (italic, dimmed text for hidden-props label). ~22 net insertions.
+- `scripts/verify-collapsible-groups.py` — ad-hoc verifier (27 static checks, no corruption, coverage of all component features and CSS classes).
+
+**Ad-hoc verification:** 27/27 static checks pass. 0 literal-`\n` corruption. `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes). End-to-end wiring: 1 component file, 1 CSS file, ~70 net insertions.
 
 ## 2026-07-14 maintenance pass #5 — Game-grouped prop grid on the dashboard
 
