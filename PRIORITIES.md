@@ -1,8 +1,18 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-14 (maintenance pass #4 — **Clear PrizePicks cache button in Settings**: users can invalidate the in-memory prop cache without triggering a full 20-page refresh)
+Last updated: 2026-07-14 (maintenance pass #5 — **Game-grouped prop grid on the dashboard**: props are now organized by matchup with chronological headers, prop count, and game time)
 
-Quick status: **All deferred items now done + min-edge threshold filter + cache invalidation button** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All deferred items now done + min-edge threshold filter + cache invalidation button + game-grouped prop grid** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-14 maintenance pass #5 — Game-grouped prop grid on the dashboard
+
+**Feature shipped (props grid now organized by game/matchup with chronological headers):** The All Props grid displayed props as a flat list sorted by edge/confidence/etc. — correct for finding the highest-edge picks, but missing the game context that DFS users naturally think in. A user scrolling 50+ props had no way to see which matchups had the most action or how props grouped by game. The `game` and `game_time` fields were already on every `PropPick` object but went unused in the layout. This pass adds game-grouped sections: each game gets a header with the matchup label, prop count chip, and localized game time, sorted chronologically by `game_time`. Props without a game label fall into a trailing "Other" group. The existing per-game sort, stat category filter, min edge filter, and edge-strength visual coloring are preserved within each game group.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `groupedGames` `useMemo` (31 lines) that groups `sortedProps` by `game` field into `Map<string, PropPick[]>`, sorts entries chronologically by `game_time` (ISO string comparison), with `"Other"` always trailing. The `game_group` header render shows the game title (`<span className="gameGroupTitle">`), a green-tinted prop count chip (`<span className="chip small gameGroupCount">`), and a localized game time via `Date.toLocaleString()` with `weekday/short/month/short/day/numeric/hour/numeric/minute/2-digit` format — e.g. `"Thu, Jul 14, 7:00 PM"`. Empty-state handling moved into the group render branch. All existing sort/filter logic preserved unchanged.
+- `src-ui/src/index.css` — 6 new CSS rules: `.gameGroup` (margin-bottom spacing), `.gameGroupHeader` (flex row with gap/border-bottom), `.gameGroupTitle` (bold title), `.gameGroupCount` (green-tinted chip matching app palette), `.gameGroupTime` (right-aligned muted timestamp). ~34 lines.
+
+**Ad-hoc verification:** `cargo check` clean (14 pre-existing warnings). `npx tsc --noEmit` clean. **320 lib tests pass** (no Rust changes). 0 literal-`\n` corruption (confirmed via byte-level scan). End-to-end wiring: 1 component file, 1 CSS file, ~109 net insertions, 21 deletions (flat grid → game-grouped sections with consolidated empty-state).
 
 ## 2026-07-14 maintenance pass #4 — Clear PrizePicks cache button in Settings
 
