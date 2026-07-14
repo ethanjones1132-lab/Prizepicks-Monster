@@ -1,4 +1,22 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+const COLLAPSED_STORAGE_KEY = 'prizepicks_collapsed_games';
+
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCollapsed(state: Record<string, boolean>) {
+  try {
+    localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // localStorage may be full or unavailable — silently ignore
+  }
+}
 import { prizepicksApi } from '../services/prizepicks';
 import type { PrizePicksCacheStatus } from '../types/prizepicks';
 import type { PropPick, ScoredProp } from '../types';
@@ -46,7 +64,16 @@ export function PrizePicksView() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cacheStatus, setCacheStatus] = useState<PrizePicksCacheStatus | null>(null);
+  const [collapsedGames, setCollapsedGames] = useState<Record<string, boolean>>(loadCollapsed);
   const requestId = useRef(0);
+
+  const toggleGameGroup = (key: string) => {
+    setCollapsedGames((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveCollapsed(next);
+      return next;
+    });
+  };
 
   const leagues = ['All', 'NFL', 'NBA', 'MLB', 'NHL'];
 
@@ -426,7 +453,17 @@ export function PrizePicksView() {
           ) : (
             groupedGames.map(([game, gameProps]) => (
               <div key={game} className="gameGroup">
-                <div className="gameGroupHeader">
+                <div
+                  className="gameGroupHeader"
+                  onClick={() => toggleGameGroup(game)}
+                  aria-expanded={!collapsedGames[game]}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGameGroup(game); } }}
+                >
+                  <span className={`gameGroupCollapseArrow${collapsedGames[game] ? ' collapsed' : ''}`}>
+                    ▶
+                  </span>
                   <span className="gameGroupTitle">{game}</span>
                   <span className="chip small gameGroupCount">{gameProps.length}</span>
                   {gameProps[0]?.game_time && (
@@ -437,9 +474,13 @@ export function PrizePicksView() {
                       })}
                     </span>
                   )}
+                  {collapsedGames[game] && (
+                    <span className="gameGroupHidden muted small">{gameProps.length} props hidden</span>
+                  )}
                 </div>
-                <div className="marketGrid">
-                  {gameProps.map((prop) => (
+                {!collapsedGames[game] && (
+                  <div className="marketGrid">
+                    {gameProps.map((prop) => (
                     <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`}>
                       <div className="marketCardTop">
                         <code>{prop.player}</code>
@@ -460,7 +501,8 @@ export function PrizePicksView() {
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
+            </div>
             ))
           )}
         </>

@@ -3193,6 +3193,12 @@ button {
   padding: 6px 0 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+.gameGroupHeader:hover {
+  opacity: 0.85;
 }
 
 .gameGroupTitle {
@@ -3213,4 +3219,22 @@ button {
   margin-left: auto;
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.45);
+}
+
+.gameGroupCollapseArrow {
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.35);
+  transition: transform 0.2s ease;
+  line-height: 1;
+  display: inline-block;
+}
+.gameGroupCollapseArrow.collapsed {
+  transform: rotate(90deg);
+}
+
+.gameGroupHidden {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.30);
+  font-style: italic;
 }
