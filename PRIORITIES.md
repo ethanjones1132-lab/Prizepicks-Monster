@@ -1,9 +1,20 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-13 (maintenance pass #3 — **Edge-strength visual coloring on prop cards**: colored left-border indicator on each prop card so users can visually scan the grid by edge strength)
+Last updated: 2026-07-14 (maintenance pass #4 — **Clear PrizePicks cache button in Settings**: users can invalidate the in-memory prop cache without triggering a full 20-page refresh)
 
-Quick status: **All deferred items now done + min-edge threshold filter** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All deferred items now done + min-edge threshold filter + cache invalidation button** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
+## 2026-07-14 maintenance pass #4 — Clear PrizePicks cache button in Settings
+
+**Feature shipped (cache invalidation button in Settings under PrizePicks & data keys):** The PrizePicks dashboard uses a two-tier cache (quick cache from flat markets + optional full catalog warm). Users who changed API keys (OpticOdds, The Odds API) or wanted to force a clean refetch had no UI affordance — they could only click "Refresh" which triggers the full 20-page catalog sweep (~10s). This pass adds a lightweight `prizepicks_invalidate_cache` Tauri command that clears the in-memory cache instantly without any HTTP work. The next dashboard load or explicit Refresh will repopulate from the active data sources.
+
+Shipped:
+- `src-tauri/src/commands/prizepicks_cmd.rs` — new `prizepicks_invalidate_cache` command. Takes a mutable lock on `PrizePicksState`, calls `client.invalidate_cache().await` (clears markets + auth tokens). 13 lines.
+- `src-tauri/src/lib.rs` — registered `commands::prizepicks_invalidate_cache` in the invoke_handler.
+- `src-ui/src/services/prizepicks.ts` — new `invalidateCache: () => invoke<void>('prizepicks_invalidate_cache')` wrapper.
+- `src-ui/src/components/SettingsView.tsx` — "Clear PrizePicks cache" ghost button in the PrizePicks & data keys card, placed after the API key fields. On click: calls `prizepicksApi.invalidateCache()`, shows success toast ("Cache cleared — next dashboard load will refetch."), or error banner on failure.
+
+Ad-hoc verification: `cargo check` clean (14 pre-existing warnings). `npx tsc --noEmit` clean. **320 lib tests pass**. End-to-end wiring: 1 new Rust command, 1 invoke_handler registration, 1 TS API wrapper, 1 button + handler in SettingsView. ~35 net insertions.
 
 ## 2026-07-13 maintenance pass #3 — Edge-strength visual coloring on prop cards
 
