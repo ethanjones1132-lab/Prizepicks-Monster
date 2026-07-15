@@ -79,6 +79,16 @@ export function PrizePicksView() {
 
   const leagues = ['All', 'NFL', 'NBA', 'MLB', 'NHL'];
 
+  // Compute prop count per league for tab badges
+  const leagueCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: props.length };
+    for (const lg of leagues) {
+      if (lg === 'All') continue;
+      counts[lg] = props.filter((p) => p.league === lg).length;
+    }
+    return counts;
+  }, [props]);
+
   // Derive the active data source label from current props
   // (all props from a single fetch share the same source)
   const dataSource = useMemo(() => {
@@ -338,6 +348,9 @@ export function PrizePicksView() {
             disabled={loading}
           >
             {lg}
+            {leagueCounts[lg] !== undefined && !loading && (
+              <span className="leagueCountBadge">{leagueCounts[lg]}</span>
+            )}
           </button>
         ))}
       </div>
