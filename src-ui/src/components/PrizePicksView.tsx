@@ -57,6 +57,7 @@ export function PrizePicksView() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedTeam, setSelectedTeam] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [playerFilter, setPlayerFilter] = useState('');
   type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
   const [sortKey, setSortKey] = useState<PropsSortKey>('edge');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -97,10 +98,11 @@ export function PrizePicksView() {
     return '🔄 Multi-source';
   }, [props]);
 
-  // Reset category and team filters when props are reloaded (e.g. league change)
+  // Reset category, team, and player filters when props are reloaded (e.g. league change)
   useEffect(() => {
     setSelectedCategory('All');
     setSelectedTeam('All');
+    setPlayerFilter('');
   }, [props]);
 
   // Compute unique stat categories from the loaded props
@@ -197,7 +199,7 @@ export function PrizePicksView() {
     }
   };
 
-  // Client-side filter by stat category, team, and minimum edge
+  // Client-side filter by stat category, team, player name, and minimum edge
   const displayProps = useMemo(() => {
     let filtered = selectedCategory === 'All'
       ? props
@@ -205,11 +207,15 @@ export function PrizePicksView() {
     if (selectedTeam !== 'All') {
       filtered = filtered.filter((p) => p.team === selectedTeam);
     }
+    if (playerFilter) {
+      const q = playerFilter.toLowerCase();
+      filtered = filtered.filter((p) => p.player.toLowerCase().includes(q));
+    }
     if (minEdge > 0) {
       filtered = filtered.filter((p) => (p.edge_pct ?? 0) >= minEdge);
     }
     return filtered;
-  }, [props, selectedCategory, selectedTeam, minEdge]);
+  }, [props, selectedCategory, selectedTeam, playerFilter, minEdge]);
 
   // Client-side sort by edge/confidence/name/projection
   const sortedProps = useMemo(() => {
@@ -430,6 +436,16 @@ export function PrizePicksView() {
                 {sortDir === 'desc' ? '↓' : '↑'}
               </button>
             </span>
+            <span className="playerFilter">
+              <input
+                type="text"
+                className="playerFilterInput"
+                value={playerFilter}
+                onChange={(e) => setPlayerFilter(e.target.value)}
+                placeholder="Player…"
+                aria-label="Filter by player name"
+              />
+            </span>
             <span className="minEdgeFilter">
               <label>Min edge:</label>
               <input
@@ -474,11 +490,15 @@ export function PrizePicksView() {
             <p className="muted pad">
               {props.length === 0
                 ? 'No props found.'
-                : minEdge > 0
-                  ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
-                  : selectedTeam !== 'All'
-                    ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
-                    : `No ${selectedCategory} props match the current filters.`}
+                : playerFilter
+                  ? `No props match "${playerFilter}". Try a different name.`
+                  : minEdge > 0
+                    ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+                    : selectedTeam !== 'All'
+                      ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
+                      : selectedCategory !== 'All'
+                        ? `No ${selectedCategory} props match the current filters.`
+                        : 'No props match the current filters.'}
             </p>
           ) : (
             groupedGames.map(([game, gameProps]) => (
@@ -542,11 +562,15 @@ export function PrizePicksView() {
         <p className="muted pad">
           {props.length === 0
             ? 'No props found.'
-            : minEdge > 0
-              ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
-              : selectedTeam !== 'All'
-                ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
-                : `No ${selectedCategory} props match the current filters.`}
+            : playerFilter
+              ? `No props match "${playerFilter}". Try a different name.`
+              : minEdge > 0
+                ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+                : selectedTeam !== 'All'
+                  ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
+                  : selectedCategory !== 'All'
+                    ? `No ${selectedCategory} props match the current filters.`
+                    : 'No props match the current filters.'}
         </p>
       )}
     </div>
