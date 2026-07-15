@@ -1,10 +1,18 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-15 (maintenance pass #8 — **Player name filter**: client-side player name text input in the props section header, between the sort dropdown and min-edge filter)
+Last updated: 2026-07-15 (maintenance pass #9 — **League tab prop count badges**: compact count badges showing how many props are available per league on each tab button)
 
-Quick status: **All features done + player name filter** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + player name filter + league tab badges** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
-## 2026-07-15 maintenance pass #8 — Client-side player name filter on the dashboard
+## 2026-07-15 maintenance pass #9 — League tab prop count badges on the dashboard
+
+**Feature shipped (per-league prop count badges on each league tab in the dashboard header):** The dashboard's league tabs (All / NFL / NBA / MLB / NHL) were plain buttons with only the league name — no indication of how many props were available per league. A user clicking into NBA might find 0 props because no games are scheduled today, or waste time clicking through every tab to find where the action is. This pass adds a compact count badge to each league tab, computed client-side from the loaded props array. The "All" tab shows the total prop count; each sport tab shows the count for that specific league. Badges are wrapped in parentheses for visual clarity, use smaller muted text (11px, 0.55 opacity), and only appear when props are loaded (hidden during loading). No backend changes — purely frontend.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `leagueCounts` `useMemo` keyed on `[props]` computing a `Record<string, number>` mapping each league name to its prop count. Count shows total props for "All" and filtered by `p.league === lg` for each sport tab. New `<span className="leagueCountBadge">` with the count value rendered inside each league `<button>`, gated on `leagueCounts[lg] !== undefined && !loading`. ~10 net insertions.
+- `src-ui/src/index.css` — New `.leagueCountBadge` rule block (5 lines: 5px left margin, 11px font, 600 weight, 0.55 opacity, tabular-nums) plus `::before`/`::after` pseudo-elements for the paren wrappers. ~12 lines.
+
+**Ad-hoc verification:** 8/8 structural checks pass covering: `leagueCounts` useMemo with `Record<string, number>`, per-league filter via `p.league === lg`, dep array `[props]`, JSX badge element with `leagueCountBadge` CSS class, `!loading` guard, all 3 CSS rules (base + ::before + ::after). `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes). End-to-end wiring: 1 component file, 1 CSS file, ~22 net insertions.
 
 **Feature shipped (compact player name text input in the props section header that client-side-filters the loaded props by player name):** The dashboard had league tabs, stat category chips, team filter chips, a min-edge filter, and a sort dropdown — but no way to search for a specific player by name in the currently-loaded props. Users who wanted to find a particular player (e.g. "Mahomes") across all categories had to visually scan every card. The existing server-side search bar in the toolbar replaces the prop list entirely (backend search), which is useful for finding players not yet loaded. This pass adds a complementary client-side filter: a compact text input in the section header (between the sort dropdown and the min-edge filter) that instantly narrows the already-loaded props by case-insensitive substring match on `prop.player`. The filter works in combination with all existing filters (league, category, team, min edge, sort). Empty-state messages differentiate the player filter from other empty-state reasons. The filter resets when props are reloaded (league change, search, refresh), consistent with the category and team filter behavior. ~60 net insertions across 2 files.
 
