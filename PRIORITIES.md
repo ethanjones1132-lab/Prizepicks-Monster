@@ -1,8 +1,18 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-16 (maintenance pass #10 — **Dashboard UI preference persistence**: sort key/direction, stat category filter, team filter, min-edge threshold, and player filter now survive page reloads via localStorage)
+Last updated: 2026-07-16 (maintenance pass #11 — **Reset filters button**: one-click ↺ Reset button in the props section header when any non-default filter is active, resets sort key/direction, min edge, category, team, and player filter to defaults)
 
-Quick status: **All features done + player name filter + league tab badges + UI preference persistence** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + player name filter + league tab badges + UI preference persistence + reset filters button** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-16 maintenance pass #11 — Reset filters button (one-click ↺ Reset)
+
+**Feature shipped (one-click ↺ Reset button in the props section header when any non-default filter is active):** The dashboard had 6 independent filter controls — sort key, sort direction, stat category chips, team chips, min-edge input, and player filter input — but no way to reset them all at once. A user who'd built up a complex filter state (e.g. sorting by Confidence DESC, filtered to NBA Points, min edge ≥5%, and a player name search) had to undo each control individually. This pass adds a ↺ Reset button that appears in the section header whenever any filter deviates from its default value. Clicking it restores all 6 controls to defaults: sort key → Edge, sort direction → desc, min edge → 0, category → All, team → All, player filter → empty. The button has an amber-tinted accent on hover (matching the stale-indicator pattern), appears inline between the CSV export button and the section header title, and is hidden when all filters are at their default state. No backend changes — purely frontend.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `hasActiveFilters` compute: checks if `sortKey`, `sortDir`, `minEdge`, `selectedCategory`, `selectedTeam`, or `playerFilter` differ from defaults (via `DEFAULT_PREFERENCES` comparison). New `resetFilters()` callback sets all 6 to their initial defaults. New ↺ Reset `<button>` with `resetFiltersBtn` CSS class, gated on `{hasActiveFilters && (...)}`, placed between the 📥 CSV export button and `</h3>`. ~20 net insertions.
+- `src-ui/src/index.css` — New `.resetFiltersBtn` rule block (12 lines: ghost button with amber border/hover, 0.75rem font, `white-space: nowrap` to prevent wrapping in the crowded section header), `.resetFiltersBtn:hover` (amber border + tinted background), `.resetFiltersBtn:active` (stronger tint). ~28 lines.
+
+**Ad-hoc verification (inline):** `grep` confirms `hasActiveFilters` (line 114), `resetFilters` function (line 116-123), `resetFiltersBtn` class in both TSX (line 571) and CSS (line 3224). No new imports, no Rust changes. `npx tsc --noEmit` clean. `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (unchanged). End-to-end wiring: 1 component file, 1 CSS file, ~48 net insertions.
 
 ## 2026-07-16 maintenance pass #10 — Dashboard UI preference persistence (sort, filters, minEdge) via localStorage
 

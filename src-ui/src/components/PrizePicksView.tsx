@@ -110,6 +110,18 @@ export function PrizePicksView() {
   const [error, setError] = useState<string | null>(null);
   const [cacheStatus, setCacheStatus] = useState<PrizePicksCacheStatus | null>(null);
   const [collapsedGames, setCollapsedGames] = useState<Record<string, boolean>>(loadCollapsed);
+  // True when any filter control is set to a non-default value
+  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || selectedCategory !== 'All' || selectedTeam !== 'All' || playerFilter !== '';
+
+  const resetFilters = () => {
+    setSortKey(DEFAULT_PREFERENCES.sortKey);
+    setSortDir(DEFAULT_PREFERENCES.sortDir);
+    setMinEdge(0);
+    setSelectedCategory('All');
+    setSelectedTeam('All');
+    setPlayerFilter('');
+  };
+
   const requestId = useRef(0);
 
   // Persist preferences to localStorage when they change
@@ -553,6 +565,17 @@ export function PrizePicksView() {
             >
               📥 CSV
             </button>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                className="resetFiltersBtn"
+                onClick={resetFilters}
+                title="Reset all filters to defaults"
+                aria-label="Reset all filters"
+              >
+                ↺ Reset
+              </button>
+            )}
           </h3>
           {groupedGames.length === 0 ? (
             <p className="muted pad">

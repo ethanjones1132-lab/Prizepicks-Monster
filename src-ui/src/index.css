@@ -3220,6 +3220,29 @@ button {
   border-color: rgba(110, 200, 163, 0.5);
 }
 
+/* Reset filters button -- appears in the section header when any filter is non-default */
+.resetFiltersBtn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 2px 10px;
+  border-radius: 4px;
+  margin-left: 10px;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.resetFiltersBtn:hover {
+  border-color: #e5a060;
+  color: #e5a060;
+  background: rgba(229, 160, 96, 0.08);
+}
+.resetFiltersBtn:active {
+  background: rgba(229, 160, 96, 0.15);
+}
+
 .playerFilter {
   display: inline-flex;
   align-items: center;
