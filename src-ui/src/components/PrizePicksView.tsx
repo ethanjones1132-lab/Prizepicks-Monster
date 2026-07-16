@@ -80,6 +80,38 @@ function edgeLevelClass(edge: number | undefined | null): string {
   return '';
 }
 
+/**
+ * Human-readable relative game time label (e.g. "in 3h", "tomorrow", "today").
+ * Returns empty string when the date is invalid or missing.
+ */
+function gameTimeRelative(gameTime: string | undefined | null): string {
+  if (!gameTime) return '';
+  const now = Date.now();
+  const gameDate = new Date(gameTime).getTime();
+  if (!Number.isFinite(gameDate)) return '';
+  const diffMs = gameDate - now;
+  const diffSec = Math.round(diffMs / 1000);
+  const absSec = Math.abs(diffSec);
+
+  if (diffSec < 0) {
+    // Past
+    if (absSec < 60) return 'just now';
+    if (absSec < 3600) return `${Math.floor(absSec / 60)}m ago`;
+    if (absSec < 86400) return `${Math.floor(absSec / 3600)}h ago`;
+    if (absSec < 172800) return 'yesterday';
+    return `${Math.floor(absSec / 86400)}d ago`;
+  }
+  // Future
+  if (absSec < 60) return 'soon';
+  if (absSec < 3600) return `in ${Math.floor(absSec / 60)}m`;
+  if (absSec < 86400) return `in ${Math.floor(absSec / 3600)}h`;
+  if (absSec < 172800) return 'tomorrow';
+  if (absSec < 604800) return `in ${Math.floor(absSec / 86400)}d`;
+  // Further out — show short date
+  const d = new Date(gameTime);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function formatTimeAgo(ts: number): string {
   if (!ts) return 'never';
   const seconds = Math.floor(Date.now() / 1000 - ts);
@@ -609,10 +641,15 @@ export function PrizePicksView() {
                   <span className="chip small gameGroupCount">{gameProps.length}</span>
                   {gameProps[0]?.game_time && (
                     <span className="gameGroupTime muted small">
-                      {new Date(gameProps[0].game_time).toLocaleString(undefined, {
-                        weekday: 'short', month: 'short', day: 'numeric',
-                        hour: 'numeric', minute: '2-digit',
-                      })}
+                      {(() => {
+                        const gt = gameProps[0].game_time!;
+                        const abs = new Date(gt).toLocaleString(undefined, {
+                          weekday: 'short', month: 'short', day: 'numeric',
+                          hour: 'numeric', minute: '2-digit',
+                        });
+                        const rel = gameTimeRelative(gt);
+                        return <>{abs} <span className="gameTimeRel muted">{rel}</span></>;
+                      })()}
                     </span>
                   )}
                   {collapsedGames[game] && (

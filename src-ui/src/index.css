@@ -3310,6 +3310,13 @@ button {
   color: rgba(255, 255, 255, 0.45);
 }
 
+.gameTimeRel {
+  margin-left: 4px;
+  font-size: 0.70rem;
+  color: rgba(255, 255, 255, 0.30);
+  font-style: italic;
+}
+
 .gameGroupCollapseArrow {
   font-size: 0.6rem;
   color: rgba(255, 255, 255, 0.35);
