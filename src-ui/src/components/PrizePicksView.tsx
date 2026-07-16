@@ -1,5 +1,25 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+
 const COLLAPSED_STORAGE_KEY = 'prizepicks_collapsed_games';
+const PREFERENCES_STORAGE_KEY = 'prizepicks_dashboard_preferences';
+
+interface DashboardPreferences {
+  sortKey: 'name' | 'edge' | 'confidence' | 'projection';
+  sortDir: 'asc' | 'desc';
+  minEdge: number;
+  selectedCategory: string;
+  selectedTeam: string;
+  playerFilter: string;
+}
+
+const DEFAULT_PREFERENCES: DashboardPreferences = {
+  sortKey: 'edge',
+  sortDir: 'desc',
+  minEdge: 0,
+  selectedCategory: 'All',
+  selectedTeam: 'All',
+  playerFilter: '',
+};
 
 function loadCollapsed(): Record<string, boolean> {
   try {
@@ -13,6 +33,26 @@ function loadCollapsed(): Record<string, boolean> {
 function saveCollapsed(state: Record<string, boolean>) {
   try {
     localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // localStorage may be full or unavailable — silently ignore
+  }
+}
+
+function loadPreferences(): DashboardPreferences {
+  try {
+    const raw = localStorage.getItem(PREFERENCES_STORAGE_KEY);
+    if (!raw) return DEFAULT_PREFERENCES;
+    const parsed = JSON.parse(raw);
+    // Merge with defaults to handle missing fields gracefully
+    return { ...DEFAULT_PREFERENCES, ...parsed };
+  } catch {
+    return DEFAULT_PREFERENCES;
+  }
+}
+
+function savePreferences(prefs: DashboardPreferences) {
+  try {
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(prefs));
   } catch {
     // localStorage may be full or unavailable — silently ignore
   }
@@ -51,23 +91,38 @@ function formatTimeAgo(ts: number): string {
 }
 
 export function PrizePicksView() {
+  // Load preferences from localStorage on mount
+  const savedPreferences = loadPreferences();
+
   const [props, setProps] = useState<PropPick[]>([]);
   const [scoredProps, setScoredProps] = useState<ScoredProp[]>([]);
   const [selectedLeague, setSelectedLeague] = useState('All');
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [selectedTeam, setSelectedTeam] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState(savedPreferences.selectedCategory);
+  const [selectedTeam, setSelectedTeam] = useState(savedPreferences.selectedTeam);
   const [searchQuery, setSearchQuery] = useState('');
-  const [playerFilter, setPlayerFilter] = useState('');
+  const [playerFilter, setPlayerFilter] = useState(savedPreferences.playerFilter);
   type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
-  const [sortKey, setSortKey] = useState<PropsSortKey>('edge');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [minEdge, setMinEdge] = useState(0);
+  const [sortKey, setSortKey] = useState<PropsSortKey>(savedPreferences.sortKey);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(savedPreferences.sortDir);
+  const [minEdge, setMinEdge] = useState(savedPreferences.minEdge);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cacheStatus, setCacheStatus] = useState<PrizePicksCacheStatus | null>(null);
   const [collapsedGames, setCollapsedGames] = useState<Record<string, boolean>>(loadCollapsed);
   const requestId = useRef(0);
+
+  // Persist preferences to localStorage when they change
+  useEffect(() => {
+    savePreferences({
+      sortKey,
+      sortDir,
+      minEdge,
+      selectedCategory,
+      selectedTeam,
+      playerFilter,
+    });
+  }, [sortKey, sortDir, minEdge, selectedCategory, selectedTeam, playerFilter]);
 
   const toggleGameGroup = (key: string) => {
     setCollapsedGames((prev) => {
