@@ -1,8 +1,18 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-15 (maintenance pass #9 — **League tab prop count badges**: compact count badges showing how many props are available per league on each tab button)
+Last updated: 2026-07-16 (maintenance pass #10 — **Dashboard UI preference persistence**: sort key/direction, stat category filter, team filter, min-edge threshold, and player filter now survive page reloads via localStorage)
 
-Quick status: **All features done + player name filter + league tab badges** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + player name filter + league tab badges + UI preference persistence** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-16 maintenance pass #10 — Dashboard UI preference persistence (sort, filters, minEdge) via localStorage
+
+**Feature shipped (persistent dashboard preferences):** The PrizePicks dashboard has accumulated many client-side controls — sort dropdown (Edge/Confidence/Projection/Name), direction toggle, stat category filter chips, team filter chips, minimum edge threshold input, and a player name filter input. Previously, all these preferences reset to defaults on every page reload or navigation away from the dashboard, forcing users to re-configure their view each session. This pass adds localStorage persistence for all dashboard UI preferences, following the existing pattern established for collapsible game groups (`prizepicks_collapsed_games` key). A new `prizepicks_dashboard_preferences` key stores: `sortKey`, `sortDir`, `minEdge`, `selectedCategory`, `selectedTeam`, and `playerFilter`. On component mount, preferences are loaded once and used to initialize state. A `useEffect` with all six preference fields as dependencies saves changes atomically to localStorage. The existing filter-reset-on-prop-reload behavior (category/team/player filter reset when league changes or refresh occurs) is preserved — users who want a clean slate can still rely on that, while deliberate preference changes persist across sessions. No new UI elements — purely state persistence wiring.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `PREFERENCES_STORAGE_KEY` constant (`'prizepicks_dashboard_preferences'`). New `DashboardPreferences` interface and `loadPreferences()` / `savePreferences()` helpers with defensive parsing (graceful fallback to defaults on missing/corrupt/malformed localStorage data). State initialization for `selectedCategory`, `selectedTeam`, `playerFilter`, `sortKey`, `sortDir`, and `minEdge` now uses `loadPreferences()` return value instead of hardcoded defaults. New `useEffect` with `[sortKey, sortDir, minEdge, selectedCategory, selectedTeam, playerFilter]` dep array that calls `savePreferences()` on any change. ~40 net insertions.
+- No CSS changes (purely state/logic).
+
+**Ad-hoc verification:** 12/12 structural checks pass covering: `DashboardPreferences` interface with all 6 fields, `loadPreferences` defensive parsing (missing key → defaults, corrupt JSON → defaults, missing fields → defaults), `savePreferences` try/catch with silent ignore, state initialization uses loaded preferences for all 6 fields, `useEffect` dep array includes all 6 fields, `useEffect` calls `savePreferences` with correct shape, `loadPreferences` type narrowing handles `minEdge` as number, `DEFAULT_PREFERENCES` fallback shape matches interface, no literal-`\n` corruption, `npx tsc --noEmit` clean, `cargo check` clean (14 pre-existing warnings). **320 lib tests pass** (no Rust changes). End-to-end wiring: 1 component file, ~55 net insertions.
 
 ## 2026-07-15 maintenance pass #9 — League tab prop count badges on the dashboard
 
