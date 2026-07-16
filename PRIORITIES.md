@@ -1,8 +1,45 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-16 (maintenance pass #11 — **Reset filters button**: one-click ↺ Reset button in the props section header when any non-default filter is active, resets sort key/direction, min edge, category, team, and player filter to defaults)
+Last updated: 2026-07-16 (maintenance pass #12 — **Enriched mock data**: multi-sport multi-game realistic demo props + **Build fix**: inlined deleted monster-edge-core dependency)
 
 Quick status: **All features done + player name filter + league tab badges + UI preference persistence + reset filters button** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-16 maintenance pass #12 — Build fix + Enriched mock data
+
+**Build fix (inlined monster-edge-core after upstream deletion):** The
+shared monster-edge-core crate (path dependency at
+`C:/Users/ethan/kalshi-build/monster-edge-core`) was deleted in the upstream
+kalshi-build repo (commit 57f41c5) — its contents were inlined into the
+kalshi-monster project and the source tree removed, leaving prizepicks-monster
+with a broken Cargo.toml dependency. Fixed by inlining the crate directly into
+`edge_calculator.rs` (EdgeScore, calculate_edge, apply_calibration,
+embedded_calibrator), adding `calibrator.json` to `src/analysis/`, updating
+`calibration.rs` imports, and fixing `calibration_bench.rs` to use a local path.
+
+Shipped:
+- Removed monster-edge-core dependency from `src-tauri/Cargo.toml`
+- Replaced `pub use monster_edge_core::*;` with inline code in `edge_calculator.rs` (157 lines)
+- Added `calibrator.json` to `src/analysis/` (97 lines, from git history of deleted crate)
+- Updated `calibration.rs` to use `edge_calculator::embedded_calibrator` (2 call sites)
+- Updated `calibration_bench.rs` to use `env!(CARGO_MANIFEST_DIR)/src/analysis/calibrator.json`
+
+Verification: cargo check (0 errors, 14 pre-existing warnings), npx tsc --noEmit (clean),
+cargo test --lib (320 passed, 0 failed).
+
+**Enriched mock data (multi-sport multi-game realistic demo props):** The
+PrizePicks API is dead (all endpoints decommissioned), so the app runs entirely
+on mock data. Old mock data was very sparse (5 NFL, 3 NBA props, no MLB/NHL).
+This pass enriches it significantly with realistic props across all 4 sports.
+
+Shipped:
+- NFL: 13 props across 3 games (KC@BUF, SF@DAL, CIN@BAL) with multiple categories
+- NBA: 10 props across 3 games (LAL@BOS, MIL@PHI, DEN@OKC)
+- MLB: 9 props across 2 games (LAD@NYY, ATL@PHI) — NEW sport
+- NHL: 8 props across 2 games (EDM@TOR, COL@DAL) — NEW sport
+- Uses `gt()` closure for per-prop game time; includes varied American odds
+
+Verification: prop_fetcher.rs only, cargo check (0 errors), cargo test (320 passed),
+npx tsc --noEmit (clean).
 
 ## 2026-07-16 maintenance pass #11 — Reset filters button (one-click ↺ Reset)
 
