@@ -1,8 +1,8 @@
 //! Runtime calibrator resolution.
 //!
 //! Priority: `~/.openclaw/prizepicks-monster/calibrator.json` (lets a re-fitted
-//! artifact ship without a rebuild) -> the calibrator embedded in
-//! `monster-edge-core` at build time -> `None` (no calibration applied).
+//! artifact ship without a rebuild) -> the calibrator embedded at build time
+//! (`analysis/calibrator.json`) -> `None` (no calibration applied).
 //!
 //! Resolved once per process. The calibrator itself is conservative by
 //! construction: thin fitting data produces shrinkage toward the prior,
@@ -40,7 +40,7 @@ pub fn current() -> Option<&'static edge_eval::Calibrator> {
             );
             return Some(cal);
         }
-        match monster_edge_core::embedded_calibrator() {
+        match edge_calculator::embedded_calibrator() {
             Some(cal) => {
                 log::info!(
                     "calibrator: embedded artifact ({}, n_fit={})",
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn load_from_file_round_trips_embedded() {
-        let cal = monster_edge_core::embedded_calibrator().expect("embedded");
+        let cal = edge_calculator::embedded_calibrator().expect("embedded");
         let path = std::env::temp_dir().join("km-cal-test-good.json");
         std::fs::write(&path, serde_json::to_string(&cal).unwrap()).unwrap();
         let loaded = load_from_file(&path).expect("parse");

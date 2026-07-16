@@ -2612,15 +2612,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monster-edge-core"
-version = "0.1.0"
-dependencies = [
- "edge-eval",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "muda"
 version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3415,7 +3406,6 @@ dependencies = [
  "edge-eval",
  "futures",
  "log",
- "monster-edge-core",
  "once_cell",
  "opentelemetry",
  "opentelemetry-stdout",

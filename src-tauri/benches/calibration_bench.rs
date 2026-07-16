@@ -1,18 +1,20 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use edge_eval::Calibrator;
 
-/// Load the calibrator that ships with the shared `monster-edge-core` crate.
+/// Load the calibrator that ships alongside the analysis module.
 ///
-/// The crate is a path dependency declared in `src-tauri/Cargo.toml`:
-///   monster-edge-core = { path = "C:/Users/ethan/kalshi-build/monster-edge-core" }
-/// The path below must match that declaration. If the shared crate moves,
-/// update both the Cargo.toml dep and the constant below.
+/// The calibrator was checked into `src-tauri/src/analysis/calibrator.json`
+/// after the shared `monster-edge-core` crate was inlined into the project.
+/// Update the path below if the file moves.
 fn load_calibrator() -> Calibrator {
-    let path = "C:/Users/ethan/kalshi-build/monster-edge-core/src/calibrator.json";
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/analysis/calibrator.json"
+    );
     let raw = std::fs::read_to_string(path).unwrap_or_else(|e| {
         panic!(
             "failed to read calibrator at {}: {} \
-             (hint: monster-edge-core must be checked out at the path declared in src-tauri/Cargo.toml)",
+             (hint: calibrator.json must be present in src/analysis/)",
             path, e
         )
     });
