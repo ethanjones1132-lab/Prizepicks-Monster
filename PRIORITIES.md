@@ -1,8 +1,34 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-16 (maintenance pass #12 — **Enriched mock data**: multi-sport multi-game realistic demo props + **Build fix**: inlined deleted monster-edge-core dependency)
+Last updated: 2026-07-16 (maintenance pass #13 — **Relative game time labels**: human-readable countdowns in game group headers)
 
-Quick status: **All features done + player name filter + league tab badges + UI preference persistence + reset filters button** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + relative game time labels** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-16 maintenance pass #13 — Relative game time labels
+
+**Relative game time labels in game group headers:** The dashboard shows
+multi-sport mock props grouped by game, with absolute game times displayed in
+each header (e.g. "Thu, Jul 16, 3:00 PM"). But absolute times alone don't
+convey urgency or schedule — a user looking at a demo needs to know at a glance
+which games are starting soon vs. tomorrow vs. already past. This pass adds
+human-readable relative labels alongside the absolute time:
+
+- "in 3h", "in 1d" — future games starting hours or days from now
+- "tomorrow", "yesterday" — ±1 day boundaries
+- "just now", "5m ago", "2h ago" — past games
+- "soon" — games starting within a minute
+- Fallback short date ("Sep 15") for distant future games
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `gameTimeRelative()` helper
+  function (35 lines with jsdoc). Wired into the `<span className="gameGroupTime">`
+  block: renders absolute time via `toLocaleString` followed by a `<span
+  className="gameTimeRel muted">` with the relative label.
+- `src-ui/src/index.css` — New `.gameTimeRel` rules (7 lines: italic, muted,
+  4px left margin, 0.70rem font) matching the `.gameGroupHidden` visual weight.
+
+Verification: tsc --noEmit (clean), cargo check (0 errors, 14 pre-existing
+warnings), cargo test --lib (320 passed, 0 failed).
 
 ## 2026-07-16 maintenance pass #12 — Build fix + Enriched mock data
 
