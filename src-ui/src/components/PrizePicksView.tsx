@@ -413,6 +413,45 @@ export function PrizePicksView() {
     return entries;
   }, [sortedProps]);
 
+  // Dashboard summary stats computed from the filtered (displayed) props
+  const dashboardSummary = useMemo(() => {
+    const total = displayProps.length;
+    if (total === 0) return null;
+    let totalEdge = 0;
+    let edgeCount = 0;
+    let totalConf = 0;
+    let confCount = 0;
+    let highEdgeCount = 0;
+    let modestEdgeCount = 0;
+    let bestEdge = -Infinity;
+    let bestPlayer = '';
+    for (const p of displayProps) {
+      if (p.edge_pct != null && Number.isFinite(p.edge_pct)) {
+        totalEdge += p.edge_pct;
+        edgeCount++;
+        if (p.edge_pct >= 5) highEdgeCount++;
+        else if (p.edge_pct >= 2) modestEdgeCount++;
+        if (p.edge_pct > bestEdge) {
+          bestEdge = p.edge_pct;
+          bestPlayer = p.player;
+        }
+      }
+      if (p.confidence != null) {
+        totalConf += p.confidence;
+        confCount++;
+      }
+    }
+    return {
+      total,
+      avgEdge: edgeCount > 0 ? totalEdge / edgeCount : 0,
+      avgConf: confCount > 0 ? totalConf / confCount : 0,
+      highEdgeCount,
+      modestEdgeCount,
+      bestEdge: bestEdge > -Infinity ? bestEdge : 0,
+      bestPlayer,
+    };
+  }, [displayProps]);
+
   return (
     <div className="prizepicksPage">
       <header className="prizepicksHeader">
@@ -532,6 +571,51 @@ export function PrizePicksView() {
               {tm}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Dashboard summary stats */}
+      {!loading && dashboardSummary && (
+        <div className="dashboardSummary">
+          <span className="dashboardSummaryStat">
+            <strong>{dashboardSummary.total}</strong> props
+          </span>
+          <span className="dashboardSummaryDivider" />
+          <span className="dashboardSummaryStat">
+            <span className="dashboardSummaryLabel">Avg edge</span>
+            <strong className={dashboardSummary.avgEdge >= 2 ? 'pos' : ''}>
+              {dashboardSummary.avgEdge.toFixed(1)}%
+            </strong>
+          </span>
+          <span className="dashboardSummaryDivider" />
+          <span className="dashboardSummaryStat">
+            <span className="dashboardSummaryLabel">High &ge;5%</span>
+            <strong className="pos">{dashboardSummary.highEdgeCount}</strong>
+          </span>
+          {dashboardSummary.modestEdgeCount > 0 && (
+            <>
+              <span className="dashboardSummaryDivider" />
+              <span className="dashboardSummaryStat">
+                <span className="dashboardSummaryLabel">Modest &ge;2%</span>
+                <strong>{dashboardSummary.modestEdgeCount}</strong>
+              </span>
+            </>
+          )}
+          {dashboardSummary.bestEdge > 0 && dashboardSummary.bestPlayer && (
+            <>
+              <span className="dashboardSummaryDivider" />
+              <span className="dashboardSummaryStat">
+                <span className="dashboardSummaryLabel">Best</span>
+                <strong className="pos">{dashboardSummary.bestEdge.toFixed(1)}%</strong>
+                <span className="dashboardSummarySub">{dashboardSummary.bestPlayer}</span>
+              </span>
+            </>
+          )}
+          <span className="dashboardSummaryDivider" />
+          <span className="dashboardSummaryStat">
+            <span className="dashboardSummaryLabel">Avg conf</span>
+            <strong>{dashboardSummary.avgConf.toFixed(0)}%</strong>
+          </span>
         </div>
       )}
 

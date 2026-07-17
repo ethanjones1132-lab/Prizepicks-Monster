@@ -1,8 +1,52 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-17 (maintenance pass #15 — **In-app "What's New" changelog modal**: feature announcement overlay showing recent maintenance-pass additions, with unseen-dot indicator)
+Last updated: 2026-07-17 (maintenance pass #16 — **Dashboard summary stats bar**: aggregate edge/confidence/composition stats above the props grid)
 
-Quick status: **All features done + prop watchlist + whats-new modal** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + dashboard summary bar** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-17 maintenance pass #16 — Dashboard summary stats bar
+
+**Compact aggregate stats bar above the props grid showing at-a-glance insight
+into the current prop set:** The dashboard had 5 filter types, game-grouped
+grid, sort controls, and per-league count badges — but no aggregate summary
+that gives the user immediate insight into the composition of the visible props.
+A user scanning 30+ props had to manually compute averages or scan edge values
+to know how strong the current set was.
+
+This pass adds a compact stats bar between the team filter chips and the "All
+Props" section header that shows:
+- Total visible prop count
+- Average edge percentage (green-tinted when ≥2%)
+- High-edge prop count (edge ≥ 5%) 
+- Modest-edge prop count (edge ≥ 2%, shown when >0)
+- Best edge value + player name
+- Average confidence percentage
+
+The bar has a subtle dark background (`rgba(255,255,255,0.03)`), wraps on narrow
+windows, and only appears when props are loaded and filters have produced
+matches. Uses the same muted/green color palette as the rest of the app.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `dashboardSummary` useMemo
+  (35 lines) that iterates `displayProps` to compute total, avgEdge, avgConf,
+  highEdgeCount (≥5%), modestEdgeCount (≥2%), bestEdge, and bestPlayer. Returns
+  `null` when total is 0 so the bar is hidden on empty states. New JSX block
+  gated on `!loading && dashboardSummary` placed between the team chips section
+  and the loading/error states. The bar renders each stat as a
+  `dashboardSummaryStat` span with `dashboardSummaryDivider` vertical rules
+  between them. All stats are inline-flex with the app's muted/pos color tokens.
+  ~84 net insertions.
+- `src-ui/src/index.css` — 8 new CSS rule blocks: `.dashboardSummary` (flex row
+  with wrap, subtle dark background, 10px border-radius), `.dashboardSummaryStat`
+  (inline-flex with muted text), `.dashboardSummaryStat strong` (white text),
+  `.dashboardSummaryStat strong.pos` (green `#6ec8a3`), `.dashboardSummaryLabel`
+  (dimmed label), `.dashboardSummarySub` (tiny muted text for best-player name,
+  ellipsis overflow at 100px), `.dashboardSummaryDivider` (1px vertical rule).
+  ~46 lines.
+
+Verification: tsc --noEmit (clean), cargo check (0 errors, 14 pre-existing
+warnings), cargo test --lib (320 passed, 0 failed). Byte-level scan confirms
+0 literal-`\n` corruption in both edited files.
 
 ## 2026-07-17 maintenance pass #15 — In-app "What's New" changelog modal
 

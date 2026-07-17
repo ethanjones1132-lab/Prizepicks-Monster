@@ -3555,3 +3555,49 @@ button {
   flex-shrink: 0;
   box-shadow: 0 0 6px rgba(201, 168, 76, 0.5);
 }
+
+/* Dashboard summary stats bar — compact aggregate stats above the props grid */
+.dashboardSummary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 9px 14px;
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  font-size: 0.8rem;
+}
+.dashboardSummaryStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.65);
+}
+.dashboardSummaryStat strong {
+  font-weight: 600;
+  color: #f5f5f0;
+}
+.dashboardSummaryStat strong.pos {
+  color: #6ec8a3;
+}
+.dashboardSummaryLabel {
+  color: rgba(255, 255, 255, 0.5);
+  margin-right: 1px;
+}
+.dashboardSummarySub {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.72rem;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dashboardSummaryDivider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
