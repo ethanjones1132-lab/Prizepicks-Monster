@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 const COLLAPSED_STORAGE_KEY = 'prizepicks_collapsed_games';
 const PREFERENCES_STORAGE_KEY = 'prizepicks_dashboard_preferences';
+const WATCHLIST_STORAGE_KEY = 'prizepicks_watchlist';
 
 interface DashboardPreferences {
   sortKey: 'name' | 'edge' | 'confidence' | 'projection';
@@ -55,6 +56,23 @@ function savePreferences(prefs: DashboardPreferences) {
     localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(prefs));
   } catch {
     // localStorage may be full or unavailable — silently ignore
+  }
+}
+
+function loadWatchlist(): string[] {
+  try {
+    const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveWatchlist(ids: string[]) {
+  try {
+    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    // silently ignore
   }
 }
 import { prizepicksApi } from '../services/prizepicks';
@@ -142,8 +160,10 @@ export function PrizePicksView() {
   const [error, setError] = useState<string | null>(null);
   const [cacheStatus, setCacheStatus] = useState<PrizePicksCacheStatus | null>(null);
   const [collapsedGames, setCollapsedGames] = useState<Record<string, boolean>>(loadCollapsed);
+  const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist);
+  const [showWatchlist, setShowWatchlist] = useState(false);
   // True when any filter control is set to a non-default value
-  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || selectedCategory !== 'All' || selectedTeam !== 'All' || playerFilter !== '';
+  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || selectedCategory !== 'All' || selectedTeam !== 'All' || playerFilter !== '' || showWatchlist;
 
   const resetFilters = () => {
     setSortKey(DEFAULT_PREFERENCES.sortKey);
@@ -152,6 +172,17 @@ export function PrizePicksView() {
     setSelectedCategory('All');
     setSelectedTeam('All');
     setPlayerFilter('');
+    setShowWatchlist(false);
+  };
+
+  const toggleWatchlistProp = (propId: string) => {
+    setWatchlist((prev) => {
+      const next = prev.includes(propId)
+        ? prev.filter((id) => id !== propId)
+        : [...prev, propId];
+      saveWatchlist(next);
+      return next;
+    });
   };
 
   const requestId = useRef(0);
@@ -212,6 +243,7 @@ export function PrizePicksView() {
     setSelectedCategory('All');
     setSelectedTeam('All');
     setPlayerFilter('');
+    setShowWatchlist(false);
   }, [props]);
 
   // Compute unique stat categories from the loaded props
@@ -323,8 +355,11 @@ export function PrizePicksView() {
     if (minEdge > 0) {
       filtered = filtered.filter((p) => (p.edge_pct ?? 0) >= minEdge);
     }
+    if (showWatchlist) {
+      filtered = filtered.filter((p) => watchlist.includes(p.id));
+    }
     return filtered;
-  }, [props, selectedCategory, selectedTeam, playerFilter, minEdge]);
+  }, [props, selectedCategory, selectedTeam, playerFilter, minEdge, showWatchlist, watchlist]);
 
   // Client-side sort by edge/confidence/name/projection
   const sortedProps = useMemo(() => {
@@ -452,6 +487,18 @@ export function PrizePicksView() {
             )}
           </button>
         ))}
+        <button
+          type="button"
+          className={`chip ${showWatchlist ? 'active' : ''}`}
+          onClick={() => setShowWatchlist((v) => !v)}
+          disabled={loading}
+          title={showWatchlist ? 'Show all props' : 'Show only bookmarked props'}
+        >
+          {showWatchlist ? '⭐ Watchlist' : '☆ Watchlist'}
+          {watchlist.length > 0 && !loading && (
+            <span className="leagueCountBadge">{watchlist.length}</span>
+          )}
+        </button>
       </div>
 
       {/* Stat category filter chips (appear once props are loaded) */}
@@ -613,10 +660,12 @@ export function PrizePicksView() {
             <p className="muted pad">
               {props.length === 0
                 ? 'No props found.'
-                : playerFilter
-                  ? `No props match "${playerFilter}". Try a different name.`
-                  : minEdge > 0
-                    ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+                : showWatchlist
+                  ? 'No bookmarked props found. Click the ☆ star on a prop card to add it to your watchlist.'
+                  : playerFilter
+                    ? `No props match "${playerFilter}". Try a different name.`
+                    : minEdge > 0
+                      ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
                     : selectedTeam !== 'All'
                       ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
                       : selectedCategory !== 'All'
@@ -661,7 +710,19 @@ export function PrizePicksView() {
                     {gameProps.map((prop) => (
                     <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`}>
                       <div className="marketCardTop">
+                        <button
+                          type="button"
+                          className={`watchlistStar ${watchlist.includes(prop.id) ? 'active' : ''}`}
+                          onClick={() => toggleWatchlistProp(prop.id)}
+                          title={watchlist.includes(prop.id) ? 'Remove from watchlist' : 'Add to watchlist'}
+                          aria-label={watchlist.includes(prop.id) ? 'Remove from watchlist' : 'Add to watchlist'}
+                        >
+                          {watchlist.includes(prop.id) ? '⭐' : '☆'}
+                        </button>
                         <code>{prop.player}</code>
+                        <span className={`riskBadge risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`}>
+                          {prop.risk}
+                        </span>
                         <span className="chip small">{prop.league}</span>
                       </div>
                       <h3>{prop.prop_type}</h3>
@@ -690,10 +751,12 @@ export function PrizePicksView() {
         <p className="muted pad">
           {props.length === 0
             ? 'No props found.'
-            : playerFilter
-              ? `No props match "${playerFilter}". Try a different name.`
-              : minEdge > 0
-                ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+            : showWatchlist
+              ? 'No bookmarked props found. Click the ☆ star on a prop card to add it to your watchlist.'
+              : playerFilter
+                ? `No props match "${playerFilter}". Try a different name.`
+                : minEdge > 0
+                  ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
                 : selectedTeam !== 'All'
                   ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
                   : selectedCategory !== 'All'

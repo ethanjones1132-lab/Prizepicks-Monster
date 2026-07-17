@@ -3334,3 +3334,52 @@ button {
   color: rgba(255, 255, 255, 0.30);
   font-style: italic;
 }
+
+/* Prop watchlist star button */
+.watchlistStar {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0 4px 0 0;
+  line-height: 1;
+  opacity: 0.4;
+  transition: opacity 0.15s, transform 0.15s;
+  color: #c9a84c;
+}
+.watchlistStar:hover {
+  opacity: 0.8;
+  transform: scale(1.15);
+}
+.watchlistStar.active {
+  opacity: 1;
+  transform: none;
+}
+
+/* Risk badge on prop cards */
+.riskBadge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 4px;
+  line-height: 1.4;
+}
+.riskLow {
+  background: rgba(110, 200, 163, 0.15);
+  color: #6ec8a3;
+  border: 1px solid rgba(110, 200, 163, 0.25);
+}
+.riskMedium {
+  background: rgba(229, 160, 96, 0.15);
+  color: #e5a060;
+  border: 1px solid rgba(229, 160, 96, 0.25);
+}
+.riskHigh {
+  background: rgba(229, 115, 115, 0.15);
+  color: #e57373;
+  border: 1px solid rgba(229, 115, 115, 0.25);
+}
