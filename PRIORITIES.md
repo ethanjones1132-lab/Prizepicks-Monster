@@ -1,8 +1,48 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-16 (maintenance pass #13 — **Relative game time labels**: human-readable countdowns in game group headers)
+Last updated: 2026-07-17 (maintenance pass #14 — **Prop watchlist + risk badges**: star bookmarking and risk-level indicators on prop cards)
 
-Quick status: **All features done + relative game time labels** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + prop watchlist** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-17 maintenance pass #14 — Prop watchlist + risk badges
+
+**Prop bookmarking (watchlist) with risk-level badges on the dashboard:** The
+dashboard's prop cards had no way to bookmark/favorite props for quick
+reference, and the `risk` field ('low' / 'medium' / 'high') on every
+`PropPick` was not surfaced in the UI. A user scanning 50+ props had no way
+to mark cards they wanted to revisit, and no quick indicator of how risky a
+prop was at a glance. This pass adds both features:
+
+- Star bookmark button (☆/⭐) on each prop card that toggles watchlist state,
+  persisted to localStorage under `prizepicks_watchlist`.
+- Toggleable '☆ Watchlist' filter button alongside league tabs — when active,
+  only bookmarked props are shown, regardless of league/category/team filter.
+- Risk badge (low/medium/high) on each prop card with green/amber/red
+  color-coded borders matching the app's existing palette.
+- Empty-state messages guide users to bookmark props when watchlist is active
+  but has no matches.
+- Watchlist filter resets on props reload (alongside category/team/player
+  filters). Reset filters button also clears the watchlist toggle.
+- Bookmark state survives page refreshes via localStorage.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — `WATCHLIST_STORAGE_KEY`
+  constant, `loadWatchlist`/ `saveWatchlist` localStorage helpers,
+  `watchlist` (string[]) and `showWatchlist` (boolean) state, `toggleWatchlistProp`
+  helper. Star button in each `marketCard` with active/inactive CSS class.
+  Risk badge span with dynamic `risk{Low|Medium|High}` class. Watchlist
+  filter chip in league tab row with count badge. Watchlist step in
+  `displayProps` filter pipeline. Two empty-state messages for no-bookmarked
+  props. `hasActiveFilters` and `resetFilters` include `showWatchlist`.
+  Props-reload useEffect resets `showWatchlist`. ~83 net insertions.
+
+- `src-ui/src/index.css` — `.watchlistStar` (ghost button, gold color,
+  0.4→1.0 opacity transition, hover scale), `.riskBadge` (6px uppercase
+  badge, 3px border-radius), `.riskLow` (green), `.riskMedium` (amber),
+  `.riskHigh` (red) variants. ~51 new lines.
+
+Verification: tsc --noEmit (clean), cargo check (0 errors, 14 pre-existing
+warnings), cargo test --lib (320 passed, 0 failed).
 
 ## 2026-07-16 maintenance pass #13 — Relative game time labels
 
