@@ -3383,3 +3383,175 @@ button {
   color: #e57373;
   border: 1px solid rgba(229, 115, 115, 0.25);
 }
+
+/* ── What's New modal ──────────────────────────────── */
+.whatsnewBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.whatsnewModal {
+  width: min(600px, 90vw);
+  max-height: min(80vh, 700px);
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.whatsnewHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.whatsnewHeader h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0;
+  color: #f5f5f0;
+}
+
+.whatsnewClose {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: #8f8f86;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.whatsnewClose:hover {
+  color: #f5f5f0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.whatsnewList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 24px 16px;
+}
+
+.whatsnewEntry {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.whatsnewEntry:last-child {
+  border-bottom: none;
+}
+
+.whatsnewEntryMeta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.whatsnewDate {
+  font-size: 0.72rem;
+  color: #8f8f86;
+  font-weight: 500;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.whatsnewTitle {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #f5f5f0;
+}
+
+.whatsnewBullets {
+  margin: 0;
+  padding: 0 0 0 20px;
+  list-style: none;
+}
+
+.whatsnewBullets li {
+  position: relative;
+  padding: 3px 0;
+  font-size: 0.82rem;
+  color: #b7b7ad;
+  line-height: 1.45;
+}
+
+.whatsnewBullets li::before {
+  content: '•';
+  position: absolute;
+  left: -14px;
+  color: #c9a84c;
+  font-weight: 700;
+}
+
+.whatsnewFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.whatsnewFooter code {
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.whatsnewGotIt {
+  padding: 6px 18px;
+  border-radius: 8px;
+  border: 1px solid #c9a84c;
+  background: rgba(201, 168, 76, 0.12);
+  color: #c9a84c;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 120ms ease;
+}
+
+.whatsnewGotIt:hover {
+  background: rgba(201, 168, 76, 0.22);
+  color: #e5c860;
+}
+
+.whatsnewNavDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c9a84c;
+  margin-left: auto;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(201, 168, 76, 0.5);
+}

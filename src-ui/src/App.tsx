@@ -8,6 +8,8 @@ import { PrizePicksPredictionsPanel } from './components/PrizePicksPredictionsPa
 import { PrizePicksView } from './components/PrizePicksView';
 import { PropsView } from './components/PropsView';
 import { SettingsView } from './components/SettingsView';
+import { WhatsNewModal, hasUnseenWhatsNew } from './components/WhatsNewModal';
+import { WHATS_NEW_STORAGE_KEY } from './data/whatsNewData';
 import { prizepicksApi } from './services/prizepicks';
 
 type Tab = 'props' | 'prizepicks' | 'chat' | 'predictions' | 'ml' | 'logs' | 'notifications' | 'settings';
@@ -15,6 +17,14 @@ type Tab = 'props' | 'prizepicks' | 'chat' | 'predictions' | 'ml' | 'logs' | 'no
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('props');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [unseenWhatsNew, setUnseenWhatsNew] = useState(() => {
+    try {
+      return hasUnseenWhatsNew(localStorage.getItem(WHATS_NEW_STORAGE_KEY));
+    } catch {
+      return true;
+    }
+  });
 
   const fetchUnread = useCallback(async () => {
     try {
@@ -38,8 +48,24 @@ export default function App() {
     }
   }, [activeTab, fetchUnread]);
 
+  const handleWhatsNewOpen = () => {
+    setShowWhatsNew(true);
+  };
+
+  const handleWhatsNewClose = () => {
+    setShowWhatsNew(false);
+    setUnseenWhatsNew(false);
+    try {
+      localStorage.setItem(WHATS_NEW_STORAGE_KEY, '2026-07-17');
+    } catch {
+      // silently ignore
+    }
+  };
+
   return (
     <div className="appShell">
+      {showWhatsNew && <WhatsNewModal onClose={handleWhatsNewClose} />}
+
       <aside className="sidebar">
         <div className="brand">
           <div className="logo">PP</div>
@@ -70,6 +96,15 @@ export default function App() {
             )}
           </button>
         ))}
+
+        <button
+          className="navButton whatsnewNavBtn"
+          onClick={handleWhatsNewOpen}
+          title="What's New in PrizePicks Monster"
+        >
+          <span>🎉 What's New</span>
+          {unseenWhatsNew && <span className="whatsnewNavDot" />}
+        </button>
       </aside>
 
       <main className="main">

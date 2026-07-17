@@ -1,10 +1,52 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-17 (maintenance pass #14 — **Prop watchlist + risk badges**: star bookmarking and risk-level indicators on prop cards)
+Last updated: 2026-07-17 (maintenance pass #15 — **In-app "What's New" changelog modal**: feature announcement overlay showing recent maintenance-pass additions, with unseen-dot indicator)
 
-Quick status: **All features done + prop watchlist** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + prop watchlist + whats-new modal** — P0 done · P1 mostly done (1 partial) · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
-## 2026-07-17 maintenance pass #14 — Prop watchlist + risk badges
+## 2026-07-17 maintenance pass #15 — In-app "What's New" changelog modal
+
+**Feature announcement overlay showing recent maintenance-pass additions, with
+unseen-dot indicator:** The app has shipped 14 maintenance passes worth of
+features (prop watchlist, risk badges, game-grouped grid, collapsible groups,
+filter persistence, multi-source pipeline, notification center, ML predictor,
+paper journal + breakdowns+CSV, benchmark harness, structured logging,
+correlation_id, OTel SDK, etc.) — but no in-app way for users to discover
+what was added when. A user opening the app after an update had no indicator
+that new features were available, no way to see what changed, and no changelog
+visible inside the app beyond `PRIORITIES.md` in the repo.
+
+This pass adds a "🎉 What's New" button to the sidebar navigation that opens a
+modal overlay showing the last 10 feature entries (newest first) with date,
+title, and bullet-list descriptions. A gold notification dot appears on the
+nav button when there are unseen entries (checked against a localStorage
+timestamp). The dot clears when the modal is opened. Escape key, backdrop
+click, and "Got it" button all dismiss the modal.
+
+Shipped:
+- `src-ui/src/data/whatsNewData.ts` — `WhatsNewEntry` interface,
+  `WHATS_NEW_STORAGE_KEY` constant, `WHATS_NEW_ENTRIES` array with 10
+  entries spanning 2026-07-08 through 2026-07-17.
+- `src-ui/src/components/WhatsNewModal.tsx` — `WhatsNewModal` component
+  (backdrop + slide-up card + scrollable entry list + footer with "Got it"
+  button). `hasUnseenWhatsNew()` helper comparing stored date vs latest entry.
+  Close-on-Escape + backdrop-click + localStorage mark-as-read.
+- `src-ui/src/App.tsx` — `showWhatsNew` state + `handleWhatsNewOpen`/`handleWhatsNewClose`
+  handlers + `unseenWhatsNew` state initialized from localStorage. Nav button
+  `🎉 What's New` with `.whatsnewNavDot` gold dot when unseen. Modal mounted
+  at the app shell root.
+- `src-ui/src/index.css` — `.whatsnewBackdrop` (blur overlay), `.whatsnewModal`
+  (dark card, 600px, scrollable, slide-in animation), `.whatsnewHeader`,
+  `.whatsnewList`, `.whatsnewEntry`, `.whatsnewEntryMeta`, `.whatsnewDate`,
+  `.whatsnewTitle`, `.whatsnewBullets` (gold-dot list), `.whatsnewFooter`,
+  `.whatsnewGotIt` (gold-accent button), `.whatsnewNavDot` (8px gold circle).
+  ~172 lines of new CSS.
+
+Verification: tsc --noEmit (clean), cargo check (0 errors, 14 pre-existing
+warnings), cargo test --lib (320 passed, 0 failed). Ad-hoc checks: 20+ static
+assertions covering file existence, interface shape, storage key, entries
+count (≥8), component exports, CSS classes, App.tsx wiring, and 0 literal-`\n`
+corruption in all 4 files.
 
 **Prop bookmarking (watchlist) with risk-level badges on the dashboard:** The
 dashboard's prop cards had no way to bookmark/favorite props for quick
