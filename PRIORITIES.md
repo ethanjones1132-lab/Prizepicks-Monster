@@ -1,8 +1,28 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-17 (maintenance pass #16 — **Dashboard summary stats bar**: aggregate edge/confidence/composition stats above the props grid)
+Last updated: 2026-07-19 (maintenance pass #17 — **Copy prop button on market cards**: one-click clipboard copy of formatted prop details for sharing)
 
-Quick status: **All features done + dashboard summary bar** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + copy prop button** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-19 maintenance pass #17 — Copy prop button on market cards
+
+**Feature shipped (one-click clipboard copy for any prop card):** Users scanning 30+ props on the dashboard had no way to extract a single prop's formatted details for sharing in Discord, notes, or social — they had to manually copy/paste each field. This pass adds a 📋 copy button to every market card's header row (next to the watchlist star, risk badge, and league chip). Clicking it writes a clean multi-line summary to the clipboard:
+
+```
+Josh Allen — Passing Yards
+Line: 275.5 | Projection: 289.2
+Edge: +4.2% | Confidence: 68%
+Team: BUF | Game: BUF @ KC | League: NFL
+Recommendation: Lean Over — Projection 289.2 vs line 275.5 (+4.2% edge)
+```
+
+The button uses the existing `formatEdge()` helper and `navigator.clipboard.writeText()` with a try/catch that logs via the app's `[PrizePicks]` logger. No new dependencies, no Tauri commands — purely frontend. Visual styling matches the ghost-button pattern (transparent with gold hover accent, `.copyPropBtn` class). The feature works on both the scored-props and all-props grids.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `copyPropToClipboard(prop: PropPick)` helper (22 lines) that builds the formatted string using existing formatters and writes to clipboard. Copy button added to `marketCardTop` flex row with `📋` emoji, `copyPropBtn` CSS class, `title`/`aria-label` for accessibility. ~30 net insertions.
+- `src-ui/src/index.css` — New `.copyPropBtn` rule block (20 lines): ghost button with transparent background, `rgba(255,255,255,0.15)` border, gold `#c9a84c` hover accent, 0.7rem font, 4px border-radius, 28px min-height for touch targets. Hover/active states match existing `.watchlistStar` / `.resetFiltersBtn` patterns.
+
+Verification: `cargo check` clean (14 pre-existing warnings), `npx tsc --noEmit` clean, **320 lib tests pass** (unchanged). 0 literal-\`\\n\` corruption in either file (byte-level scan confirmed CRLF line endings, no `\\n` byte pairs at line boundaries).
 
 ## 2026-07-17 maintenance pass #16 — Dashboard summary stats bar
 
