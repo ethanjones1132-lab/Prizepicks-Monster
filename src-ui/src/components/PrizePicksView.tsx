@@ -8,7 +8,7 @@ interface DashboardPreferences {
   sortKey: 'name' | 'edge' | 'confidence' | 'projection';
   sortDir: 'asc' | 'desc';
   minEdge: number;
-  selectedCategory: string;
+  selectedCategories: string[];
   selectedTeam: string;
   playerFilter: string;
 }
@@ -17,7 +17,7 @@ const DEFAULT_PREFERENCES: DashboardPreferences = {
   sortKey: 'edge',
   sortDir: 'desc',
   minEdge: 0,
-  selectedCategory: 'All',
+  selectedCategories: [],
   selectedTeam: 'All',
   playerFilter: '',
 };
@@ -44,6 +44,12 @@ function loadPreferences(): DashboardPreferences {
     const raw = localStorage.getItem(PREFERENCES_STORAGE_KEY);
     if (!raw) return DEFAULT_PREFERENCES;
     const parsed = JSON.parse(raw);
+    // Handle legacy single-category format: if selectedCategory (string) exists,
+    // migrate to selectedCategories array. Ignore old key if new key already set.
+    if (typeof parsed.selectedCategory === 'string' && !Array.isArray(parsed.selectedCategories)) {
+      parsed.selectedCategories = parsed.selectedCategory === 'All' ? [] : [parsed.selectedCategory];
+    }
+    delete parsed.selectedCategory; // clean up legacy key
     // Merge with defaults to handle missing fields gracefully
     return { ...DEFAULT_PREFERENCES, ...parsed };
   } catch {
@@ -82,11 +88,11 @@ import type { PropPick, ScoredProp } from '../types';
 const INITIAL_PROP_LIMIT = 50;
 
 function formatEdge(value: number | undefined | null): string {
-  return Number.isFinite(value) ? `${value!.toFixed(1)}%` : '—';
+  return Number.isFinite(value) ? `${value!.toFixed(1)}%` : '\u2014';
 }
 
 function formatProb(value: number | undefined | null): string {
-  return Number.isFinite(value) ? `${value!.toFixed(1)}%` : '—';
+  return Number.isFinite(value) ? `${value!.toFixed(1)}%` : '\u2014';
 }
 
 function edgeLevelClass(edge: number | undefined | null): string {
@@ -125,7 +131,7 @@ function gameTimeRelative(gameTime: string | undefined | null): string {
   if (absSec < 86400) return `in ${Math.floor(absSec / 3600)}h`;
   if (absSec < 172800) return 'tomorrow';
   if (absSec < 604800) return `in ${Math.floor(absSec / 86400)}d`;
-  // Further out — show short date
+  // Further out \u2014 show short date
   const d = new Date(gameTime);
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
@@ -142,13 +148,13 @@ function formatTimeAgo(ts: number): string {
 
 function copyPropToClipboard(prop: PropPick) {
   const text = [
-    `${prop.player} — ${prop.prop_type}`,
+    `${prop.player} \u2014 ${prop.prop_type}`,
     `Line: ${prop.line} | Projection: ${prop.projection.toFixed(1)}`,
     `Edge: ${formatEdge(prop.edge_pct)} | Confidence: ${prop.confidence}%`,
     `Team: ${prop.team || 'N/A'} | Game: ${prop.game || 'N/A'} | League: ${prop.league}`,
     `Recommendation: ${prop.recommendation}`,
   ].join('\n');
-  
+
   navigator.clipboard.writeText(text).catch((err) => {
     console.error('[PrizePicks] Failed to copy prop:', err);
   });
@@ -161,7 +167,7 @@ export function PrizePicksView() {
   const [props, setProps] = useState<PropPick[]>([]);
   const [scoredProps, setScoredProps] = useState<ScoredProp[]>([]);
   const [selectedLeague, setSelectedLeague] = useState('All');
-  const [selectedCategory, setSelectedCategory] = useState(savedPreferences.selectedCategory);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(savedPreferences.selectedCategories);
   const [selectedTeam, setSelectedTeam] = useState(savedPreferences.selectedTeam);
   const [searchQuery, setSearchQuery] = useState('');
   const [playerFilter, setPlayerFilter] = useState(savedPreferences.playerFilter);
@@ -177,13 +183,13 @@ export function PrizePicksView() {
   const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist);
   const [showWatchlist, setShowWatchlist] = useState(false);
   // True when any filter control is set to a non-default value
-  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || selectedCategory !== 'All' || selectedTeam !== 'All' || playerFilter !== '' || showWatchlist;
+  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || selectedCategories.length > 0 || selectedTeam !== 'All' || playerFilter !== '' || showWatchlist;
 
   const resetFilters = () => {
     setSortKey(DEFAULT_PREFERENCES.sortKey);
     setSortDir(DEFAULT_PREFERENCES.sortDir);
     setMinEdge(0);
-    setSelectedCategory('All');
+    setSelectedCategories([]);
     setSelectedTeam('All');
     setPlayerFilter('');
     setShowWatchlist(false);
@@ -207,11 +213,11 @@ export function PrizePicksView() {
       sortKey,
       sortDir,
       minEdge,
-      selectedCategory,
+      selectedCategories,
       selectedTeam,
       playerFilter,
     });
-  }, [sortKey, sortDir, minEdge, selectedCategory, selectedTeam, playerFilter]);
+  }, [sortKey, sortDir, minEdge, selectedCategories, selectedTeam, playerFilter]);
 
   const toggleGameGroup = (key: string) => {
     setCollapsedGames((prev) => {
@@ -241,20 +247,20 @@ export function PrizePicksView() {
     if (sources.size === 1) {
       const s = sources.values().next().value!;
       const labels: Record<string, string> = {
-        opticodds: '🔮 OpticOdds',
-        'the-odds-api': '📊 The Odds API',
-        espn: '📺 ESPN',
-        sleeper: '😴 Sleeper',
-        mock: '🧪 Mock',
+        opticodds: '\uD83D\uDD2E OpticOdds',
+        'the-odds-api': '\uD83D\uDCCA The Odds API',
+        espn: '\uD83D\uDCFA ESPN',
+        sleeper: '\uD83D\uDE34 Sleeper',
+        mock: '\uD83E\uDDEA Mock',
       };
       return labels[s] ?? s;
     }
-    return '🔄 Multi-source';
+    return '\uD83D\uDD04 Multi-source';
   }, [props]);
 
-  // Reset category, team, and player filters when props are reloaded (e.g. league change)
+  // Reset filters when props are reloaded (e.g. league change)
   useEffect(() => {
-    setSelectedCategory('All');
+    setSelectedCategories([]);
     setSelectedTeam('All');
     setPlayerFilter('');
     setShowWatchlist(false);
@@ -263,7 +269,7 @@ export function PrizePicksView() {
   // Compute unique stat categories from the loaded props
   const categories = useMemo(() => {
     const cats = new Set(props.map((p) => p.prop_type).filter(Boolean));
-    return ['All', ...Array.from(cats).sort()];
+    return Array.from(cats).sort();
   }, [props]);
 
   // Compute unique team abbreviations from the loaded props
@@ -306,11 +312,9 @@ export function PrizePicksView() {
   }, []);
 
   /**
-   * Initial-mount loader — uses the single-call `getDashboardBootstrap`
+   * Initial-mount loader \u2014 uses the single-call `getDashboardBootstrap`
    * endpoint so the top-props, scored-props, and cache-status slices
-   * arrive in one IPC round-trip instead of three. Subsequent filter
-   * changes (league / search) and refreshes still use the granular
-   * commands because they touch only one slice.
+   * arrive in one IPC round-trip instead of three.
    */
   const loadDashboardBootstrap = useCallback(async () => {
     const id = ++requestId.current;
@@ -331,8 +335,6 @@ export function PrizePicksView() {
   }, []);
 
   useEffect(() => {
-    // Initial mount: single-call bootstrap. The granular commands
-    // remain available for league / search / refresh.
     void loadDashboardBootstrap();
   }, [loadDashboardBootstrap]);
 
@@ -354,11 +356,11 @@ export function PrizePicksView() {
     }
   };
 
-  // Client-side filter by stat category, team, player name, and minimum edge
+  // Client-side filter by stat category (multi-select), team, player name, and minimum edge
   const displayProps = useMemo(() => {
-    let filtered = selectedCategory === 'All'
+    let filtered = selectedCategories.length === 0
       ? props
-      : props.filter((p) => p.prop_type === selectedCategory);
+      : props.filter((p) => p.prop_type && selectedCategories.includes(p.prop_type));
     if (selectedTeam !== 'All') {
       filtered = filtered.filter((p) => p.team === selectedTeam);
     }
@@ -373,7 +375,7 @@ export function PrizePicksView() {
       filtered = filtered.filter((p) => watchlist.includes(p.id));
     }
     return filtered;
-  }, [props, selectedCategory, selectedTeam, playerFilter, minEdge, showWatchlist, watchlist]);
+  }, [props, selectedCategories, selectedTeam, playerFilter, minEdge, showWatchlist, watchlist]);
 
   // Client-side sort by edge/confidence/name/projection
   const sortedProps = useMemo(() => {
@@ -400,7 +402,6 @@ export function PrizePicksView() {
   }, [displayProps, sortKey, sortDir]);
 
   // Group sorted props by game, sorted chronologically by game_time
-  // Props without a game label fall into a trailing "Other" group
   const groupedGames = useMemo(() => {
     const groups = new Map<string, PropPick[]>();
     for (const prop of sortedProps) {
@@ -414,14 +415,11 @@ export function PrizePicksView() {
       const propsB = b[1];
       const ta = propsA[0]?.game_time;
       const tb = propsB[0]?.game_time;
-      // "Other" (no game label) sorts to the very end
       if (a[0] === 'Other') return 1;
       if (b[0] === 'Other') return -1;
-      // Games with a known game_time sort chronologically
       if (ta && tb) return ta.localeCompare(tb);
       if (ta) return -1;
       if (tb) return 1;
-      // Fallback: alphabetical by game label
       return a[0].localeCompare(b[0]);
     });
     return entries;
@@ -466,6 +464,16 @@ export function PrizePicksView() {
     };
   }, [displayProps]);
 
+  // Helper to toggle a category in the multi-select set
+  const toggleCategory = (cat: string) => {
+    setSelectedCategories((prev) => {
+      if (prev.includes(cat)) {
+        return prev.filter((c) => c !== cat);
+      }
+      return [...prev, cat];
+    });
+  };
+
   return (
     <div className="prizepicksPage">
       <header className="prizepicksHeader">
@@ -481,15 +489,15 @@ export function PrizePicksView() {
               }`}
               title={
                 cacheStatus.has_cache
-                  ? `${cacheStatus.markets_count} markets · ${cacheStatus.full_catalog ? 'Full catalog' : 'Partial cache (quick load)'}${cacheStatus.is_stale ? ' · stale' : ''}`
-                  : 'Cache empty — awaiting first load'
+                  ? `${cacheStatus.markets_count} markets \u00B7 ${cacheStatus.full_catalog ? 'Full catalog' : 'Partial cache (quick load)'}${cacheStatus.is_stale ? ' \u00B7 stale' : ''}`
+                  : 'Cache empty \u2014 awaiting first load'
               }
             >
               {cacheStatus.full_catalog
-                ? `📦 ${cacheStatus.markets_count}`
+                ? `\uD83D\uDCE6 ${cacheStatus.markets_count}`
                 : cacheStatus.has_cache
-                  ? `📦 ${cacheStatus.markets_count}*`
-                  : '📦 empty'}
+                  ? `\uD83D\uDCE6 ${cacheStatus.markets_count}*`
+                  : '\uD83D\uDCE6 empty'}
             </span>
           )}
           {cacheStatus?.has_cache && (
@@ -506,9 +514,9 @@ export function PrizePicksView() {
             </span>
           )}
           <button type="button" className="primaryBtn" onClick={() => void refreshAll()} disabled={refreshing || loading}>
-          {refreshing ? 'Refreshing…' : 'Refresh props'}
+          {refreshing ? 'Refreshing\u2026' : 'Refresh props'}
         </button>
-        </div>   {/* prizepicksHeaderActions */}
+        </div>
       </header>
 
       <div className="prizepicksToolbar">
@@ -516,7 +524,7 @@ export function PrizePicksView() {
           className="searchInput"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search player or prop…"
+          placeholder="Search player or prop\u2026"
           onKeyDown={(e) => e.key === 'Enter' && runSearch()}
         />
         <button type="button" className="ghostBtn" onClick={runSearch} disabled={loading}>
@@ -547,22 +555,31 @@ export function PrizePicksView() {
           disabled={loading}
           title={showWatchlist ? 'Show all props' : 'Show only bookmarked props'}
         >
-          {showWatchlist ? '⭐ Watchlist' : '☆ Watchlist'}
+          {showWatchlist ? '\u2B50 Watchlist' : '\u2606 Watchlist'}
           {watchlist.length > 0 && !loading && (
             <span className="leagueCountBadge">{watchlist.length}</span>
           )}
         </button>
       </div>
 
-      {/* Stat category filter chips (appear once props are loaded) */}
-      {!loading && categories.length > 1 && (
+      {/* Stat category filter chips -- multi-select toggle */}
+      {!loading && categories.length > 0 && (
         <div className="categoryRow categoryRowCategories">
+          <button
+            type="button"
+            className={`chip small ${selectedCategories.length === 0 ? 'active' : ''}`}
+            onClick={() => setSelectedCategories([])}
+            disabled={loading || props.length === 0}
+            title="Show all categories"
+          >
+            All
+          </button>
           {categories.map((cat) => (
             <button
               key={cat}
               type="button"
-              className={`chip small ${selectedCategory === cat ? 'active' : ''}`}
-              onClick={() => setSelectedCategory(cat)}
+              className={`chip small ${selectedCategories.includes(cat) ? 'active' : ''}`}
+              onClick={() => toggleCategory(cat)}
               disabled={loading || props.length === 0}
             >
               {cat}
@@ -633,7 +650,7 @@ export function PrizePicksView() {
         </div>
       )}
 
-      {loading && <p className="muted pad">Loading props…</p>}
+      {loading && <p className="muted pad">Loading props\u2026</p>}
       {error && <p className="error pad">{error}</p>}
 
       {/* Scored props section */}
@@ -647,7 +664,7 @@ export function PrizePicksView() {
                   <span className="chip small">{sp.tier}</span>
                   <span className="chip small">{sp.confidence}</span>
                 </div>
-                <h3>{sp.player_name} — {sp.stat_category}</h3>
+                <h3>{sp.player_name} \u2014 {sp.stat_category}</h3>
                 <div className="marketStats">
                   <span>Line: {sp.line}</span>
                   <span>EV: {sp.expected_value.toFixed(1)}</span>
@@ -661,12 +678,12 @@ export function PrizePicksView() {
         </>
       )}
 
-      {/* All props — filtered by stat category, grouped by game */}
+      {/* All props -- filtered by stat category, grouped by game */}
       {!loading && (
         <>
           <h3 className="sectionHeader">
-            {selectedCategory === 'All' ? 'All Props' : `${selectedCategory} Props`}
-            {selectedCategory !== 'All' && props.length > 0 && (
+            {selectedCategories.length === 0 ? 'All Props' : `${selectedCategories.join(', ')} Props`}
+            {selectedCategories.length > 0 && props.length > 0 && (
               <span className="muted small">
                 {' '}({displayProps.length} of {props.length})
               </span>
@@ -690,7 +707,7 @@ export function PrizePicksView() {
                 title={sortDir === 'desc' ? 'Sort descending' : 'Sort ascending'}
                 aria-label={`Sort ${sortDir === 'desc' ? 'descending' : 'ascending'}`}
               >
-                {sortDir === 'desc' ? '↓' : '↑'}
+                {sortDir === 'desc' ? '\u2193' : '\u2191'}
               </button>
             </span>
             <span className="playerFilter">
@@ -699,7 +716,7 @@ export function PrizePicksView() {
                 className="playerFilterInput"
                 value={playerFilter}
                 onChange={(e) => setPlayerFilter(e.target.value)}
-                placeholder="Player…"
+                placeholder="Player\u2026"
                 aria-label="Filter by player name"
               />
             </span>
@@ -740,7 +757,7 @@ export function PrizePicksView() {
               title="Export visible props to CSV"
               aria-label="Export visible props to CSV"
             >
-              📥 CSV
+              \uD83D\uDCE5 CSV
             </button>
             {hasActiveFilters && (
               <button
@@ -750,7 +767,7 @@ export function PrizePicksView() {
                 title="Reset all filters to defaults"
                 aria-label="Reset all filters"
               >
-                ↺ Reset
+                \u21BA Reset
               </button>
             )}
           </h3>
@@ -759,15 +776,15 @@ export function PrizePicksView() {
               {props.length === 0
                 ? 'No props found.'
                 : showWatchlist
-                  ? 'No bookmarked props found. Click the ☆ star on a prop card to add it to your watchlist.'
+                  ? 'No bookmarked props found. Click the \u2606 star on a prop card to add it to your watchlist.'
                   : playerFilter
                     ? `No props match "${playerFilter}". Try a different name.`
                     : minEdge > 0
-                      ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+                      ? `No props meet the minimum edge requirement (\u2265${minEdge}%). Try lowering the threshold.`
                     : selectedTeam !== 'All'
-                      ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
-                      : selectedCategory !== 'All'
-                        ? `No ${selectedCategory} props match the current filters.`
+                      ? `No ${selectedCategories.length > 0 ? selectedCategories.join(', ') + ' ' : ''}props for ${selectedTeam} match the current filters.`
+                      : selectedCategories.length > 0
+                        ? `No ${selectedCategories.join(', ')} props match the current filters.`
                         : 'No props match the current filters.'}
             </p>
           ) : (
@@ -782,7 +799,7 @@ export function PrizePicksView() {
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGameGroup(game); } }}
                 >
                   <span className={`gameGroupCollapseArrow${collapsedGames[game] ? ' collapsed' : ''}`}>
-                    ▶
+                    \u25B6
                   </span>
                   <span className="gameGroupTitle">{game}</span>
                   <span className="chip small gameGroupCount">{gameProps.length}</span>
@@ -792,9 +809,9 @@ export function PrizePicksView() {
                     const avg = e.reduce((a, b) => a + b, 0) / e.length;
                     const hc = e.filter(x => x >= 5).length;
                     return (
-                      <span className="gameGroupEdge small muted" title={`Avg edge: ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}% · ${hc} prop${hc === 1 ? '' : 's'} with edge ≥5%`}>
+                      <span className="gameGroupEdge small muted" title={`Avg edge: ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}% \u00B7 ${hc} prop${hc === 1 ? '' : 's'} with edge \u22655%`}>
                         avg <span className={avg >= 2 ? 'pos' : ''}>{avg >= 0 ? '+' : ''}{avg.toFixed(1)}%</span>
-                        {hc > 0 && <> · {hc}≥5%</>}
+                        {hc > 0 && <> \u00B7 {hc}\u22655%</>}
                       </span>
                     );
                   })()}
@@ -827,7 +844,7 @@ export function PrizePicksView() {
                           title={watchlist.includes(prop.id) ? 'Remove from watchlist' : 'Add to watchlist'}
                           aria-label={watchlist.includes(prop.id) ? 'Remove from watchlist' : 'Add to watchlist'}
                         >
-                          {watchlist.includes(prop.id) ? '⭐' : '☆'}
+                          {watchlist.includes(prop.id) ? '\u2B50' : '\u2606'}
                         </button>
                         <code>{prop.player}</code>
                         <span className={`riskBadge risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`}>
@@ -841,7 +858,7 @@ export function PrizePicksView() {
                           title="Copy prop details"
                           aria-label="Copy prop details"
                         >
-                          📋
+                          \uD83D\uDCCB
                         </button>
                       </div>
                       <h3>{prop.prop_type}</h3>
@@ -871,15 +888,15 @@ export function PrizePicksView() {
           {props.length === 0
             ? 'No props found.'
             : showWatchlist
-              ? 'No bookmarked props found. Click the ☆ star on a prop card to add it to your watchlist.'
+              ? 'No bookmarked props found. Click the \u2606 star on a prop card to add it to your watchlist.'
               : playerFilter
                 ? `No props match "${playerFilter}". Try a different name.`
                 : minEdge > 0
-                  ? `No props meet the minimum edge requirement (≥${minEdge}%). Try lowering the threshold.`
+                  ? `No props meet the minimum edge requirement (\u2265${minEdge}%). Try lowering the threshold.`
                 : selectedTeam !== 'All'
-                  ? `No ${selectedCategory} props for ${selectedTeam} match the current filters.`
-                  : selectedCategory !== 'All'
-                    ? `No ${selectedCategory} props match the current filters.`
+                  ? `No ${selectedCategories.length > 0 ? selectedCategories.join(', ') + ' ' : ''}props for ${selectedTeam} match the current filters.`
+                  : selectedCategories.length > 0
+                    ? `No ${selectedCategories.join(', ')} props match the current filters.`
                     : 'No props match the current filters.'}
         </p>
       )}

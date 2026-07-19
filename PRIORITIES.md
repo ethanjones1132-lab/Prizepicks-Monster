@@ -1,8 +1,17 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-19 (maintenance pass #18 — **Per-game-group edge summary**: compact average-edge + high-count stats in each game group header)
+Last updated: 2026-07-19 (maintenance pass #19 — **Multi-select stat category filter**: toggle multiple categories at once instead of single-select)
 
-Quick status: **All features done + game-group edge summary** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + multi-select category filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-19 maintenance pass #19 — Multi-select stat category filter on dashboard
+
+**Feature shipped (multi-select stat category filter — toggle multiple categories at once instead of single-select):** The dashboard's stat category filter chips previously used a single-select pattern: clicking a category chip replaced the previous selection, so users couldn't combine related categories (e.g. "Passing Yards" + "Passing TDs" for QBs, or "Points" + "Rebounds" + "Assists" for NBA players). This forced DFS analysts to pick one category at a time, losing cross-category context. This pass refactors the filter from single `selectedCategory: string` to multi-select `selectedCategories: string[]` with an "All" button that clears all selections. The filter pipeline uses an `includes()` check instead of `===`, and the section header dynamically lists all selected categories joined by comma. Legacy localStorage data in the old single-category format is migrated on first load.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — `selectedCategories: string[]` replaces `selectedCategory: string` (default `[]` for "all"). New `toggleCategory` helper function. Filter pipeline changed from `p.prop_type === selectedCategory` to `selectedCategories.includes(p.prop_type)`. "All" chip renders separately at the start of the chip row and clears selection on click. Section header joins selected categories with `selectedCategories.join(', ')`. Empty-state messages use `selectedCategories.length > 0` guards. Legacy `selectedCategory` string in localStorage is migrated to `selectedCategories` array with a `delete` cleanup. ~34 net insertions / ~15 removals (conservative: single-field replacement + a few lines for migration logic).
+
+Health checks: tsc clean, cargo check clean, 320/320 lib tests pass
 
 ## 2026-07-19 maintenance pass #18 — Per-game-group edge summary in header
 
