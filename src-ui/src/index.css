@@ -725,6 +725,24 @@ button {
   color: #8f8f86;
 }
 
+.copyPropBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s, background 0.15s;
+}
+.copyPropBtn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+.copyPropBtn:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .marketCardMeta {
   display: flex;
   align-items: center;
@@ -3354,6 +3372,24 @@ button {
 .watchlistStar.active {
   opacity: 1;
   transform: none;
+}
+
+/* Copy prop button on prop cards */
+.copyPropBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.4;
+  transition: opacity 0.15s, transform 0.15s;
+  color: #8f8f86;
+}
+.copyPropBtn:hover {
+  opacity: 1;
+  transform: scale(1.15);
+  color: #c9a84c;
 }
 
 /* Risk badge on prop cards */

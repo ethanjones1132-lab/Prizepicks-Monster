@@ -140,6 +140,20 @@ function formatTimeAgo(ts: number): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+function copyPropToClipboard(prop: PropPick) {
+  const text = [
+    `${prop.player} — ${prop.prop_type}`,
+    `Line: ${prop.line} | Projection: ${prop.projection.toFixed(1)}`,
+    `Edge: ${formatEdge(prop.edge_pct)} | Confidence: ${prop.confidence}%`,
+    `Team: ${prop.team || 'N/A'} | Game: ${prop.game || 'N/A'} | League: ${prop.league}`,
+    `Recommendation: ${prop.recommendation}`,
+  ].join('\n');
+  
+  navigator.clipboard.writeText(text).catch((err) => {
+    console.error('[PrizePicks] Failed to copy prop:', err);
+  });
+}
+
 export function PrizePicksView() {
   // Load preferences from localStorage on mount
   const savedPreferences = loadPreferences();
@@ -808,6 +822,15 @@ export function PrizePicksView() {
                           {prop.risk}
                         </span>
                         <span className="chip small">{prop.league}</span>
+                        <button
+                          type="button"
+                          className="copyPropBtn"
+                          onClick={() => copyPropToClipboard(prop)}
+                          title="Copy prop details"
+                          aria-label="Copy prop details"
+                        >
+                          📋
+                        </button>
                       </div>
                       <h3>{prop.prop_type}</h3>
                       <div className="marketCardMeta">
