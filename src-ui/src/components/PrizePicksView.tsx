@@ -560,6 +560,50 @@ export function PrizePicksView() {
             <span className="leagueCountBadge">{watchlist.length}</span>
           )}
         </button>
+        {/* Bulk watchlist actions — appear when filtered props are available */}
+        {displayProps.length > 0 && !loading && (
+          <span className="bulkWatchActions">
+            {displayProps.some((p) => !watchlist.includes(p.id)) && (
+              <button
+                type="button"
+                className="ghostBtn small"
+                onClick={() => {
+                  setWatchlist((prev) => {
+                    const ids = new Set(prev);
+                    for (const p of displayProps) {
+                      ids.add(p.id);
+                    }
+                    const next = Array.from(ids);
+                    saveWatchlist(next);
+                    return next;
+                  });
+                }}
+                title="Add all visible props to watchlist"
+                aria-label="Add all visible props to watchlist"
+              >
+                {'\u2B50'} All {displayProps.length}
+              </button>
+            )}
+            {displayProps.some((p) => watchlist.includes(p.id)) && (
+              <button
+                type="button"
+                className="ghostBtn small"
+                onClick={() => {
+                  setWatchlist((prev) => {
+                    const visibleIds = new Set(displayProps.map((p) => p.id));
+                    const next = prev.filter((id) => !visibleIds.has(id));
+                    saveWatchlist(next);
+                    return next;
+                  });
+                }}
+                title="Remove visible props from watchlist"
+                aria-label="Remove visible props from watchlist"
+              >
+                {'\u2606'} Unwatch
+              </button>
+            )}
+          </span>
+        )}
       </div>
 
       {/* Stat category filter chips -- multi-select toggle */}

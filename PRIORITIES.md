@@ -1,8 +1,23 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-19 (maintenance pass #19 — **Multi-select stat category filter**: toggle multiple categories at once instead of single-select)
+Last updated: 2026-07-19 (maintenance pass #20 — **Bulk watchlist actions**: add all filtered props to watchlist or unwatch visible ones in one click)
 
-Quick status: **All features done + multi-select category filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + bulk watchlist actions + multi-select category filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-19 maintenance pass #20 — Bulk watchlist actions on dashboard
+
+**Feature shipped (bulk watchlist actions — add all visible props to the watchlist or unwatch them in one click):** The dashboard's prop watchlist (shipped in pass #12) supported per-card star toggling but no batch operations. A user filtering to a promising set of props (e.g. "NBA Points with edge ≥5%") had to click each star individually to bookmark them all, and cleaning up the watchlist required removing props one by one. This pass adds two compact ghost buttons alongside the league chip row:
+
+- **⭐ All N** — adds every prop currently in the visible/filtered set to the watchlist. Only appears when at least one visible prop is not yet watched. Count dynamically reflects the number of props being added.
+- **☆ Unwatch** — removes every visible prop from the watchlist. Only appears when at least one visible prop is currently watched.
+
+Both buttons use the existing `setWatchlist` updater pattern (functional update via `prev =>`), so they compose correctly with any concurrent state changes. The buttons hide automatically when no filtered props exist (loading, error, empty results) or when all/none of the visible props are already in the appropriate watchlist state.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — Two inline `onClick` handlers gated on `displayProps.length > 0 && !loading`. The "Watch all" handler merges all visible prop IDs into the existing watchlist via `new Set(prev) + for..of loop → Array.from`. The "Unwatch visible" handler filters out all visible IDs from the current watchlist via `prev.filter(id => !visibleIds.has(id))`. Both call `saveWatchlist(next)` to persist. Wrapped in a `.bulkWatchActions` span placed after the existing watchlist toggle chip in the league filter row. ~35 net insertions.
+- `src-ui/src/index.css` — `.bulkWatchActions` (inline-flex with gap, left margin), `.bulkWatchActions .ghostBtn.small` (compact 0.65rem font, 1px/6px padding, 0.7 opacity, gold-amber border/hover accent matching the app's accent palette). ~18 lines.
+
+Health checks: tsc clean, cargo check clean, 320/320 lib tests pass
 
 ## 2026-07-19 maintenance pass #19 — Multi-select stat category filter on dashboard
 

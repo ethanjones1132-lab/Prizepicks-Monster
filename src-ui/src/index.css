@@ -3387,6 +3387,25 @@ button {
   transform: none;
 }
 
+/* Bulk watchlist action buttons — compact ghost buttons inline with league chips */
+.bulkWatchActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+.bulkWatchActions .ghostBtn.small {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  opacity: 0.7;
+  border-color: rgba(201, 168, 76, 0.2);
+}
+.bulkWatchActions .ghostBtn.small:hover {
+  opacity: 1;
+  border-color: #c9a84c;
+  color: #c9a84c;
+}
+
 /* Copy prop button on prop cards */
 .copyPropBtn {
   background: none;
