@@ -272,10 +272,32 @@ export function PrizePicksView() {
     return Array.from(cats).sort();
   }, [props]);
 
+  // Compute per-category prop counts for filter chip badges
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of props) {
+      if (p.prop_type) {
+        counts[p.prop_type] = (counts[p.prop_type] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [props]);
+
   // Compute unique team abbreviations from the loaded props
   const teams = useMemo(() => {
     const tm = new Set(props.map((p) => p.team).filter(Boolean));
     return ['All', ...Array.from(tm).sort()];
+  }, [props]);
+
+  // Compute per-team prop counts for filter chip badges
+  const teamCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of props) {
+      if (p.team) {
+        counts[p.team] = (counts[p.team] || 0) + 1;
+      }
+    }
+    return counts;
   }, [props]);
 
   const loadProps = useCallback(async (opts?: { query?: string; league?: string }) => {
@@ -627,6 +649,9 @@ export function PrizePicksView() {
               disabled={loading || props.length === 0}
             >
               {cat}
+              {categoryCounts[cat] !== undefined && !loading && (
+                <span className="categoryCountBadge">{categoryCounts[cat]}</span>
+              )}
             </button>
           ))}
         </div>
@@ -644,6 +669,9 @@ export function PrizePicksView() {
               disabled={loading || props.length === 0}
             >
               {tm}
+              {tm !== 'All' && teamCounts[tm] !== undefined && !loading && (
+                <span className="teamCountBadge">{teamCounts[tm]}</span>
+              )}
             </button>
           ))}
         </div>

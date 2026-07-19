@@ -1,6 +1,6 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-19 (maintenance pass #20 — **Bulk watchlist actions**: add all filtered props to watchlist or unwatch visible ones in one click)
+Last updated: 2026-07-19 (maintenance pass #21 — **Filter chip count badges**: stat category and team filter chips now show prop count badges)
 
 Quick status: **All features done + bulk watchlist actions + multi-select category filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
@@ -18,6 +18,24 @@ Shipped:
 - `src-ui/src/index.css` — `.bulkWatchActions` (inline-flex with gap, left margin), `.bulkWatchActions .ghostBtn.small` (compact 0.65rem font, 1px/6px padding, 0.7 opacity, gold-amber border/hover accent matching the app's accent palette). ~18 lines.
 
 Health checks: tsc clean, cargo check clean, 320/320 lib tests pass
+
+## 2026-07-19 maintenance pass #21 — Filter chip count badges
+
+**Feature shipped (prop count badges on stat category and team filter chips):** The league tab chips (shipped in pass #9) displayed a count badge showing how many props each league contained, letting users know at a glance which league had the most opportunities. The stat category and team filter chips — which underwent significant UI work in passes #19 (multi-select) and #20 (bulk actions) — lacked this same badge. A user looking at a row of 15 stat category chips had no way to tell which categories were the most populated without scanning the grid visually.
+
+This pass extends the existing `.leagueCountBadge` CSS/pattern to the category and team filter rows, so each chip now shows its prop count in parentheses using the same `::before`/`::after` pseudo-element approach:
+
+- `Points (24)` · `Rebounds (18)` · `Assists (12)` · `3-Pointers (8)` · etc.
+- Team abbreviations get the same treatment: `BOS (6)` · `LAL (4)` · `NYK (3)` · etc.
+- The "All" team chip is skipped (it represents the full filtered set, which is already shown by the summary stats bar and the section header's "N of M" count).
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — Two new `useMemo` hooks: `categoryCounts` and `teamCounts`, each producing a `Record<string, number>` keyed by prop type / team abbreviation. Computed from the same `props` array as the existing `categories`/`teams` memos, so badges stay in sync with the loaded data. Category chip rendering gained `{categoryCounts[cat] !== undefined && !loading && <span className="categoryCountBadge">...` right after `{cat}` inside each `<button>`. Team chip rendering gained the same pattern with `tm !== 'All'` guard to skip the "All" button. ~24 net lines added.
+- `src-ui/src/index.css` — New `.categoryCountBadge, .teamCountBadge` block (margin, font-size, weight, opacity, tabular-nums) and matching `::before`/`::after` pseudo-elements that render `(N)` parentheses. Placed right after the existing `.leagueCountBadge` block. ~14 lines added.
+
+Ad-hoc verification: 320/320 lib tests pass, tsc clean, cargo check clean. 3 files, ~38 net insertions.
+
+---
 
 ## 2026-07-19 maintenance pass #19 — Multi-select stat category filter on dashboard
 
