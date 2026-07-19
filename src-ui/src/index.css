@@ -3322,6 +3322,19 @@ button {
   color: #8ee0bd;
 }
 
+.gameGroupEdge {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  cursor: help;
+}
+.gameGroupEdge .pos {
+  color: #6ec8a3;
+}
+
 .gameGroupTime {
   margin-left: auto;
   font-size: 0.75rem;

@@ -1,8 +1,15 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-19 (maintenance pass #17 — **Copy prop button on market cards**: one-click clipboard copy of formatted prop details for sharing)
+Last updated: 2026-07-19 (maintenance pass #18 — **Per-game-group edge summary**: compact average-edge + high-count stats in each game group header)
 
-Quick status: **All features done + copy prop button** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + game-group edge summary** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-19 maintenance pass #18 — Per-game-group edge summary in header
+
+**Feature shipped (compact per-game edge stats in each game group header):** The dashboard's game-group headers displayed the matchup label, prop count, and game time but nothing about the quality of opportunities in that game. A user scanning the dashboard had to expand every group and read individual prop cards to find the best matchups. This pass adds a compact edge summary line in each game group header showing the average edge (tinted green when ≥2%) and the count of props with edge ≥5%, so users can instantly identify which matchups have the best opportunities at a glance. The summary has a tooltip on hover for full context. Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — inline per-game edge computation (maps `edge_pct` values, computes avg + high count) rendered as a `gameGroupEdge` span in each game group header, positioned between the prop count chip and the game time
+- `src-ui/src/index.css` — `.gameGroupEdge` (compact muted font, left margin, inline-flex with gap), `.gameGroupEdge .pos` (green tint for avg ≥2%)
+- Health checks: tsc clean, cargo check clean, 320/320 lib tests pass
 
 ## 2026-07-19 maintenance pass #17 — Copy prop button on market cards
 

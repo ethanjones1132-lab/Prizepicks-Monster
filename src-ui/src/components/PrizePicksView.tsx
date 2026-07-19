@@ -786,6 +786,18 @@ export function PrizePicksView() {
                   </span>
                   <span className="gameGroupTitle">{game}</span>
                   <span className="chip small gameGroupCount">{gameProps.length}</span>
+                  {gameProps.length > 0 && (() => {
+                    const e = gameProps.map(p => p.edge_pct).filter(x => x != null);
+                    if (e.length === 0) return null;
+                    const avg = e.reduce((a, b) => a + b, 0) / e.length;
+                    const hc = e.filter(x => x >= 5).length;
+                    return (
+                      <span className="gameGroupEdge small muted" title={`Avg edge: ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}% · ${hc} prop${hc === 1 ? '' : 's'} with edge ≥5%`}>
+                        avg <span className={avg >= 2 ? 'pos' : ''}>{avg >= 0 ? '+' : ''}{avg.toFixed(1)}%</span>
+                        {hc > 0 && <> · {hc}≥5%</>}
+                      </span>
+                    );
+                  })()}
                   {gameProps[0]?.game_time && (
                     <span className="gameGroupTime muted small">
                       {(() => {
