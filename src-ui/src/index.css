@@ -3738,6 +3738,87 @@ button {
   box-shadow: 0 0 6px rgba(201, 168, 76, 0.5);
 }
 
+/* Filter presets row — saved dashboard views */
+.presetsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.presetChipGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.presetChip {
+  font-size: 12px;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-right: none !important;
+  padding: 3px 8px !important;
+  cursor: pointer;
+}
+
+.presetChip:hover {
+  border-color: rgba(100, 180, 255, 0.4) !important;
+  background: rgba(100, 180, 255, 0.08) !important;
+}
+
+.presetChip.active {
+  border-color: rgba(100, 180, 255, 0.5) !important;
+  background: rgba(100, 180, 255, 0.12) !important;
+  color: #8ab4ff !important;
+}
+
+.presetDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: none;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 6px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.presetDeleteBtn:hover {
+  color: #e57373;
+  background: rgba(229, 115, 115, 0.1);
+}
+
+.presetNameInput {
+  width: 160px;
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: #e0e0e0;
+  outline: none;
+}
+
+.presetNameInput:focus {
+  border-color: rgba(110, 200, 163, 0.6);
+}
+
+.presetNameInput::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
 /* Dashboard summary stats bar — compact aggregate stats above the props grid */
 .dashboardSummary {
   display: flex;

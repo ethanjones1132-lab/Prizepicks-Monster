@@ -86,6 +86,59 @@ import type { PrizePicksCacheStatus } from '../types/prizepicks';
 import type { PropPick, ScoredProp } from '../types';
 
 const INITIAL_PROP_LIMIT = 50;
+type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
+
+/** A saved dashboard filter preset — captures the user's filter configuration. */
+interface FilterPreset {
+  name: string;
+  selectedCategories: string[];
+  selectedTeam: string;
+  sortKey: PropsSortKey;
+  sortDir: 'asc' | 'desc';
+  minEdge: number;
+  playerFilter: string;
+  showWatchlist: boolean;
+}
+
+const FILTER_PRESETS_KEY = 'prizepicks_filter_presets';
+
+function loadFilterPresets(): FilterPreset[] {
+  try {
+    const raw = localStorage.getItem(FILTER_PRESETS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFilterPresets(presets: FilterPreset[]) {
+  try {
+    localStorage.setItem(FILTER_PRESETS_KEY, JSON.stringify(presets));
+  } catch {
+    // silently ignore
+  }
+}
+
+/** Generate a short human-readable summary of a preset's filter configuration. */
+function describePreset(preset: FilterPreset): string {
+  const parts: string[] = [];
+  if (preset.selectedCategories.length > 0) {
+    parts.push(preset.selectedCategories.join(',+'));
+  }
+  if (preset.selectedTeam !== 'All') {
+    parts.push(preset.selectedTeam);
+  }
+  if (preset.minEdge > 0) {
+    parts.push(`≥${preset.minEdge}% edge`);
+  }
+  if (preset.showWatchlist) {
+    parts.push('watchlist');
+  }
+  if (preset.sortKey !== 'edge' || preset.sortDir !== 'desc') {
+    parts.push(`sort:${preset.sortKey} ${preset.sortDir}`);
+  }
+  return parts.join(' · ') || 'default sort';
+}
 
 function formatEdge(value: number | undefined | null): string {
   return Number.isFinite(value) ? `${value!.toFixed(1)}%` : '\u2014';
@@ -171,7 +224,6 @@ export function PrizePicksView() {
   const [selectedTeam, setSelectedTeam] = useState(savedPreferences.selectedTeam);
   const [searchQuery, setSearchQuery] = useState('');
   const [playerFilter, setPlayerFilter] = useState(savedPreferences.playerFilter);
-  type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
   const [sortKey, setSortKey] = useState<PropsSortKey>(savedPreferences.sortKey);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(savedPreferences.sortDir);
   const [minEdge, setMinEdge] = useState(savedPreferences.minEdge);
@@ -182,6 +234,10 @@ export function PrizePicksView() {
   const [collapsedGames, setCollapsedGames] = useState<Record<string, boolean>>(loadCollapsed);
   const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist);
   const [showWatchlist, setShowWatchlist] = useState(false);
+  // Filter presets state
+  const [presets, setPresets] = useState<FilterPreset[]>(loadFilterPresets);
+  const [savingPreset, setSavingPreset] = useState(false);
+  const [editingPresetName, setEditingPresetName] = useState('');
   // True when any filter control is set to a non-default value
   const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || selectedCategories.length > 0 || selectedTeam !== 'All' || playerFilter !== '' || showWatchlist;
 
@@ -194,6 +250,76 @@ export function PrizePicksView() {
     setPlayerFilter('');
     setShowWatchlist(false);
   };
+
+  // ── Filter preset handlers ──
+
+  /** Capture current filter state and save as a new preset. */
+  const saveCurrentAsPreset = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setPresets((prev) => {
+      // Replace existing preset with same name, or append
+      const filtered = prev.filter((p) => p.name !== trimmed);
+      const next: FilterPreset[] = [
+        ...filtered,
+        {
+          name: trimmed,
+          selectedCategories,
+          selectedTeam,
+          sortKey,
+          sortDir,
+          minEdge,
+          playerFilter,
+          showWatchlist,
+        },
+      ];
+      saveFilterPresets(next);
+      return next;
+    });
+    setEditingPresetName('');
+    setSavingPreset(false);
+  };
+
+  /** Restore all filter state from a saved preset. */
+  const applyPreset = (preset: FilterPreset) => {
+    setSelectedCategories(preset.selectedCategories);
+    setSelectedTeam(preset.selectedTeam);
+    setSortKey(preset.sortKey);
+    setSortDir(preset.sortDir);
+    setMinEdge(preset.minEdge);
+    setPlayerFilter(preset.playerFilter);
+    setShowWatchlist(preset.showWatchlist);
+    setEditingPresetName('');
+    setSavingPreset(false);
+  };
+
+  /** Delete a preset by name. */
+  const deletePreset = (name: string) => {
+    setPresets((prev) => {
+      const next = prev.filter((p) => p.name !== name);
+      saveFilterPresets(next);
+      return next;
+    });
+  };
+
+  /** Determine which preset (if any) matches the current filter state. */
+  const activePresetName = useMemo(() => {
+    for (const p of presets) {
+      if (
+        p.sortKey === sortKey &&
+        p.sortDir === sortDir &&
+        p.minEdge === minEdge &&
+        p.showWatchlist === showWatchlist &&
+        p.playerFilter === playerFilter &&
+        p.selectedTeam === selectedTeam &&
+        p.selectedCategories.length === selectedCategories.length &&
+        p.selectedCategories.every((c) => selectedCategories.includes(c))
+      ) {
+        return p.name;
+      }
+    }
+    return null;
+  }, [presets, sortKey, sortDir, minEdge, showWatchlist, playerFilter, selectedTeam, selectedCategories]);
 
   const toggleWatchlistProp = (propId: string) => {
     setWatchlist((prev) => {
@@ -688,6 +814,86 @@ export function PrizePicksView() {
               )}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Filter presets row — saved views that restore filter state */}
+      {!loading && props.length > 0 && presets.length > 0 && (
+        <div className="presetsRow">
+          {presets.map((p) => (
+            <span key={p.name} className="presetChipGroup">
+              <button
+                type="button"
+                className={`chip small presetChip ${activePresetName === p.name ? 'active' : ''}`}
+                onClick={() => applyPreset(p)}
+                title={`Restore filters: ${describePreset(p)}`}
+                aria-label={`Apply preset "${p.name}"`}
+              >
+                📍 {p.name}
+              </button>
+              <button
+                type="button"
+                className="presetDeleteBtn"
+                onClick={() => deletePreset(p.name)}
+                title={`Delete preset "${p.name}"`}
+                aria-label={`Delete preset "${p.name}"`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Save new preset inline UI */}
+      {!loading && props.length > 0 && savingPreset && (
+        <div className="presetsRow">
+          <input
+            type="text"
+            className="presetNameInput"
+            value={editingPresetName}
+            onChange={(e) => setEditingPresetName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveCurrentAsPreset(editingPresetName);
+              if (e.key === 'Escape') { setSavingPreset(false); setEditingPresetName(''); }
+            }}
+            placeholder="View name…"
+            autoFocus
+            aria-label="Enter a name for this filter preset"
+          />
+          <button
+            type="button"
+            className="ghostBtn small"
+            onClick={() => saveCurrentAsPreset(editingPresetName)}
+            disabled={!editingPresetName.trim()}
+            title="Save current filters as a preset"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="ghostBtn small"
+            onClick={() => { setSavingPreset(false); setEditingPresetName(''); }}
+            title="Cancel"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Save button (only shown when there are active filters to save) */}
+      {!loading && props.length > 0 && !savingPreset && (
+        <div className="presetsRow">
+          <button
+            type="button"
+            className="ghostBtn small"
+            onClick={() => setSavingPreset(true)}
+            disabled={!hasActiveFilters}
+            title="Save current filter configuration as a named preset"
+            aria-label="Save current filters"
+          >
+            💾 Save view
+          </button>
         </div>
       )}
 
