@@ -1,8 +1,20 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-19 (maintenance pass #21 — **Filter chip count badges**: stat category and team filter chips now show prop count badges)
+Last updated: 2026-07-20 (maintenance pass #22 — **🏆 Top Picks section**: auto-selects highest-edge props on the dashboard)
 
-Quick status: **All features done + bulk watchlist actions + multi-select category filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Top Picks section** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-20 maintenance pass #22 — 🏆 Top Picks auto-highlight section on dashboard
+
+**Feature shipped (🏆 Top Picks auto-selected section — the dashboard now highlights the best-value props at a glance.)** The dashboard had league tabs, stat category filter chips, team chips, a summary stats bar, per-game edge summaries, and a watchlist — but no auto-curated "here's what to play" section that highlights the highest-quality props without the user having to configure filters or sort manually. A user scanning 30+ props across multiple games had to visually scan and compare edge values to find the best opportunities. This pass adds a compact 🏆 Top Picks section between the dashboard summary stats bar and the main props grid that automatically selects the top 5 props meeting minimum quality thresholds (edge ≥ 2%, confidence ≥ 50%), sorted by edge DESC then confidence DESC.
+
+The section has a gold-tinted container (`rgba(255,215,0,0.04)` background with `rgba(255,215,0,0.12)` border) to visually differentiate it from the regular grid. Each card shows the player name, stat category, league chip, edge percentage (green-tinted when ≥2%), and confidence. The existing edge-strength CSS classes (`edge-high`/`edge-good`/`edge-modest`/`edge-poor`) are reused as left-border accents on each card so the edge quality is immediately scannable. Cards are laid out in a horizontal scrollable flex row (min 180px, max 220px) so the section stays compact without forcing a grid breakpoint. A 🏆 trophy badge sits at the top-right corner of each card. Hover state adds a subtle gold border accent. The section is automatically hidden when no props meet the quality threshold (edge < 2% or confidence < 50% across all visible props).
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `topPicks` useMemo (14 lines) after the existing `dashboardSummary` memo. Filters `displayProps` to those with `edge_pct >= 2` and `confidence >= 50`, sorts by edge DESC then confidence DESC, takes up to 5. New JSX block gated on `!loading && topPicks && topPicks.length > 0` placed between the dashboard summary bar and the loading state. Each card in the horizontal `.topPicksGrid` uses the existing `edgeLevelClass()` for left-border tint. ~45 net insertions.
+- `src-ui/src/index.css` — 17 new CSS rule blocks: `.topPicksSection` (gold-tinted container with 10px border-radius), `.topPicksHeader` (flex row with icon, title, and subtitle), `.topPicksIcon`, `.topPicksSub`, `.topPicksGrid` (horizontal flex with overflow-x auto), `.topPickCard` (compact 180-220px card with relative positioning), `.topPickCard:hover`, `.topPickBadge` (absolute trophy at top-right), `.topPickInfo`, `.topPickPlayer`, `.topPickStats`, `.topPickStat`, `.topPickStat strong`, `.topPickStat strong.pos`, `.topPickCard.edge-high/.edge-good/.edge-modest/.edge-poor` (left-border reuse). ~98 lines.
+
+Health checks: tsc --noEmit clean, cargo check clean (14 pre-existing warnings), 320/320 lib tests pass.
 
 ## 2026-07-19 maintenance pass #20 — Bulk watchlist actions on dashboard
 
