@@ -1,8 +1,18 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-20 (maintenance pass #22 — **🏆 Top Picks section**: auto-selects highest-edge props on the dashboard)
+Last updated: 2026-07-20 (maintenance pass #23 — **📍 Filter Presets**: save/restore named dashboard filter configurations)
 
-Quick status: **All features done + Top Picks section** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Filter Presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-20 maintenance pass #23 — 📍 Filter Presets (saved dashboard views)
+
+**Feature shipped (Filter Presets — save and restore named dashboard filter configurations with one click.)** The dashboard has accumulated 6+ independent filter controls (sort key/direction, min edge threshold, multi-select stat categories, team filter, player name filter, watchlist toggle) — users who regularly check specific filter combinations (e.g. "NBA Points with edge ≥5%", "NFL passing props sorted by confidence") had to manually re-apply them each visit. This pass adds a named preset system that captures the full filter state and restores it instantly.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `FilterPreset` interface with 7 fields (sortKey, sortDir, minEdge, selectedCategories, selectedTeam, playerFilter, showWatchlist). `FILTER_PRESETS_KEY` constant. `loadFilterPresets`/`saveFilterPresets` localStorage helpers. `describePreset` helper for auto-generated tooltip summaries. Three state variables: `presets`, `savingPreset` (toggle), `editingPresetName` (inline input value). Three handlers: `saveCurrentAsPreset(name)` captures current filter state (replaces by name), `applyPreset(preset)` restores all 7 fields, `deletePreset(name)` removes by name. `activePresetName` useMemo compares current state against all presets for chip highlighting. Three UI blocks: saved presets chip row (between team chips and dashboard summary bar), inline save UI (text input + Save/Cancel buttons), and 💾 Save view button (gated on `hasActiveFilters` and `!savingPreset`). Preset chips show 📍 prefix, have a × delete button, and display a tooltip summary via `describePreset()`. Blue accent highlighting on the active preset. ~208 net insertions.
+- `src-ui/src/index.css` — 12 new CSS rule blocks: `.presetsRow` (flex wrap with top border separator), `.presetChipGroup` (inline-flex pair for chip+delete), `.presetChip` (compact 12px, blue accent hover/active), `.presetChip.active` (blue border + background + `#8ab4ff` text), `.presetDeleteBtn` (attached × button with red hover), `.presetNameInput` (160px dark input with green focus accent). ~81 lines.
+
+Health checks: tsc --noEmit clean, cargo check clean (14 pre-existing warnings), 320/320 lib tests pass.
 
 ## 2026-07-20 maintenance pass #22 — 🏆 Top Picks auto-highlight section on dashboard
 
