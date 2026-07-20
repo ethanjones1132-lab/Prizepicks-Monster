@@ -3352,6 +3352,31 @@ button {
   border-color: rgba(110, 200, 163, 0.5);
 }
 
+.minConfidenceFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.minConfidenceInput {
+  width: 48px;
+  min-height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #eee;
+  text-align: center;
+  outline: none;
+  font-size: 0.78rem;
+}
+
+.minConfidenceInput:focus {
+  border-color: rgba(110, 200, 163, 0.5);
+}
+
 /* Reset filters button -- appears in the section header when any filter is non-default */
 .resetFiltersBtn {
   background: none;

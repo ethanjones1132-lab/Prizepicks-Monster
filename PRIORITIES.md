@@ -1,10 +1,28 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-20 (maintenance pass #23 — **📍 Filter Presets**: save/restore named dashboard filter configurations)
+Last updated: 2026-07-20 (maintenance pass #24 — **📊 Minimum confidence filter**: filter props by minimum confidence percentage)
 
-Quick status: **All features done + Filter Presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
-## 2026-07-20 maintenance pass #23 — 📍 Filter Presets (saved dashboard views)
+## 2026-07-20 maintenance pass #24 — 📊 Minimum confidence filter on dashboard
+
+**Feature shipped (minimum confidence filter alongside the existing min-edge filter — filter props by minimum confidence percentage with 5% step granularity.)** The dashboard has had a min-edge threshold filter (shipped in pass #3) since 2026-07-12 and a sort-by-confidence option since the initial sort dropdown. But there was no way to filter out low-confidence props — a user who only wants to see picks with confidence ≥ 70% had to visually scan and mentally discard every card below threshold. The Top Picks section (pass #22) handles the auto-curated highlight, but users composing arbitrary filter combinations (category + team + min edge + player) had no confidence floor.
+
+This pass adds a `Min conf:` number input in the section header, immediately after the `Min edge:` input, with 5% step granularity (matching the `step=5` attribute). The confidence filter integrates with all existing dashboard systems:
+
+- **`DashboardPreferences` interface** gained `minConfidence: number` — persisted to localStorage via the existing preferences system (pass #10) so the threshold survives page reloads.
+- **`FilterPreset` interface** gained `minConfidence: number` — saved and restored with named presets (pass #23), with a `?? 0` fallback for legacy presets.
+- **`displayProps` filter pipeline** — a new filter step runs after the min-edge filter: `(p.confidence ?? 0) >= minConfidence`.
+- **`hasActiveFilters`** includes `minConfidence > 0` — the ↺ Reset button appears when confidence filter is active.
+- **`resetFilters()`** resets `minConfidence` to 0 alongside all other filters.
+- **Empty-state messages** — a prioritized `minConfidence > 0` branch appears BEFORE the min-edge branch in both empty-state locations, so the user sees "No props meet the minimum confidence requirement (≥X%)" instead of the edge message when both filters are active.
+- **CSS** — `.minConfidenceFilter` and `.minConfidenceInput` styles match the existing `/minEdgeInput` pattern (48px width, 26px min-height, dark-theme border/background, green focus accent). ~25 CSS lines.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — 23 minConfidence-related insertions across 14 integration points (interface, defaults, state, filter pipeline, preferences persistence, presets, reset, section header UI, empty-state messages). ~39 net insertions / ~4 deletions.
+- `src-ui/src/index.css` — `.minConfidenceFilter` (inline-flex, gap, margin-left, font-size) and `.minConfidenceInput` (width, min-height, border, background, color, text-align, outline, focus) matching the minEdgeInput pattern. ~25 lines.
+
+Health checks: cargo check clean (14 pre-existing warnings), cargo test --lib (320/320 pass).
 
 **Feature shipped (Filter Presets — save and restore named dashboard filter configurations with one click.)** The dashboard has accumulated 6+ independent filter controls (sort key/direction, min edge threshold, multi-select stat categories, team filter, player name filter, watchlist toggle) — users who regularly check specific filter combinations (e.g. "NBA Points with edge ≥5%", "NFL passing props sorted by confidence") had to manually re-apply them each visit. This pass adds a named preset system that captures the full filter state and restores it instantly.
 
