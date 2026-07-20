@@ -486,6 +486,20 @@ export function PrizePicksView() {
     };
   }, [displayProps]);
 
+  // Top picks — auto-select the highest-edge props that meet minimum quality
+  const topPicks = useMemo(() => {
+    const candidates = displayProps.filter(
+      (p) => (p.edge_pct ?? 0) >= 2 && (p.confidence ?? 0) >= 50
+    );
+    if (candidates.length === 0) return null;
+    const sorted = [...candidates].sort((a, b) => {
+      const edgeCmp = (b.edge_pct ?? 0) - (a.edge_pct ?? 0);
+      if (edgeCmp !== 0) return edgeCmp;
+      return (b.confidence ?? 0) - (a.confidence ?? 0);
+    });
+    return sorted.slice(0, 5);
+  }, [displayProps]);
+
   // Helper to toggle a category in the multi-select set
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) => {
@@ -719,6 +733,37 @@ export function PrizePicksView() {
             <span className="dashboardSummaryLabel">Avg conf</span>
             <strong>{dashboardSummary.avgConf.toFixed(0)}%</strong>
           </span>
+        </div>
+      )}
+
+      {/* Top picks — auto-select highest-edge props */}{!loading && topPicks && topPicks.length > 0 && (
+        <div className="topPicksSection">
+          <div className="topPicksHeader">
+            <span className="topPicksIcon">🏆</span>
+            <strong>Top Picks</strong>
+            <span className="muted small topPicksSub"> — Best edge props with ≥2% edge and ≥50% confidence</span>
+          </div>
+          <div className="topPicksGrid">
+            {topPicks.map((prop) => (
+              <div key={prop.id} className={`topPickCard ${edgeLevelClass(prop.edge_pct)}`}>
+                <span className="topPickBadge">🏆</span>
+                <div className="topPickInfo">
+                  <strong className="topPickPlayer">{prop.player}</strong>
+                  <span className="muted small">{prop.prop_type}</span>
+                  <span className="chip small">{prop.league}</span>
+                </div>
+                <div className="topPickStats">
+                  <span className="topPickStat">
+                    <strong className={prop.edge_pct != null && prop.edge_pct >= 2 ? 'pos' : ''}>
+                      {formatEdge(prop.edge_pct)}
+                    </strong>
+                    {' '}edge
+                  </span>
+                  <span className="topPickStat">{prop.confidence}% conf</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
