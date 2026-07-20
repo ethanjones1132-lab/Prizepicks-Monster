@@ -1060,6 +1060,18 @@ export function PrizePicksView() {
             </span>
             <span className="minEdgeFilter">
               <label>Min edge:</label>
+              {[2, 5, 10].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`chip mini ${minEdge === v ? 'active' : ''}`}
+                  onClick={() => setMinEdge(v)}
+                  title={`Show only props with edge ≥${v}%`}
+                  aria-label={`Filter to edge ≥${v}%`}
+                >
+                  ≥{v}%
+                </button>
+              ))}
               <input
                 type="number"
                 className="minEdgeInput"

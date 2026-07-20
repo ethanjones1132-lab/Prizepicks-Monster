@@ -1,8 +1,22 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-20 (maintenance pass #24 — **📊 Minimum confidence filter**: filter props by minimum confidence percentage)
+Last updated: 2026-07-20 (maintenance pass #25 — **🎯 Quick edge-tier preset filter chips**: one-click edge threshold presets ≥2%/≥5%/≥10%)
 
-Quick status: **All features done + Confidence Filter + Filter Presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-20 maintenance pass #25 — 🎯 Quick edge-tier preset filter chips
+
+**Feature shipped (one-click edge threshold preset chips — ⩾2%, ⩾5%, ⩾10% — as compact inline mini-chips in the section header, alongside the existing Min edge number input.)** The dashboard's min-edge filter required typing a number into the input field — fast for single adjustments, but users commonly check the same thresholds (2%, 5%, 10%) across different leagues and categories. Each adjustment meant clicking the input, clearing it, and typing the new number — three steps every time. The filter presets system (pass #23) could save a full configuration, but toggling between different edge thresholds on the fly was slower than the chip-based filters (league tabs, category chips, team chips).
+
+This pass adds three compact clickable preset chips — `⩾2%` `⩾5%` `⩾10%` — directly inside the `.minEdgeFilter` span, before the number input. Clicking a chip sets `minEdge` to 2, 5, or 10 instantly. The active chip (matching the current `minEdge` value) gets the `.chip.mini.active` highlight (gold accent, matching the existing chip active state). The number input remains fully functional for custom thresholds — the chip and input are always in sync. When `minEdge` doesn't match any preset (e.g. 3 or 7), no chip is highlighted and the input shows the custom value.
+
+The feature reuses the app's existing `chip small` pattern but adds a new `.chip.mini` CSS variant (10px font, 2px/6px padding, 6px border-radius, compact line-height) suitable for the crowded section header. This is the most compact chip variant in the app, designed to sit inline between labels and inputs without adding visual weight.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — 3 present chips rendered via `{[2, 5, 10].map(...)}` inside `.minEdgeFilter` before the number input. Each chip's `className` includes `chip mini` and conditionally `active` when `minEdge === v`. `onClick` sets `minEdge` directly. ~12 net insertions.
+- `src-ui/src/index.css` — new `.chip.mini` rule block (10px font, 2px/6px padding, 6px border-radius, line-height 1.3). ~7 lines.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass).
 
 ## 2026-07-20 maintenance pass #24 — 📊 Minimum confidence filter on dashboard
 
