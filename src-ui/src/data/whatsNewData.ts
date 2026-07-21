@@ -15,6 +15,16 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-21',
+    title: 'Multi-select team filter',
+    bullets: [
+      'Team filter chips now support multi-select — toggle multiple teams at once instead of single-select',
+      '"All" button clears all team selections; active teams highlighted with gold accent',
+      'Empty-state messages list all selected teams when multiple are active',
+      'Legacy single-team localStorage data migrates automatically on first load',
+    ],
+  },
+  {
+    date: '2026-07-21',
     title: 'Risk level filter + filtered-props CSV & confidence presets',
     bullets: [
       'Risk level filter chips (Low / Medium / High) — filter props by risk tier for quick low/high-risk scoping',

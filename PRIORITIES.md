@@ -1,8 +1,19 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-21 (maintenance pass #28 — **🎯 Risk level filter**: clickable Low/Medium/High filter chips on the dashboard)
+Last updated: 2026-07-21 (maintenance pass #29 — **🎯 Multi-select team filter**: toggle multiple teams at once)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-21 maintenance pass #29 — 🎯 Multi-select team filter
+
+**Feature shipped (multi-select team filter — toggle multiple teams at once instead of single-select):** The dashboard's team filter chips previously used a single-select pattern: clicking a team chip replaced the previous selection, so users could only see props from one team at a time. This forced DFS analysts analyzing a specific matchup (e.g. Chiefs vs Bills) to pick one team, note those props, then switch to the other team — losing cross-team context. This pass refactors the filter from single `selectedTeam: string` to multi-select `selectedTeams: string[]` with an "All" button that clears all selections. The filter pipeline uses an `includes()` check instead of `===`, and the empty-state messages list all selected teams joined by comma. Legacy localStorage data in the old single-team format is migrated on first load.
+
+Legacy migration: old `selectedTeam` strings in localStorage are detected and converted to `selectedTeams` arrays on first load, mirroring the `selectedCategory` → `selectedCategories` migration from pass #19.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — `selectedTeams: string[]` replaces `selectedTeam: string` (default `[]` for "all"). New inline toggle handler in the team chip rendering. Filter pipeline changed from `p.team === selectedTeam` to `selectedTeams.includes(p.team)`. "All" chip renders at the start of the chip row and clears selection on click. Empty-state messages use `selectedTeams.length > 0` guards and join multiple team names. Legacy `selectedTeam` string in localStorage is migrated to `selectedTeams` array with a `delete` cleanup. `DashboardPreferences` and `FilterPreset` interfaces updated. ~50 net insertions across 20 integration points.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass). Ad-hoc verification confirms 0 corruption, clean legacy migration, all old `selectedTeam` references replaced (legacy migration code only retains `selectedTeam` for reading old localStorage data).
 
 ## 2026-07-21 maintenance pass #28 — 🎯 Risk level filter
 
