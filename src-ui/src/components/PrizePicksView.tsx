@@ -430,6 +430,7 @@ export function PrizePicksView() {
   useEffect(() => {
     setSelectedCategories([]);
     setSelectedTeam('All');
+    setSelectedRisk('All');
     setPlayerFilter('');
     setShowWatchlist(false);
   }, [props]);
