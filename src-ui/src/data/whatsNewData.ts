@@ -15,8 +15,10 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-21',
-    title: 'Filtered-props CSV export & quick-confidence presets',
+    title: 'Risk level filter + filtered-props CSV & confidence presets',
     bullets: [
+      'Risk level filter chips (Low / Medium / High) — filter props by risk tier for quick low/high-risk scoping',
+      'Per-risk-level count badges on filter chips showing prop distribution',
       'CSV export now generates from the currently visible (filtered/sorted) props instead of all backend props — what you see is what you get',
       'One-click confidence preset chips (≥60%, ≥70%, ≥80%) alongside the Min conf input — matching the edge preset pattern for instant threshold toggling',
       'Active chip highlighted when confidence matches a preset; custom values still supported via the number input',

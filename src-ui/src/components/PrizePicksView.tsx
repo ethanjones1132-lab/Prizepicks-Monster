@@ -11,6 +11,7 @@ interface DashboardPreferences {
   minConfidence: number;
   selectedCategories: string[];
   selectedTeam: string;
+  selectedRisk: string;
   playerFilter: string;
 }
 
@@ -21,6 +22,7 @@ const DEFAULT_PREFERENCES: DashboardPreferences = {
   minConfidence: 0,
   selectedCategories: [],
   selectedTeam: 'All',
+  selectedRisk: 'All',
   playerFilter: '',
 };
 
@@ -95,6 +97,7 @@ interface FilterPreset {
   name: string;
   selectedCategories: string[];
   selectedTeam: string;
+  selectedRisk: string;
   sortKey: PropsSortKey;
   sortDir: 'asc' | 'desc';
   minEdge: number;
@@ -136,6 +139,9 @@ function describePreset(preset: FilterPreset): string {
   }
   if (preset.minConfidence > 0) {
     parts.push(`≥${preset.minConfidence}% conf`);
+  }
+  if (preset.selectedRisk !== 'All') {
+    parts.push(preset.selectedRisk);
   }
   if (preset.showWatchlist) {
     parts.push('watchlist');
@@ -252,6 +258,7 @@ export function PrizePicksView() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(savedPreferences.sortDir);
   const [minEdge, setMinEdge] = useState(savedPreferences.minEdge);
   const [minConfidence, setMinConfidence] = useState(savedPreferences.minConfidence);
+  const [selectedRisk, setSelectedRisk] = useState(savedPreferences.selectedRisk);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -264,7 +271,7 @@ export function PrizePicksView() {
   const [savingPreset, setSavingPreset] = useState(false);
   const [editingPresetName, setEditingPresetName] = useState('');
   // True when any filter control is set to a non-default value
-  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || minConfidence > 0 || selectedCategories.length > 0 || selectedTeam !== 'All' || playerFilter !== '' || showWatchlist;
+  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || minConfidence > 0 || selectedCategories.length > 0 || selectedTeam !== 'All' || selectedRisk !== 'All' || playerFilter !== '' || showWatchlist;
 
   const resetFilters = () => {
     setSortKey(DEFAULT_PREFERENCES.sortKey);
@@ -273,6 +280,7 @@ export function PrizePicksView() {
     setMinConfidence(0);
     setSelectedCategories([]);
     setSelectedTeam('All');
+    setSelectedRisk('All');
     setPlayerFilter('');
     setShowWatchlist(false);
   };
@@ -292,6 +300,7 @@ export function PrizePicksView() {
           name: trimmed,
           selectedCategories,
           selectedTeam,
+          selectedRisk,
           sortKey,
           sortDir,
           minEdge,
@@ -311,6 +320,7 @@ export function PrizePicksView() {
   const applyPreset = (preset: FilterPreset) => {
     setSelectedCategories(preset.selectedCategories);
     setSelectedTeam(preset.selectedTeam);
+    setSelectedRisk(preset.selectedRisk);
     setSortKey(preset.sortKey);
     setSortDir(preset.sortDir);
     setMinEdge(preset.minEdge);
@@ -341,6 +351,7 @@ export function PrizePicksView() {
         p.showWatchlist === showWatchlist &&
         p.playerFilter === playerFilter &&
         p.selectedTeam === selectedTeam &&
+        p.selectedRisk === selectedRisk &&
         p.selectedCategories.length === selectedCategories.length &&
         p.selectedCategories.every((c) => selectedCategories.includes(c))
       ) {
@@ -348,7 +359,7 @@ export function PrizePicksView() {
       }
     }
     return null;
-  }, [presets, sortKey, sortDir, minEdge, minConfidence, showWatchlist, playerFilter, selectedTeam, selectedCategories]);
+  }, [presets, sortKey, sortDir, minEdge, minConfidence, showWatchlist, playerFilter, selectedTeam, selectedCategories, selectedRisk]);
 
   const toggleWatchlistProp = (propId: string) => {
     setWatchlist((prev) => {
@@ -371,9 +382,10 @@ export function PrizePicksView() {
       minConfidence,
       selectedCategories,
       selectedTeam,
+      selectedRisk,
       playerFilter,
     });
-  }, [sortKey, sortDir, minEdge, minConfidence, selectedCategories, selectedTeam, playerFilter]);
+  }, [sortKey, sortDir, minEdge, minConfidence, selectedCategories, selectedTeam, selectedRisk, playerFilter]);
 
   const toggleGameGroup = (key: string) => {
     setCollapsedGames((prev) => {
@@ -451,6 +463,26 @@ export function PrizePicksView() {
     for (const p of props) {
       if (p.team) {
         counts[p.team] = (counts[p.team] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [props]);
+
+  // Compute unique risk levels from the loaded props
+  const riskLevels = useMemo(() => {
+    const rl = new Set(props.map((p) => p.risk).filter(Boolean));
+    // Always show standard risk levels in order
+    const standard = ['All', 'low', 'medium', 'high'];
+    const present = new Set(rl);
+    return standard.filter((x) => x === 'All' || present.has(x));
+  }, [props]);
+
+  // Compute per-risk-level prop counts for filter chip badges
+  const riskCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of props) {
+      if (p.risk) {
+        counts[p.risk] = (counts[p.risk] || 0) + 1;
       }
     }
     return counts;
@@ -552,11 +584,14 @@ export function PrizePicksView() {
     if (minConfidence > 0) {
       filtered = filtered.filter((p) => (p.confidence ?? 0) >= minConfidence);
     }
+    if (selectedRisk !== 'All') {
+      filtered = filtered.filter((p) => p.risk === selectedRisk);
+    }
     if (showWatchlist) {
       filtered = filtered.filter((p) => watchlist.includes(p.id));
     }
     return filtered;
-  }, [props, selectedCategories, selectedTeam, playerFilter, minEdge, minConfidence, showWatchlist, watchlist]);
+  }, [props, selectedCategories, selectedTeam, playerFilter, minEdge, minConfidence, selectedRisk, showWatchlist, watchlist]);
 
   // Client-side sort by edge/confidence/name/projection
   const sortedProps = useMemo(() => {
@@ -844,6 +879,28 @@ export function PrizePicksView() {
               {tm}
               {tm !== 'All' && teamCounts[tm] !== undefined && !loading && (
                 <span className="teamCountBadge">{teamCounts[tm]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Risk level filter chips */}
+      {!loading && riskLevels.length > 1 && (
+        <div className="categoryRow categoryRowRisk">
+          {riskLevels.map((rl) => (
+            <button
+              key={rl}
+              type="button"
+              className={`chip small riskChip ${selectedRisk === rl ? 'active' : ''}`}
+              onClick={() => setSelectedRisk(rl)}
+              disabled={loading || props.length === 0}
+              title={rl === 'All' ? 'Show all risk levels' : `Show only ${rl}-risk props`}
+              aria-label={rl === 'All' ? 'Show all risk levels' : `Filter to ${rl}-risk props`}
+            >
+              {rl === 'All' ? 'All' : rl.charAt(0).toUpperCase() + rl.slice(1)}
+              {rl !== 'All' && riskCounts[rl] !== undefined && !loading && (
+                <span className="riskCountBadge">{riskCounts[rl]}</span>
               )}
             </button>
           ))}
@@ -1173,6 +1230,8 @@ export function PrizePicksView() {
                     ? `No props match "${playerFilter}". Try a different name.`
                     : minConfidence > 0
                       ? `No props meet the minimum confidence requirement (\u2265${minConfidence}%). Try lowering the threshold.`
+                    : selectedRisk !== 'All'
+                      ? `No ${selectedRisk}-risk props match the current filters. Try a different risk level.`
                     : minEdge > 0
                       ? `No props meet the minimum edge requirement (\u2265${minEdge}%). Try lowering the threshold.`
                     : selectedTeam !== 'All'
@@ -1284,12 +1343,14 @@ export function PrizePicksView() {
             : showWatchlist
               ? 'No bookmarked props found. Click the \u2606 star on a prop card to add it to your watchlist.'
               : playerFilter
-                ? `No props match "${playerFilter}". Try a different name.`
-                : minConfidence > 0
-                  ? `No props meet the minimum confidence requirement (\u2265${minConfidence}%). Try lowering the threshold.`
-                : minEdge > 0
-                  ? `No props meet the minimum edge requirement (\u2265${minEdge}%). Try lowering the threshold.`
-                : selectedTeam !== 'All'
+              ? `No props match "${playerFilter}". Try a different name.`
+              : minConfidence > 0
+                ? `No props meet the minimum confidence requirement (\u2265${minConfidence}%). Try lowering the threshold.`
+              : selectedRisk !== 'All'
+                ? `No ${selectedRisk}-risk props match the current filters. Try a different risk level.`
+              : minEdge > 0
+                ? `No props meet the minimum edge requirement (\u2265${minEdge}%). Try lowering the threshold.`
+              : selectedTeam !== 'All'
                   ? `No ${selectedCategories.length > 0 ? selectedCategories.join(', ') + ' ' : ''}props for ${selectedTeam} match the current filters.`
                   : selectedCategories.length > 0
                     ? `No ${selectedCategories.join(', ')} props match the current filters.`

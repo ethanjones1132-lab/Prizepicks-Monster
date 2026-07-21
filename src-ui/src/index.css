@@ -648,6 +648,39 @@ button {
   color: #c9a84c;
 }
 
+/* Risk level filter chips — use a red/amber/green accent to visually match risk levels */
+.categoryRowRisk {
+  margin-top: -8px;
+  margin-bottom: 8px;
+}
+
+.categoryRowRisk .chip.small.riskChip {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.categoryRowRisk .chip.small.riskChip.active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+
+/* Risk count badge on filter chips */
+.riskCountBadge {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+.riskCountBadge::before {
+  content: "(";
+}
+.riskCountBadge::after {
+  content: ")";
+}
+
 /* League tab prop count badge */
 .leagueCountBadge {
   margin-left: 5px;

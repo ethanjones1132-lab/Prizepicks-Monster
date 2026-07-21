@@ -1,10 +1,29 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-21 (maintenance pass #27 — **📥 Filtered-props CSV export**: export only the currently visible/sorted/filtered props as CSV, not all backend props)
+Last updated: 2026-07-21 (maintenance pass #28 — **🎯 Risk level filter**: clickable Low/Medium/High filter chips on the dashboard)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
-## 2026-07-21 maintenance pass #27 — 📥 Filtered-props CSV export
+## 2026-07-21 maintenance pass #28 — 🎯 Risk level filter
+
+**Feature shipped (risk level filter chips — Low / Medium / High — alongside the existing category, team, and preset chip rows.)** The dashboard has had risk badges (low/medium/high) on every prop card since pass #15, showing each prop's risk tier at a glance. But there was no way to filter by risk level — a user who only wanted to see low-risk props had to visually scan and mentally discard every high-risk card. The edge and confidence preset chips provided quick-access threshold filters, but risk was not included in the filter pipeline at all.
+
+This pass adds a new chip row below the team filter chips showing clickable risk level toggles: All (default) · Low · Medium · High. Clicking a risk level instantly filters `displayProps` to only props matching that risk tier. Per-risk-level count badges show the prop count for each level. The risk filter integrates with all existing dashboard systems:
+
+- **`DashboardPreferences` interface** gained `selectedRisk: string` — persisted to localStorage via the existing preferences system so the threshold survives page reloads.
+- **`FilterPreset` interface** gained `selectedRisk: string` — saved and restored with named presets, with `'All'` default for legacy presets.
+- **`displayProps` filter pipeline** — a new filter step runs before the watchlist filter: `p.risk === selectedRisk`.
+- **`hasActiveFilters`** includes `selectedRisk !== 'All'` — the ↺ Reset button appears when risk filter is active.
+- **`resetFilters()`** resets `selectedRisk` to `'All'` alongside all other filters.
+- **Empty-state messages** — a prioritized `selectedRisk !== 'All'` branch appears BEFORE the min-confidence branch in both empty-state locations, so the user sees "No low-risk props match the current filters" instead of a generic message.
+- **CSS** — `.categoryRowRisk` (margin pattern matching team chips), `.riskChip` (compact 12px font, 600 weight), `.riskChip.active` (white-highlighted active state), `.riskCountBadge` (parenthesized count matching the league/category/team badge pattern). ~33 lines.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — 81 net insertions across 17 integration points (interface, defaults, state, filter pipeline, preferences persistence, presets, reset, props-reload reset, risk-levels/risk-counts hooks, section header UI, empty-state messages in both locations).
+- `src-ui/src/index.css` — `.categoryRowRisk` (margin-top/bottom matching team chips), `.riskChip` (font-weight 600, 12px font), `.riskChip.active` (white text, brighter border), `.riskCountBadge` (parenthesized count badge with 11px font). ~33 lines.
+- `src-ui/src/data/whatsNewData.ts` — Updated pass #28 entry with risk level filter description.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass).
 
 **Feature shipped (CSV export now generates from the currently visible/filtered/sorted props instead of calling the backend for all props.)** The dashboard's 📥 CSV button (shipped in pass #3) called `prizepicks_export_props_csv` which exported ALL props from the Rust backend — useful for bulk data, but users who composed specific filter combinations (NBA Points + edge ≥5% + sorted by confidence) got a CSV with every prop in that league, not the subset they were looking at. The button's tooltip even said "Export visible props to CSV" but the behavior didn't match.
 
