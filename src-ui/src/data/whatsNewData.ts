@@ -14,6 +14,15 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
+    date: '2026-07-21',
+    title: 'Quick-confidence preset chips on dashboard',
+    bullets: [
+      'One-click confidence preset chips (≥60%, ≥70%, ≥80%) alongside the Min conf input — matching the edge preset pattern for instant threshold toggling',
+      'Active chip highlighted when confidence matches a preset; custom values still supported via the number input',
+      'Reuses the existing .chip.mini CSS class for a consistent compact look',
+    ],
+  },
+  {
     date: '2026-07-17',
     title: 'Prop watchlist & risk badges',
     bullets: [

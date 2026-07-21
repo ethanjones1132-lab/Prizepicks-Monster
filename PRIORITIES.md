@@ -1,8 +1,22 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-20 (maintenance pass #25 — **🎯 Quick edge-tier preset filter chips**: one-click edge threshold presets ≥2%/≥5%/≥10%)
+Last updated: 2026-07-21 (maintenance pass #26 — **🎯 Quick-confidence preset chips**: one-click confidence threshold presets ≥60%/≥70%/≥80%)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-21 maintenance pass #26 — 🎯 Quick-confidence preset chips
+
+**Feature shipped (one-click confidence threshold preset chips — ≥60%, ≥70%, ≥80% — as compact inline mini-chips in the section header, alongside the existing Min conf number input.)** The dashboard's min-confidence filter required typing a number or clicking the step=5 increment arrow — fast for single adjustments, but users commonly check the same confidence thresholds (60%, 70%, 80%) across different leagues and categories. Each adjustment meant clicking the input, clearing it, and typing the new number — three steps every time. The edge presets (pass #25) solved this for edge; this pass mirrors the exact same pattern for confidence.
+
+This pass adds three compact clickable preset chips — `≥60%` `≥70%` `≥80%` — directly inside the `.minConfidenceFilter` span, before the number input. Clicking a chip sets `minConfidence` to 60, 70, or 80 instantly. The active chip (matching the current `minConfidence` value) gets the `.chip.mini.active` highlight (gold accent, matching the existing chip active state). The number input remains fully functional for custom thresholds — the chip and input are always in sync. When `minConfidence` doesn't match any preset (e.g. 65 or 75), no chip is highlighted and the input shows the custom value.
+
+The feature reuses the existing `.chip.mini` CSS class (added in pass #25), requiring no new CSS — purely JSX changes.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — 3 preset chips rendered via `{[60, 70, 80].map(...)}` inside `.minConfidenceFilter` before the number input. Each chip's `className` includes `chip mini` and conditionally `active` when `minConfidence === v`. `onClick` sets `minConfidence` directly. ~12 net insertions.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #26.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass).
 
 ## 2026-07-20 maintenance pass #25 — 🎯 Quick edge-tier preset filter chips
 

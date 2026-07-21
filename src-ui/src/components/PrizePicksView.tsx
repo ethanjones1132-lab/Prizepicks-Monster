@@ -1084,6 +1084,18 @@ export function PrizePicksView() {
             </span>
             <span className="minConfidenceFilter">
               <label>Min conf:</label>
+              {[60, 70, 80].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`chip mini ${minConfidence === v ? 'active' : ''}`}
+                  onClick={() => setMinConfidence(v)}
+                  title={`Show only props with confidence ≥${v}%`}
+                  aria-label={`Filter to confidence ≥${v}%`}
+                >
+                  ≥{v}%
+                </button>
+              ))}
               <input
                 type="number"
                 className="minConfidenceInput"
