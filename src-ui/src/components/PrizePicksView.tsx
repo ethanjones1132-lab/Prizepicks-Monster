@@ -219,6 +219,24 @@ function copyPropToClipboard(prop: PropPick) {
   });
 }
 
+/** Generate CSV string from an array of visible (filtered/sorted) props. */
+function generatePropsCsv(props: PropPick[]): string {
+  const esc = (v: string | number | null | undefined): string => {
+    const s = v == null ? '' : String(v);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+  const header = 'Player,Team,League,Category,Line,Projection,Edge %,Confidence %,Risk,Game,Recommendation';
+  const rows = props.map((p) =>
+    [p.player, esc(p.team), p.league, p.prop_type, esc(p.line), esc(p.projection?.toFixed(1) ?? ''),
+     esc(p.edge_pct != null ? p.edge_pct.toFixed(1) : ''), esc(p.confidence ?? ''), esc(p.risk ?? ''),
+     esc(p.game ?? ''), esc(p.recommendation ?? '')].join(',')
+  );
+  return [header, ...rows].join('\n');
+}
+
 export function PrizePicksView() {
   // Load preferences from localStorage on mount
   const savedPreferences = loadPreferences();
@@ -1109,16 +1127,16 @@ export function PrizePicksView() {
             <button
               type="button"
               className="ghostBtn small"
-              onClick={async () => {
+              onClick={() => {
                 try {
-                  const csv = await prizepicksApi.exportPropsCsv(selectedLeague === 'All' ? undefined : selectedLeague);
+                  const csv = generatePropsCsv(sortedProps);
                   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                   const link = document.createElement('a');
                   const url = URL.createObjectURL(blob);
                   link.setAttribute('href', url);
                   const now = new Date();
                   const dateStr = now.toISOString().split('T')[0];
-                  link.setAttribute('download', `props-${dateStr}.csv`);
+                  link.setAttribute('download', `props-filtered-${dateStr}.csv`);
                   link.style.visibility = 'hidden';
                   document.body.appendChild(link);
                   link.click();
@@ -1128,8 +1146,8 @@ export function PrizePicksView() {
                   console.error('[PrizePicks] Failed to export props CSV:', e);
                 }
               }}
-              title="Export visible props to CSV"
-              aria-label="Export visible props to CSV"
+              title="Export currently visible (filtered/sorted) props to CSV"
+              aria-label="Export currently visible props to CSV"
             >
               \uD83D\uDCE5 CSV
             </button>

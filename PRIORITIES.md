@@ -1,8 +1,24 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-21 (maintenance pass #26 — **🎯 Quick-confidence preset chips**: one-click confidence threshold presets ≥60%/≥70%/≥80%)
+Last updated: 2026-07-21 (maintenance pass #27 — **📥 Filtered-props CSV export**: export only the currently visible/sorted/filtered props as CSV, not all backend props)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-21 maintenance pass #27 — 📥 Filtered-props CSV export
+
+**Feature shipped (CSV export now generates from the currently visible/filtered/sorted props instead of calling the backend for all props.)** The dashboard's 📥 CSV button (shipped in pass #3) called `prizepicks_export_props_csv` which exported ALL props from the Rust backend — useful for bulk data, but users who composed specific filter combinations (NBA Points + edge ≥5% + sorted by confidence) got a CSV with every prop in that league, not the subset they were looking at. The button's tooltip even said "Export visible props to CSV" but the behavior didn't match.
+
+This pass replaces the backend CSV export with a lightweight frontend-only `generatePropsCsv(sortedProps)` helper that serializes exactly the sorted/filtered props array into a clean 11-column CSV:
+- `Player, Team, League, Category, Line, Projection, Edge %, Confidence %, Risk, Game, Recommendation`
+- Proper CSV escaping via an `esc()` helper that wraps comma/quote/newline-containing values in double-quoted fields
+- Filename changed from `props-YYYY-MM-DD.csv` to `props-filtered-YYYY-MM-DD.csv` to distinguish from a potential "export all" path
+- Zero backend changes — purely frontend, ~20 lines of new helper code
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `generatePropsCsv()` helper (18 lines) with CSV-safe `esc()` function and 11-column header. CSV button onClick replaced from async backend call to sync frontend generation using `sortedProps`. Title/aria-label updated to "Export currently visible (filtered/sorted) props to CSV". ~25 net insertions / ~15 deletions.
+- `src-ui/src/data/whatsNewData.ts` — Updated pass #26 entry to include both the confidence presets (from last pass) and the filtered-props CSV (this pass).
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass).
 
 ## 2026-07-21 maintenance pass #26 — 🎯 Quick-confidence preset chips
 
