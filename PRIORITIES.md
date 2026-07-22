@@ -1,8 +1,23 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-22 (maintenance pass #30 — **🔍 Prop insight detail panel**: expandable reasoning & probability)
+Last updated: 2026-07-22 (maintenance pass #31 — **📊 Edge distribution mini-bar**: visual edge tier breakdown)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-22 maintenance pass #31 — 📊 Edge distribution mini-bar
+
+**Feature shipped (compact stacked horizontal bar showing proportional breakdown of props by edge tier — High ≥10%, Good ≥5%, Modest ≥2%, Neutral -2%–2%, Poor ≤-2%):** The dashboard summary stats bar shows aggregate metrics (average edge, high-edge count, best edge) but gives no visual sense of the *distribution* of prop quality — a user scanning 40 props couldn't tell at a glance whether most props clustered around neutral or skewed toward high-edge opportunities. The edge-tier colors on individual prop cards (pass #3) and on top-pick cards (pass #22) provide per-card visual cues, but the overall composition was invisible without mental math.
+
+This pass adds a compact edge distribution mini-bar between the dashboard summary stats bar and the Top Picks section that renders a stacked horizontal bar with proportionally-sized colored segments for each edge tier. The bar uses the same color palette as the prop card edge-strength indicators (green for high/good/modest, gray for neutral, red for poor), with a tooltip on each segment showing the exact count and threshold. Below the bar, a legend row shows per-tier counts with colored dots for quick scanning. The bar auto-hides when no props are loaded.
+
+Zero backend changes — purely frontend computation from the already-computed `displayProps` array.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `edgeDistribution` useMemo (18 lines) iterating `displayProps` and tallying each prop into one of 5 edge tiers using the same thresholds as `edgeLevelClass()`. New JSX block (~30 lines) gated on `!loading && edgeDistribution.total > 0` placed between the dashboard summary bar and the Top Picks section. Each tier segment renders as a `div` with proportional `width` percentage and a descriptive `title` tooltip. Legend row below the bar renders per-tier count with colored dots for each non-zero tier.
+- `src-ui/src/index.css` — 14 new CSS rule blocks: `.edgeDistribution` (flex column container), `.edgeDistLabel` (muted label), `.edgeDistBar` (flex row with 18px height, rounded overflow), `.edgeDistSeg` (common segment style with hover effect), `.edgeDistHigh`/`.edgeDistGood`/`.edgeDistModest`/`.edgeDistNeutral`/`.edgeDistPoor` (background colors matching edge-strength palette), `.edgeDistLegend` (flex wrap legend row), `.edgeDistLegendItem` (inline-flex with dot), `.edgeDistDot` (8px colored square). ~32 CSS lines.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #31.
+
+Health checks: `npx tsc --noEmit` clean, `cargo check` 0 errors (14 pre-existing warnings), `cargo test --lib` 320/320 pass.
 
 ## 2026-07-22 maintenance pass #30 — 🔍 Prop insight detail panel
 

@@ -689,6 +689,22 @@ export function PrizePicksView() {
     };
   }, [displayProps]);
 
+  // Edge distribution — count props by edge tier for the distribution bar
+  const edgeDistribution = useMemo(() => {
+    let high = 0, good = 0, modest = 0, neutral = 0, poor = 0;
+    for (const p of displayProps) {
+      const e = p.edge_pct;
+      if (e == null || !Number.isFinite(e)) { neutral++; continue; }
+      if (e >= 10) high++;
+      else if (e >= 5) good++;
+      else if (e >= 2) modest++;
+      else if (e <= -2) poor++;
+      else neutral++;
+    }
+    const total = high + good + modest + neutral + poor;
+    return { high, good, modest, neutral, poor, total };
+  }, [displayProps]);
+
   // Top picks — auto-select the highest-edge props that meet minimum quality
   const topPicks = useMemo(() => {
     const candidates = displayProps.filter(
@@ -1046,6 +1062,37 @@ export function PrizePicksView() {
             <span className="dashboardSummaryLabel">Avg conf</span>
             <strong>{dashboardSummary.avgConf.toFixed(0)}%</strong>
           </span>
+        </div>
+      )}
+
+      {/* Edge distribution bar — visual breakdown of props by edge tier */}
+      {!loading && edgeDistribution.total > 0 && (
+        <div className="edgeDistribution">
+          <span className="edgeDistLabel">Edge distribution</span>
+          <div className="edgeDistBar" title="Proportional breakdown of edge tiers across visible props">
+            {edgeDistribution.high > 0 && (
+              <div className="edgeDistSeg edgeDistHigh" style={{width: `${(edgeDistribution.high / edgeDistribution.total) * 100}%`}} title={`High (≥10%): ${edgeDistribution.high} props`} />
+            )}
+            {edgeDistribution.good > 0 && (
+              <div className="edgeDistSeg edgeDistGood" style={{width: `${(edgeDistribution.good / edgeDistribution.total) * 100}%`}} title={`Good (≥5%): ${edgeDistribution.good} props`} />
+            )}
+            {edgeDistribution.modest > 0 && (
+              <div className="edgeDistSeg edgeDistModest" style={{width: `${(edgeDistribution.modest / edgeDistribution.total) * 100}%`}} title={`Modest (≥2%): ${edgeDistribution.modest} props`} />
+            )}
+            {edgeDistribution.neutral > 0 && (
+              <div className="edgeDistSeg edgeDistNeutral" style={{width: `${(edgeDistribution.neutral / edgeDistribution.total) * 100}%`}} title={`Neutral: ${edgeDistribution.neutral} props`} />
+            )}
+            {edgeDistribution.poor > 0 && (
+              <div className="edgeDistSeg edgeDistPoor" style={{width: `${(edgeDistribution.poor / edgeDistribution.total) * 100}%`}} title={`Poor (≤-2%): ${edgeDistribution.poor} props`} />
+            )}
+          </div>
+          <div className="edgeDistLegend">
+            {edgeDistribution.high > 0 && <span className="edgeDistLegendItem"><i className="edgeDistDot edgeDistHigh" />{edgeDistribution.high} high</span>}
+            {edgeDistribution.good > 0 && <span className="edgeDistLegendItem"><i className="edgeDistDot edgeDistGood" />{edgeDistribution.good} good</span>}
+            {edgeDistribution.modest > 0 && <span className="edgeDistLegendItem"><i className="edgeDistDot edgeDistModest" />{edgeDistribution.modest} mod</span>}
+            {edgeDistribution.neutral > 0 && <span className="edgeDistLegendItem"><i className="edgeDistDot edgeDistNeutral" />{edgeDistribution.neutral} neut</span>}
+            {edgeDistribution.poor > 0 && <span className="edgeDistLegendItem"><i className="edgeDistDot edgeDistPoor" />{edgeDistribution.poor} poor</span>}
+          </div>
         </div>
       )}
 

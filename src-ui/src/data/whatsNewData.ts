@@ -15,6 +15,16 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-22',
+    title: 'Edge distribution mini-bar — visual edge tier breakdown',
+    bullets: [
+      'Compact stacked horizontal bar showing the proportional breakdown of props by edge tier (High ≥10%, Good ≥5%, Modest ≥2%, Neutral, Poor ≤-2%)',
+      'Colored segments map to the same edge-strength colors used on prop cards — instant visual sense of overall prop quality',
+      'Legend row below the bar shows per-tier count with colored dots for quick scanning',
+      'Tooltip on each bar segment gives exact tier name, threshold, and prop count',
+    ],
+  },
+  {
+    date: '2026-07-22',
     title: 'Prop insight detail panel',
     bullets: [
       'Click 🔍 on any prop card to expand an inline detail panel with model reasoning, probability breakdown, source, and update time',
