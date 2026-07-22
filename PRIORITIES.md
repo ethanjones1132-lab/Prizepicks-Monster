@@ -1,8 +1,8 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-22 (maintenance pass #31 — **📊 Edge distribution mini-bar**: visual edge tier breakdown)
+Last updated: 2026-07-22 (maintenance pass #32 — **🎯 Recommendation filter chips**: filter props by Over/Under recommendation type)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
 ## 2026-07-22 maintenance pass #31 — 📊 Edge distribution mini-bar
 
@@ -18,6 +18,19 @@ Shipped:
 - `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #31.
 
 Health checks: `npx tsc --noEmit` clean, `cargo check` 0 errors (14 pre-existing warnings), `cargo test --lib` 320/320 pass.
+
+## 2026-07-22 maintenance pass #32 — 🎯 Recommendation filter chips
+
+**Feature shipped (recommendation filter chips — filter props by their recommendation/verdict type, dynamically populated from loaded data):** The dashboard has accumulated 8+ independent filter rows (league tab, stat category chips, team chips, risk chips, edge preset chips, confidence preset chips, player filter, watchlist toggle) — but no way to narrow props by recommendation/verdict. DFS prop data includes recommendation labels per pick (e.g. "🔥 ELITE PICK", "👍 PLAYABLE", or recommendation strings from the prop source), and power users who wanted to focus only on "Strong Over" or "Elite" recommendations had to visually scan every card's recommendation line.
+
+This pass adds a compact recommendation filter chip row below the existing risk chips, dynamically populated from the loaded props. The chips show each unique recommendation value with a count badge, following the exact same single-select toggle pattern as the risk level filter. The filter integrates with all existing dashboard systems: `DashboardPreferences` (localStorage persistence), `FilterPreset` (save/restore with named views), `describePreset` (tooltip summaries), `resetFilters` (↺ Reset clears recommendation), `hasActiveFilters` (recommendation filter triggers the Reset button), empty-state messages (dedicated branch before edge), and props-reload reset. Zero backend changes.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — 19 integration points across 11 code sections: `DashboardPreferences` interface (+`selectedRecommendation: string`), `DEFAULT_PREFERENCES` (+`'All'`), `FilterPreset` interface (+field), `describePreset` (+recommendation), state declaration (`selectedRecommendation`), `hasActiveFilters` (+check), `resetFilters` (+set), `saveCurrentAsPreset` (+field), `applyPreset` (+restore), `activePresetName` (+comparison +deps), `displayProps` filter (+step +deps), preferences `useEffect` (+save +deps), props-reload `useEffect` (+reset), `recommendations`/`recommendationCounts` useMemo memos (new, 10 lines), recommendation chip row UI (~20 lines after risk chips), empty-state messages both locations (+recommendation branch before edge). ~80 net insertions.
+- `src-ui/src/index.css` — 5 new CSS rule blocks: `.categoryRowRecommendation` (margin pattern), `.recChip` (12px font, 600 weight), `.recChip.active` (white-highlighted), `.recCountBadge` (parenthesized count with tabular-nums). ~28 lines.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #32.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass). Ad-hoc verification: 0 literal-`\n` corruption in both edited files.
 
 ## 2026-07-22 maintenance pass #30 — 🔍 Prop insight detail panel
 

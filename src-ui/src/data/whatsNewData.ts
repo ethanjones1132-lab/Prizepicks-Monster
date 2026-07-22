@@ -15,6 +15,15 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-22',
+    title: 'Recommendation filter chips — filter props by Over/Under recommendation type',
+    bullets: [
+      'One-click recommendation filter chips dynamically populated from loaded props (e.g. "🔥 ELITE PICK", "👍 PLAYABLE", "Strong Over")',
+      'Compact row follows the same chip pattern as risk/category/team filters with count badges per recommendation',
+      'Integrates with all existing filters — filter presets, localStorage persistence, empty-state messages, and ↺ Reset',
+    ],
+  },
+  {
+    date: '2026-07-22',
     title: 'Edge distribution mini-bar — visual edge tier breakdown',
     bullets: [
       'Compact stacked horizontal bar showing the proportional breakdown of props by edge tier (High ≥10%, Good ≥5%, Modest ≥2%, Neutral, Poor ≤-2%)',
