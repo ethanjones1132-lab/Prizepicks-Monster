@@ -14,6 +14,16 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
+    date: '2026-07-22',
+    title: 'Prop insight detail panel',
+    bullets: [
+      'Click 🔍 on any prop card to expand an inline detail panel with model reasoning, probability breakdown, source, and update time',
+      'Model probability vs Market (implied) probability shown side-by-side for at-a-glance confidence comparison',
+      'Data source and last-updated timestamp per prop for transparency',
+      'Active insight button highlighted with gold glow when panel is open',
+    ],
+  },
+  {
     date: '2026-07-21',
     title: 'Multi-select team filter',
     bullets: [

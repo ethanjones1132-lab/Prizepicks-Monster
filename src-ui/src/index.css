@@ -898,6 +898,62 @@ button {
   background: rgba(255, 255, 255, 0.2);
 }
 
+.insightBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.4;
+  transition: opacity 0.15s, background 0.15s;
+}
+.insightBtn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+.insightBtn.active {
+  opacity: 1;
+  background: rgba(255, 215, 0, 0.15);
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
+}
+
+/* ── Prop insight detail panel ── */
+.propInsight {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.propInsightSection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.propInsightLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.5;
+}
+.propInsightText {
+  margin: 2px 0 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.propInsightRow {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+.propInsightRow:first-of-type {
+  margin-top: 0;
+}
+
 .marketCardMeta {
   display: flex;
   align-items: center;

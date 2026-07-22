@@ -276,6 +276,7 @@ export function PrizePicksView() {
   const [presets, setPresets] = useState<FilterPreset[]>(loadFilterPresets);
   const [savingPreset, setSavingPreset] = useState(false);
   const [editingPresetName, setEditingPresetName] = useState('');
+  const [expandedPropId, setExpandedPropId] = useState<string | null>(null);
   // True when any filter control is set to a non-default value
   const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || minConfidence > 0 || selectedCategories.length > 0 || selectedTeams.length > 0 || selectedRisk !== 'All' || playerFilter !== '' || showWatchlist;
 
@@ -1327,7 +1328,16 @@ export function PrizePicksView() {
                           title="Copy prop details"
                           aria-label="Copy prop details"
                         >
-                          \uD83D\uDCCB
+                          📋
+                        </button>
+                        <button
+                          type="button"
+                          className={`insightBtn${expandedPropId === prop.id ? ' active' : ''}`}
+                          onClick={() => setExpandedPropId(expandedPropId === prop.id ? null : prop.id)}
+                          title="Show prop insight details"
+                          aria-label="Show prop insight details"
+                        >
+                          🔍
                         </button>
                       </div>
                       <h3>{prop.prop_type}</h3>
@@ -1342,6 +1352,38 @@ export function PrizePicksView() {
                         <span>Conf: {prop.confidence}%</span>
                       </div>
                       <p className="small">{prop.recommendation}</p>
+                      {expandedPropId === prop.id && (
+                        <div className="propInsight">
+                          {prop.reasoning && (
+                            <div className="propInsightSection">
+                              <span className="propInsightLabel">Reasoning</span>
+                              <p className="propInsightText">{prop.reasoning}</p>
+                            </div>
+                          )}
+                          <div className="propInsightRow">
+                            <div className="propInsightSection">
+                              <span className="propInsightLabel">Model probability</span>
+                              <strong className="pos">{prop.model_probability != null ? (prop.model_probability * 100).toFixed(1) + '%' : '—'}</strong>
+                            </div>
+                            <div className="propInsightSection">
+                              <span className="propInsightLabel">Market probability</span>
+                              <strong>{prop.implied_probability != null ? (prop.implied_probability * 100).toFixed(1) + '%' : '—'}</strong>
+                            </div>
+                          </div>
+                          <div className="propInsightRow">
+                            <div className="propInsightSection">
+                              <span className="propInsightLabel">Source</span>
+                              <span>{prop.source || '—'}</span>
+                            </div>
+                            {prop.updated_at && (
+                              <div className="propInsightSection">
+                                <span className="propInsightLabel">Updated</span>
+                                <span>{new Date(prop.updated_at).toLocaleString()}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

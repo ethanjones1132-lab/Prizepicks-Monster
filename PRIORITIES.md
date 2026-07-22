@@ -1,8 +1,26 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-21 (maintenance pass #29 — **🎯 Multi-select team filter**: toggle multiple teams at once)
+Last updated: 2026-07-22 (maintenance pass #30 — **🔍 Prop insight detail panel**: expandable reasoning & probability)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-22 maintenance pass #30 — 🔍 Prop insight detail panel
+
+**Feature shipped (expandable insight panel on each prop card — click 🔍 to reveal reasoning, probability breakdown, source, and update time):** The dashboard shows player props with line, projection, edge percentage, confidence, risk, and recommendation on every card — but the `reasoning`, `implied_probability`, `model_probability`, and `updated_at` fields on each `PropPick` were completely hidden. A user who wanted to understand *why* the model recommended a pick had no way to see the explanation, and the raw probability values driving the edge calculation were invisible. This pass adds a compact 🔍 insight button to every prop card's header row. Clicking toggles an inline detail panel below the card that surfaces:
+
+- **Reasoning** — the model's plain-text explanation for this recommendation (when populated), such as "Projection comfortably exceeds line, strong matchup advantage"
+- **Model probability vs Market probability** — the two raw probabilities that combine to produce the edge percentage, shown side-by-side so the user sees the disagreement magnitude driving the edge
+- **Data source** — where this prop originated (OpticOdds, The Odds API, ESPN, Sleeper, or Mock)
+- **Last updated** — timestamp showing when this prop's data was last refreshed
+
+The insight button has a subtle gold glow (.insightBtn.active) when the panel is open, matching the app's existing gold accent palette. The panel uses the same dark-theme aesthetic as the existing card styling — a subtle `rgba(255,255,255,0.03)` background with a thin top-border separator and 6px border-radius. Section labels are rendered as small uppercase muted text for scannability.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `expandedPropId` state (string | null). New 🔍 insight button in each `marketCardTop` (after the 📋 copy button). New conditional detail panel rendered after the recommendation paragraph, showing reasoning text, model vs market probability comparison, source, and updated_at timestamp. ~50 net insertions.
+- `src-ui/src/index.css` — `.insightBtn` (ghost button, 13px, 0.40 opacity, gold glow active state), `.propInsight` (dark panel container with top-border divider), `.propInsightSection` (flex-column, 10px uppercase labels), `.propInsightText` (reasoning text), `.propInsightRow` (flex-row with gap for probability/source rows). ~55 CSS lines.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #30.
+
+Health checks: `npx tsc --noEmit` clean, `cargo check` 0 errors (14 pre-existing warnings), `cargo test --lib` 320/320 pass.
 
 ## 2026-07-21 maintenance pass #29 — 🎯 Multi-select team filter
 
