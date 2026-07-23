@@ -1,8 +1,8 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-23 (maintenance pass #33 — **☐/▣ Compact prop card layout**: density toggle for power users switching between detailed card view and compact row view)
+Last updated: 2026-07-23 (maintenance pass #34 — **🎯 Prop Quality Score**: edge×confidence combined quality metric with sort-by-Score and color-coded badges)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout + Prop Quality Score** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
 ## 2026-07-23 maintenance pass #33 — ☐/▣ Compact prop card layout: density toggle for power users
 
@@ -22,6 +22,26 @@ Shipped:
 - `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #33.
 
 Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass). Ad-hoc verification: 0 literal-`\n` corruption, all compact CSS classes resolve correctly.
+
+## 2026-07-23 maintenance pass #34 — 🎯 Prop Quality Score: edge×confidence combined quality metric
+
+**Feature shipped (combined quality score "Score" on every prop card — a single 0-100 metric that rewards both high edge and high confidence, with sort-by-Score and color-coded badges):** The dashboard has edge% (strength of projection vs market) and confidence% (model certainty) as separate fields on every card, plus sort options for each. But users evaluating props had to mentally combine both to determine which pick is the best overall opportunity — a prop with 10% edge and 30% confidence is different from one with 3% edge and 85% confidence. Edge and confidence are complementary signals (opportunity magnitude × model certainty) and a single "Score" metric eliminates the mental arithmetic.
+
+This pass adds a `qualityScore()` helper (`Math.round(Math.abs(edge_pct) * confidence / 100)`) that naturally produces a metric where:
+- Edge 10% × Confidence 80% → Score **80** (🔥 elite — green badge)
+- Edge 5% × Confidence 70% → Score **35** (good — amber badge)
+- Edge 2% × Confidence 60% → Score **12** (modest — gray badge)
+
+The score badge appears on every prop card in both detailed and compact views, with color coding: green (score ≥40 = top tier), amber (score ≥20 = good), gray (score <20 = ok). A new "Score" option in the sort dropdown sorts by score descending by default, letting users instantly see the best overall opportunities at the top.
+
+Zero backend changes — purely frontend computation, helpers, and CSS.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `qualityScore(prop)` helper (5 lines) computing the 0-100 combined metric. New `qualityScoreClass(score)` helper (5 lines) returning CSS class names for three tiers (score-top/score-good/score-ok). Added `'score'` to `PropsSortKey` union type and `DashboardPreferences.sortKey`. New `case 'score'` in the sort switch that compares by `qualityScore(a) - qualityScore(b)`. New `<option value="score">Score</option>` in the sort dropdown (between Projection and Name). Quality score badge `<span>` inserted in the compact card view (after confidence%) and in the detailed card view (after player name). Each badge renders `{qualityScore(prop)}` with dynamic `qualityScoreClass()` and exact `qualityScore` call. ~35 net insertions.
+- `src-ui/src/index.css` — 5 new CSS rule blocks: `.qualityScore` (inline-flex badge, 22px min-width, 0.65rem font, 700 weight, rounded), `.qualityScore.score-top` (green `#6ec8a3` with 20% green background and 35% border), `.qualityScore.score-good` (amber `#e5a060` with 20% amber background and 35% border), `.qualityScore.score-ok` (dimmed white with subtle border). ~33 CSS lines.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #34.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass). Ad-hoc verification: 0 literal-`\n` corruption in all edited files.
 
 ## 2026-07-22 maintenance pass #31 — 📊 Edge distribution mini-bar
 

@@ -6,7 +6,7 @@ const WATCHLIST_STORAGE_KEY = 'prizepicks_watchlist';
 
 interface DashboardPreferences {
   compactView: boolean;
-  sortKey: 'name' | 'edge' | 'confidence' | 'projection';
+  sortKey: 'name' | 'edge' | 'confidence' | 'projection' | 'score';
   sortDir: 'asc' | 'desc';
   minEdge: number;
   minConfidence: number;
@@ -100,7 +100,7 @@ import type { PrizePicksCacheStatus } from '../types/prizepicks';
 import type { PropPick, ScoredProp } from '../types';
 
 const INITIAL_PROP_LIMIT = 50;
-type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection';
+type PropsSortKey = 'name' | 'edge' | 'confidence' | 'projection' | 'score';
 
 /** A saved dashboard filter preset — captures the user's filter configuration. */
 interface FilterPreset {
@@ -181,6 +181,19 @@ function edgeLevelClass(edge: number | undefined | null): string {
   if (edge >= 2) return 'edge-modest';
   if (edge <= -2) return 'edge-poor';
   return '';
+}
+
+/** Compute a 0-100 quality score combining edge strength and confidence. */
+function qualityScore(prop: PropPick): number {
+  const e = Math.abs(prop.edge_pct ?? 0);
+  const c = prop.confidence ?? 0;
+  return Math.round(e * c / 100);
+}
+
+function qualityScoreClass(score: number): string {
+  if (score >= 40) return 'score-top';
+  if (score >= 20) return 'score-good';
+  return 'score-ok';
 }
 
 /**
@@ -656,6 +669,9 @@ export function PrizePicksView() {
           break;
         case 'projection':
           cmp = a.projection - b.projection;
+          break;
+        case 'score':
+          cmp = qualityScore(a) - qualityScore(b);
           break;
       }
       return sortDir === 'desc' ? -cmp : cmp;
@@ -1234,6 +1250,7 @@ export function PrizePicksView() {
                 <option value="edge">Edge</option>
                 <option value="confidence">Confidence</option>
                 <option value="projection">Projection</option>
+                <option value="score">Score</option>
                 <option value="name">Name</option>
               </select>
               <button
@@ -1439,6 +1456,7 @@ export function PrizePicksView() {
                         <span className="compactLineProj">L:{prop.line} P:{prop.projection.toFixed(1)}</span>
                         <span className={`compactEdge ${prop.edge_pct != null && prop.edge_pct >= 0 ? 'pos' : ''}`}>{formatEdge(prop.edge_pct)}</span>
                         <span className="compactConf">{prop.confidence}%</span>
+                        <span className={`qualityScore ${qualityScoreClass(qualityScore(prop))}`}>{qualityScore(prop)}</span>
                         <span className={`riskDot risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`} title={prop.risk} />
                         <span className="chip small">{prop.league}</span>
                         <span className="compactRec">{prop.recommendation}</span>
@@ -1481,6 +1499,7 @@ export function PrizePicksView() {
                           {watchlist.includes(prop.id) ? '\u2B50' : '\u2606'}
                         </button>
                         <code>{prop.player}</code>
+                        <span className={`qualityScore ${qualityScoreClass(qualityScore(prop))}`}>{qualityScore(prop)}</span>
                         <span className={`riskBadge risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`}>
                           {prop.risk}
                         </span>

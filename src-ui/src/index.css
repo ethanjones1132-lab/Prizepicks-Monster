@@ -3773,6 +3773,39 @@ button {
   border: 1px solid rgba(229, 115, 115, 0.25);
 }
 
+/* Quality score badge on prop cards — edge×confidence combined metric */
+.qualityScore {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 4px;
+  margin-left: 6px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.qualityScore.score-top {
+  background: rgba(110, 200, 163, 0.2);
+  color: #6ec8a3;
+  border-color: rgba(110, 200, 163, 0.35);
+}
+.qualityScore.score-good {
+  background: rgba(229, 160, 96, 0.2);
+  color: #e5a060;
+  border-color: rgba(229, 160, 96, 0.35);
+}
+.qualityScore.score-ok {
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 /* ── What's New modal ──────────────────────────────── */
 .whatsnewBackdrop {
   position: fixed;

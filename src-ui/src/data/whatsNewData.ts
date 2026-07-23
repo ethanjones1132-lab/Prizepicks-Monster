@@ -15,6 +15,15 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-23',
+    title: 'Prop quality score — edge×confidence combined metric',
+    bullets: [
+      'New "Score" sort option that combines edge% × confidence% into a single 0-100 quality metric — highest-value props float to the top',
+      'Quality score badge (e.g. "72") on every prop card in both detailed and compact views, color-coded green (top ≥40), amber (good ≥20), or gray (ok)',
+      'One-click sort by Score from the dropdown to instantly see the best overall opportunities',
+    ],
+  },
+  {
+    date: '2026-07-23',
     title: 'Compact prop card layout — density toggle for power users',
     bullets: [
       'One-click density toggle (☐/▣) in the props section header switches between detailed card view and compact row view',
