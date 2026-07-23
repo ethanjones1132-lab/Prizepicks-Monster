@@ -5,6 +5,7 @@ const PREFERENCES_STORAGE_KEY = 'prizepicks_dashboard_preferences';
 const WATCHLIST_STORAGE_KEY = 'prizepicks_watchlist';
 
 interface DashboardPreferences {
+  compactView: boolean;
   sortKey: 'name' | 'edge' | 'confidence' | 'projection';
   sortDir: 'asc' | 'desc';
   minEdge: number;
@@ -17,6 +18,7 @@ interface DashboardPreferences {
 }
 
 const DEFAULT_PREFERENCES: DashboardPreferences = {
+  compactView: false,
   sortKey: 'edge',
   sortDir: 'desc',
   minEdge: 0,
@@ -284,6 +286,7 @@ export function PrizePicksView() {
   const [savingPreset, setSavingPreset] = useState(false);
   const [editingPresetName, setEditingPresetName] = useState('');
   const [expandedPropId, setExpandedPropId] = useState<string | null>(null);
+  const [compactView, setCompactView] = useState(savedPreferences.compactView ?? false);
   // True when any filter control is set to a non-default value
   const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || minConfidence > 0 || selectedCategories.length > 0 || selectedTeams.length > 0 || selectedRisk !== 'All' || selectedRecommendation !== 'All' || playerFilter !== '' || showWatchlist;
 
@@ -404,8 +407,9 @@ export function PrizePicksView() {
       selectedRisk,
       selectedRecommendation,
       playerFilter,
+      compactView,
     });
-  }, [sortKey, sortDir, minEdge, minConfidence, selectedCategories, selectedTeams, selectedRisk, selectedRecommendation, playerFilter]);
+  }, [sortKey, sortDir, minEdge, minConfidence, selectedCategories, selectedTeams, selectedRisk, selectedRecommendation, playerFilter, compactView]);
 
   const toggleGameGroup = (key: string) => {
     setCollapsedGames((prev) => {
@@ -1327,6 +1331,16 @@ export function PrizePicksView() {
             >
               \uD83D\uDCE5 CSV
             </button>
+            <button
+              type="button"
+              className={`ghostBtn small ${compactView ? 'active' : ''}`}
+              onClick={() => setCompactView((v) => !v)}
+              title={compactView ? 'Switch to detailed card view' : 'Switch to compact row view'}
+              aria-label={compactView ? 'Switch to detailed card view' : 'Switch to compact row view'}
+              style={{marginRight: '6px'}}
+            >
+              {compactView ? '\u25A3' : '\u25A1'} Density
+            </button>
             {hasActiveFilters && (
               <button
                 type="button"
@@ -1409,7 +1423,53 @@ export function PrizePicksView() {
                 {!collapsedGames[game] && (
                   <div className="marketGrid">
                     {gameProps.map((prop) => (
-                    <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`}>
+                    compactView ? (
+                      <div key={prop.id} className="marketCardCompact">
+                        <button
+                          type="button"
+                          className={`watchlistStarCompact ${watchlist.includes(prop.id) ? 'active' : ''}`}
+                          onClick={() => toggleWatchlistProp(prop.id)}
+                          title={watchlist.includes(prop.id) ? 'Remove from watchlist' : 'Add to watchlist'}
+                          aria-label={watchlist.includes(prop.id) ? 'Remove from watchlist' : 'Add to watchlist'}
+                        >
+                          {watchlist.includes(prop.id) ? '\u2B50' : '\u2606'}
+                        </button>
+                        <code className="compactPlayer">{prop.player}</code>
+                        <span className="compactCategory">{prop.prop_type}</span>
+                        <span className="compactLineProj">L:{prop.line} P:{prop.projection.toFixed(1)}</span>
+                        <span className={`compactEdge ${prop.edge_pct != null && prop.edge_pct >= 0 ? 'pos' : ''}`}>{formatEdge(prop.edge_pct)}</span>
+                        <span className="compactConf">{prop.confidence}%</span>
+                        <span className={`riskDot risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`} title={prop.risk} />
+                        <span className="chip small">{prop.league}</span>
+                        <span className="compactRec">{prop.recommendation}</span>
+                        <button
+                          type="button"
+                          className="copyPropBtnCompact"
+                          onClick={() => copyPropToClipboard(prop)}
+                          title="Copy prop details"
+                          aria-label="Copy prop details"
+                        >
+                          📋
+                        </button>
+                        <button
+                          type="button"
+                          className={`insightBtnCompact${expandedPropId === prop.id ? ' active' : ''}`}
+                          onClick={() => setExpandedPropId(expandedPropId === prop.id ? null : prop.id)}
+                          title="Show prop insight details"
+                          aria-label="Show prop insight details"
+                        >
+                          🔍
+                        </button>
+                        {expandedPropId === prop.id && (
+                          <div className="compactInsight">
+                            {prop.reasoning && <div className="compactInsightLine">{prop.reasoning}</div>}
+                            <div className="compactInsightLine muted small">
+                              Model: {prop.model_probability != null ? (prop.model_probability * 100).toFixed(1) + '%' : '—'} · Market: {prop.implied_probability != null ? (prop.implied_probability * 100).toFixed(1) + '%' : '—'} · {prop.source || '—'} · {prop.updated_at ? new Date(prop.updated_at).toLocaleString() : ''}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (                    <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`}>
                       <div className="marketCardTop">
                         <button
                           type="button"
@@ -1489,6 +1549,7 @@ export function PrizePicksView() {
                         </div>
                       )}
                     </div>
+                    )
                   ))}
                 </div>
               )}

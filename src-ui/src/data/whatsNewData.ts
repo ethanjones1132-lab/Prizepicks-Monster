@@ -14,6 +14,17 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
+    date: '2026-07-23',
+    title: 'Compact prop card layout — density toggle for power users',
+    bullets: [
+      'One-click density toggle (☐/▣) in the props section header switches between detailed card view and compact row view',
+      'Compact rows show key stats inline: player, category, line/projection, edge%, confidence%, risk dot, league, recommendation',
+      'Watchlist star, copy, and insight buttons still available in compact mode with smaller click targets',
+      'Expanded insight panel opens inline within the compact row on 🔍 click',
+      'Preference persists in localStorage and survives page reloads',
+    ],
+  },
+  {
     date: '2026-07-22',
     title: 'Recommendation filter chips — filter props by Over/Under recommendation type',
     bullets: [

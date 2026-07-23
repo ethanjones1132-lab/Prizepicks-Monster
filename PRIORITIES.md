@@ -1,8 +1,27 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-22 (maintenance pass #32 — **🎯 Recommendation filter chips**: filter props by Over/Under recommendation type)
+Last updated: 2026-07-23 (maintenance pass #33 — **☐/▣ Compact prop card layout**: density toggle for power users switching between detailed card view and compact row view)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-23 maintenance pass #33 — ☐/▣ Compact prop card layout: density toggle for power users
+
+**Feature shipped (one-click density toggle in the props section header that switches between the detailed card view and a compact row-based view):** The dashboard showed every prop card with full detail — player name, category, team, game, line, projection, edge%, confidence%, risk badge, league chip, recommendation text, and action buttons — all stacked vertically. For scanned browsing across 40+ mock props, the card layout requires significant scrolling. Power users reviewing multiple categories and leagues had to scroll through tall cards to find the props they wanted, and the per-sport game groups (pass #5) with collapsible groups (pass #6) helped but didn't reduce per-card footprint.
+
+This pass adds a ☐/▣ Density toggle button between the CSV export and ↺ Reset buttons in the "All Props" section header. Clicking it switches all prop cards to a compact row layout:
+- **Single flex row per prop** with inline key stats: player name (bold), stat category, line/projection, edge% (green-tinted when positive), confidence%, risk dot (green/amber/red 8px circle), league chip, recommendation text (120px max, ellipsis overflow)
+- **Same interaction buttons** — watchlist star, copy 📋, and insight 🔍 buttons with smaller sizing (0.75rem) but same functionality
+- **Insight panel** opens inline within the compact row when 🔍 is clicked, showing reasoning and probability data in a compact single-line format
+- **State persists** via `DashboardPreferences.compactView` in localStorage, surviving page reloads and navigation
+
+Zero backend changes — purely frontend. The toggle affects only the All Props game-grouped grid (not the Top Scored Props section).
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — `compactView` state added to `DashboardPreferences` interface and `DEFAULT_PREFERENCES`. New `setCompactView` state. Density toggle button inserted between CSV export and ↺ Reset in the section header. Full ternary conditional in the game-grouped `gameProps.map()` callback — when `compactView` is true, each prop renders as `.marketCardCompact` (a flex-row div); when false, the existing `.marketCard` layout is used unchanged. `compactView` added to the preferences persistence `useEffect` dep array and saved object. ~50 net insertions.
+- `src-ui/src/index.css` — 26 new CSS rule blocks covering `.marketCardCompact` (flex-row container with wrap, compact padding/border, hover effect), `.compactPlayer`/`.compactCategory`/`.compactLineProj`/`.compactEdge`/`.compactConf` (inline stat fields), `.riskDot` (8px colored circle for low/medium/high), `.compactRec` (truncated recommendation), `.watchlistStarCompact`/`.copyPropBtnCompact`/`.insightBtnCompact` (smaller ghost buttons matching existing palette), `.compactInsight`/`.compactInsightLine` (inline insight panel). ~140 CSS lines.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #33.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass). Ad-hoc verification: 0 literal-`\n` corruption, all compact CSS classes resolve correctly.
 
 ## 2026-07-22 maintenance pass #31 — 📊 Edge distribution mini-bar
 

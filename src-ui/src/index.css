@@ -4071,3 +4071,148 @@ button {
   flex-shrink: 0;
 }
 
+/* ── Compact card layout (density toggle) ── */
+
+.marketCardCompact {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 10px;
+  margin-bottom: 2px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  position: relative;
+  min-height: 32px;
+}
+.marketCardCompact:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.marketCardCompact code {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #d4d4d4;
+}
+
+.compactCategory {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+
+.compactLineProj {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.compactEdge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.compactEdge.pos {
+  color: #6ec8a3;
+}
+.compactEdge:not(.pos) {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.compactConf {
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Small colored risk dot */
+.riskDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.riskDot.riskLow {
+  background: #6ec8a3;
+}
+.riskDot.riskMedium {
+  background: #d4a637;
+}
+.riskDot.riskHigh {
+  background: #e05a5a;
+}
+
+.compactRec {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 120px;
+}
+
+.watchlistStarCompact {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 0.8rem;
+  opacity: 0.4;
+  transition: opacity 0.15s, transform 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.watchlistStarCompact:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+.watchlistStarCompact.active {
+  opacity: 1;
+  filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.5));
+}
+
+.copyPropBtnCompact, .insightBtnCompact {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 0.75rem;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.copyPropBtnCompact:hover, .insightBtnCompact:hover {
+  opacity: 0.85;
+}
+.insightBtnCompact.active {
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(201, 168, 76, 0.6));
+}
+
+/* Expanded insight panel inside compact card */
+.compactInsight {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.compactInsightLine {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.75);
+}
+
