@@ -94,6 +94,67 @@
   border-left: 3px solid #e57373;
 }
 
+/* Player quick-view — click a player name to see all their props */
+.playerQuickView {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  background: rgba(100, 180, 255, 0.04);
+  border: 1px solid rgba(100, 180, 255, 0.15);
+  border-radius: 10px;
+}
+.playerQuickViewHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+.playerQuickViewIcon {
+  font-size: 1.2rem;
+}
+.playerQuickViewClose {
+  margin-left: auto;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.playerQuickViewClose:hover {
+  background: rgba(255, 80, 80, 0.15);
+  border-color: rgba(255, 80, 80, 0.4);
+  color: #ff6b6b;
+}
+.playerQuickViewGrid {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+/* Player name link on prop cards — click to quick-view */
+.playerNameLink {
+  cursor: pointer;
+  color: #b8d4f0;
+  border-bottom: 1px dotted rgba(184, 212, 240, 0.3);
+  transition: color 0.15s, border-color 0.15s;
+}
+.playerNameLink:hover {
+  color: #7cc5ff;
+  border-bottom-color: #7cc5ff;
+}
+.playerNameLink:focus-visible {
+  outline: 2px solid rgba(100, 180, 255, 0.6);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* Edge distribution — stacked mini-bar chart showing edge tier proportions */
 .edgeDistribution {
   display: flex;

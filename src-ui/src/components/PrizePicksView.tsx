@@ -300,6 +300,7 @@ export function PrizePicksView() {
   const [editingPresetName, setEditingPresetName] = useState('');
   const [expandedPropId, setExpandedPropId] = useState<string | null>(null);
   const [compactView, setCompactView] = useState(savedPreferences.compactView ?? false);
+  const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   // True when any filter control is set to a non-default value
   const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || minConfidence > 0 || selectedCategories.length > 0 || selectedTeams.length > 0 || selectedRisk !== 'All' || selectedRecommendation !== 'All' || playerFilter !== '' || showWatchlist;
 
@@ -772,6 +773,14 @@ export function PrizePicksView() {
     return sorted.slice(0, 5);
   }, [displayProps]);
 
+  // Player quick-view — all props for a selected player across all categories
+  const playerProps = useMemo(() => {
+    if (!selectedPlayer) return null;
+    const normalized = selectedPlayer.toLowerCase();
+    const matched = props.filter((p) => p.player.toLowerCase() === normalized);
+    return matched.length > 0 ? matched : null;
+  }, [props, selectedPlayer]);
+
   // Helper to toggle a category in the multi-select set
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) => {
@@ -1202,6 +1211,46 @@ export function PrizePicksView() {
         </div>
       )}
 
+      {/* Player quick-view — all props for a selected player */}
+      {!loading && selectedPlayer && playerProps && playerProps.length > 0 && (
+        <div className="playerQuickView">
+          <div className="playerQuickViewHeader">
+            <span className="playerQuickViewIcon">👤</span>
+            <strong>{selectedPlayer}</strong>
+            <span className="muted small"> — {playerProps.length} prop{playerProps.length === 1 ? '' : 's'} across all categories</span>
+            <button
+              type="button"
+              className="playerQuickViewClose"
+              onClick={() => setSelectedPlayer(null)}
+              title="Close player quick-view"
+              aria-label="Close player quick-view"
+            >
+              ×
+            </button>
+          </div>
+          <div className="playerQuickViewGrid">
+            {playerProps.map((prop) => (
+              <div key={prop.id} className={`marketCard ${edgeLevelClass(prop.edge_pct)}`} style={{minWidth: '160px', maxWidth: '200px'}}>
+                <div className="marketCardTop">
+                  <span className={`riskBadge risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`}>
+                    {prop.risk}
+                  </span>
+                  <span className="chip small">{prop.league}</span>
+                </div>
+                <h4 style={{margin: '4px 0', fontSize: '0.8rem'}}>{prop.prop_type}</h4>
+                <div className="marketStats" style={{fontSize: '0.72rem', gap: '6px'}}>
+                  <span>Line: {prop.line}</span>
+                  <span>Proj: {prop.projection.toFixed(1)}</span>
+                  <span>Edge: <strong className={prop.edge_pct != null && prop.edge_pct >= 2 ? 'pos' : ''}>{formatEdge(prop.edge_pct)}</strong></span>
+                  <span>Conf: {prop.confidence}%</span>
+                </div>
+                <p className="small" style={{fontSize: '0.7rem', margin: '2px 0 0'}}>{prop.recommendation}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading && <p className="muted pad">Loading props\u2026</p>}
       {error && <p className="error pad">{error}</p>}
 
@@ -1451,7 +1500,15 @@ export function PrizePicksView() {
                         >
                           {watchlist.includes(prop.id) ? '\u2B50' : '\u2606'}
                         </button>
-                        <code className="compactPlayer">{prop.player}</code>
+                        <code
+                          className="playerNameLink"
+                          onClick={() => setSelectedPlayer(prop.player)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedPlayer(prop.player); } }}
+                          title={`View all ${prop.player} props`}
+                          aria-label={`View all props for ${prop.player}`}
+                        >{prop.player}</code>
                         <span className="compactCategory">{prop.prop_type}</span>
                         <span className="compactLineProj">L:{prop.line} P:{prop.projection.toFixed(1)}</span>
                         <span className={`compactEdge ${prop.edge_pct != null && prop.edge_pct >= 0 ? 'pos' : ''}`}>{formatEdge(prop.edge_pct)}</span>
@@ -1499,7 +1556,15 @@ export function PrizePicksView() {
                         >
                           {watchlist.includes(prop.id) ? '\u2B50' : '\u2606'}
                         </button>
-                        <code>{prop.player}</code>
+                        <code
+                          className="playerNameLink"
+                          onClick={() => setSelectedPlayer(prop.player)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedPlayer(prop.player); } }}
+                          title={`View all ${prop.player} props`}
+                          aria-label={`View all props for ${prop.player}`}
+                        >{prop.player}</code>
                         <span className={`qualityScore ${qualityScoreClass(qualityScore(prop))}`}>{qualityScore(prop)}</span>
                         <span className={`riskBadge risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`}>
                           {prop.risk}

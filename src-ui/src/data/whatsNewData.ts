@@ -15,6 +15,16 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-23',
+    title: 'Player quick-view — click a player name to see all their props',
+    bullets: [
+      'Click any player name on a prop card (in detailed or compact view) to open a focused quick-view panel showing all that player\'s props across all stat categories',
+      'Player quick-view appears between the Top Picks section and the main props grid — keeps your filter context intact while zooming into a specific player\'s portfolio',
+      'Each player card in the quick-view shows prop type, line, projection, edge%, confidence%, risk badge, league chip, and recommendation — everything you need at a glance',
+      'Blue-accented container with a × close button; player name links on prop cards have a dotted underline with blue hover highlight for discoverability',
+    ],
+  },
+  {
+    date: '2026-07-23',
     title: 'Game time indicators on prop cards — time context at a glance',
     bullets: [
       'Relative game time badge (e.g. "in 3h", "tomorrow", "2h ago") on every prop card in both detailed and compact views',
