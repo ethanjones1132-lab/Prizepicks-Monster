@@ -1460,6 +1460,7 @@ export function PrizePicksView() {
                         <span className={`riskDot risk${prop.risk.charAt(0).toUpperCase() + prop.risk.slice(1)}`} title={prop.risk} />
                         <span className="chip small">{prop.league}</span>
                         <span className="compactRec">{prop.recommendation}</span>
+                        {prop.game_time && <span className="compactTime muted">{gameTimeRelative(prop.game_time)}</span>}
                         <button
                           type="button"
                           className="copyPropBtnCompact"
@@ -1527,6 +1528,7 @@ export function PrizePicksView() {
                       <div className="marketCardMeta">
                         {prop.team && <span className="teamTag">{prop.team}</span>}
                         {prop.game && <span className="muted">{prop.game}</span>}
+                        {prop.game_time && <span className="gameTimeBadge muted">{gameTimeRelative(prop.game_time)}</span>}
                       </div>
                       <div className="marketStats">
                         <span>Line: {prop.line}</span>

@@ -1059,6 +1059,14 @@ button {
   text-transform: uppercase;
 }
 
+/* Game time badge on detailed prop cards */
+.gameTimeBadge {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+  white-space: nowrap;
+}
+
 .marketCard h3 {
   margin: 0 0 10px;
   font-size: 15px;
@@ -4193,6 +4201,15 @@ button {
   text-overflow: ellipsis;
   min-width: 0;
   flex: 0 1 120px;
+}
+
+/* Game time label on compact prop cards */
+.compactTime {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .watchlistStarCompact {

@@ -15,6 +15,16 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-23',
+    title: 'Game time indicators on prop cards — time context at a glance',
+    bullets: [
+      'Relative game time badge (e.g. "in 3h", "tomorrow", "2h ago") on every prop card in both detailed and compact views',
+      'Detailed card view shows game time alongside team and matchup in the card meta area',
+      'Compact card view shows game time after the recommendation text — never lose temporal context when scrolling',
+      'Game time uses the existing gameTimeRelative() helper for human-readable labels the app already uses in group headers',
+    ],
+  },
+  {
+    date: '2026-07-23',
     title: 'Prop quality score — edge×confidence combined metric',
     bullets: [
       'New "Score" sort option that combines edge% × confidence% into a single 0-100 quality metric — highest-value props float to the top',

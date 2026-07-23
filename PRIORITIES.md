@@ -1,6 +1,6 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-23 (maintenance pass #34 — **🎯 Prop Quality Score**: edge×confidence combined quality metric with sort-by-Score and color-coded badges)
+Last updated: 2026-07-23 (maintenance pass #35 — **⏰ Game time indicators on prop cards**: time context per card in both views)
 
 Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout + Prop Quality Score** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
 
@@ -41,7 +41,24 @@ Shipped:
 - `src-ui/src/index.css` — 5 new CSS rule blocks: `.qualityScore` (inline-flex badge, 22px min-width, 0.65rem font, 700 weight, rounded), `.qualityScore.score-top` (green `#6ec8a3` with 20% green background and 35% border), `.qualityScore.score-good` (amber `#e5a060` with 20% amber background and 35% border), `.qualityScore.score-ok` (dimmed white with subtle border). ~33 CSS lines.
 - `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #34.
 
-Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass). Ad-hoc verification: 0 literal-`\n` corruption in all edited files.
+Health checks: cargo check (0 errors, 14 pre-existing warnings), npx tsc --noEmit (clean), cargo test --lib (320/320 pass).
+
+## 2026-07-23 maintenance pass #35 — ⏰ Game time indicators on prop cards: per-card time context
+
+**Feature shipped (relative game time badge on every prop card in both detailed and compact views):** The dashboard grouped props by game with game times in headers (pass #4), with relative labels added in pass #13. But individual prop cards — especially in compact row view — carried no game-time context. A user scrolling through compact rows or viewing a collapsed game group had no way to see when a prop's game was scheduled without scanning back to the group header. The `game_time` field was available on every `PropPick` but surfaced only in game group headers.
+
+This pass adds game time indicators to every prop card:
+
+- **Detailed card view:** A compact italic `.gameTimeBadge` span (e.g. "in 3h", "tomorrow", "2h ago") is rendered in the `marketCardMeta` area, right after the team tag and game matchup name. Uses the existing `gameTimeRelative()` helper for human-readable relative labels that already power the group headers.
+- **Compact card view:** A smaller `.compactTime` span appears after the recommendation text in each compact row, using 0.65rem italic muted text with `flex-shrink: 0` so it doesn't wrap. Gated on `prop.game_time` so cards without game times don't render empty space.
+- **No backend changes** — purely frontend helper reuse.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — Detailed view: `<span className="gameTimeBadge muted">{gameTimeRelative(prop.game_time)}</span>` added to the `marketCardMeta` div (after the game name). Compact view: `{prop.game_time && <span className="compactTime muted">{gameTimeRelative(prop.game_time)}</span>}` added after `compactRec`. ~2 lines net insertion each, gated on `prop.game_time`.
+- `src-ui/src/index.css` — `.gameTimeBadge` (11px, italic, 0.5 opacity, nowrap) and `.compactTime` (0.65rem, italic, 0.4 opacity, flex-shrink 0). ~12 CSS lines total.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #35.
+
+Health checks: cargo check (0 errors, 14 pre-existing warnings), npx tsc --noEmit (clean), cargo test --lib (320/320 pass).
 
 ## 2026-07-22 maintenance pass #31 — 📊 Edge distribution mini-bar
 
