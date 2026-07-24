@@ -273,6 +273,7 @@ function formatTimeAgo(ts: number): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+/** Copy a single prop's formatted details to the clipboard. */
 function copyPropToClipboard(prop: PropPick) {
   const text = [
     `${prop.player} \u2014 ${prop.prop_type}`,
@@ -285,6 +286,24 @@ function copyPropToClipboard(prop: PropPick) {
   navigator.clipboard.writeText(text).catch((err) => {
     console.error('[PrizePicks] Failed to copy prop:', err);
   });
+}
+
+/** Copy all visible (sorted/filtered) props as a formatted text block to the clipboard. */
+function copyAllPropsToClipboard(props: PropPick[]): number {
+  const blocks = props.map((p) => [
+    `${p.player} \u2014 ${p.prop_type}`,
+    `  Line: ${p.line} | Projection: ${p.projection.toFixed(1)}`,
+    `  Edge: ${formatEdge(p.edge_pct)} | Confidence: ${p.confidence}% | Risk: ${p.risk || 'N/A'}`,
+    `  ${p.team || 'N/A'} | ${p.game || 'N/A'} | ${p.league}`,
+    `  ${p.recommendation}`,
+  ].join('\n'));
+
+  const text = blocks.join('\n---\n');
+
+  navigator.clipboard.writeText(text).catch((err) => {
+    console.error('[PrizePicks] Failed to copy all props:', err);
+  });
+  return props.length;
 }
 
 /** Generate CSV string from an array of visible (filtered/sorted) props. */
@@ -1478,7 +1497,20 @@ export function PrizePicksView() {
               title="Export currently visible (filtered/sorted) props to CSV"
               aria-label="Export currently visible props to CSV"
             >
-              \uD83D\uDCE5 CSV
+              📥 CSV
+            </button>
+            <button
+              type="button"
+              className="ghostBtn small"
+              onClick={() => {
+                const count = copyAllPropsToClipboard(sortedProps);
+                console.log(`[PrizePicks] Copied ${count} props to clipboard`);
+              }}
+              title="Copy all visible (filtered/sorted) props to clipboard as formatted text"
+              aria-label="Copy all visible props to clipboard"
+              style={{marginRight: '6px'}}
+            >
+              📋 All
             </button>
             <button
               type="button"

@@ -1,8 +1,26 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-24 (maintenance pass #37 — **🕐 Game time horizon filter chips**: filter props by time window (Today/Tomorrow/This Week/Future/Past))
+Last updated: 2026-07-24 (maintenance pass #38 — **📋 Copy all visible props to clipboard**: one-click text bulk share)
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout + Prop Quality Score + Game time indicators + Player quick-view + Game time horizon filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout + Prop Quality Score + Game time indicators + Player quick-view + Game time horizon filter + Copy all visible props** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-24 maintenance pass #38 — 📋 Copy all visible props to clipboard: one-click text bulk share
+
+**Feature shipped (one-click 📋 All button in the section header that copies all visible filtered/sorted props as formatted text to the clipboard):** The dashboard had two clipboard-related features: 📋 copy per individual prop card (shipped pass #17) and 📥 CSV export for all visible props (shipped pass #26). But users who wanted to share a filtered set of props in Discord, Slack, notes, or chat had to either: (a) copy each prop one at a time (tedious for 20+ props), or (b) export CSV (data format, not readable as plain text). The formatted text block fills the gap — it's human-readable, compact, and suitable for pasting into any text chat or note app.
+
+This pass adds a **📋 All** ghost button in the section header, positioned between the CSV export button and the compact-view toggle, that:
+- Iterates all visible `sortedProps` and formats each one with the same structured layout as the per-card copy (player — category, line/projection, edge%/confidence%/risk, team/game/league, recommendation)
+- Joins all props with a `---` horizontal rule divider for readability across multiple copies
+- Writes the concatenated text to `navigator.clipboard.writeText()` and logs the count via `[PrizePicks]` console
+- Returns the count of copied props for potential future toast/notification UI
+
+Zero backend changes — purely frontend, reusing the existing `formatEdge()` helper and the same structured formatting as `copyPropToClipboard()`.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `copyAllPropsToClipboard(props: PropPick[]): number` function (~14 lines) that formats each prop as a multi-line block and joins with `\n---\n` separators. New 📋 All button in the section header (~10 lines) with `ghostBtn small` styling, placed between CSV export and compact-view toggle. `sortedProps` is passed directly (already filtered and sorted).
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #38.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass).
 
 ## 2026-07-24 maintenance pass #37 — 🕐 Game time horizon filter: filter props by time window
 

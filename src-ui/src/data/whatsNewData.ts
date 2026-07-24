@@ -15,6 +15,16 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
     date: '2026-07-24',
+    title: 'Copy all visible props to clipboard — one-click 📋 All button',
+    bullets: [
+      'New 📋 All button in the section header copies all visible (filtered/sorted) props to the clipboard as formatted text — perfect for sharing in Discord, notes, or chat',
+      'Each prop formatted with player, category, line, projection, edge%, confidence%, risk, team, game, league, and recommendation text',
+      'Props separated by a horizontal rule divider for readability across multiple copies',
+      'Complements the existing 📥 CSV export (data format) and per-card 📋 copy (single prop) — covers the text-bulk sharing gap',
+    ],
+  },
+  {
+    date: '2026-07-24',
     title: 'Game time horizon filter chips — filter props by when their game starts',
     bullets: [
       'One-click game time horizon filter chips — filter props by play-time window: Today, Tomorrow, This Week, Future, or Past',
