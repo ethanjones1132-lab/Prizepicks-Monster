@@ -1,8 +1,31 @@
 # PrizePicks Monster — Priority Roadmap
 
-Last updated: 2026-07-23 (maintenance pass #36 — **👤 Player quick-view**: click a player name to see all their props)
+Last updated: 2026-07-24 (maintenance pass #37 — **🕐 Game time horizon filter chips**: filter props by time window (Today/Tomorrow/This Week/Future/Past))
 
-Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout + Prop Quality Score + Game time indicators + Player quick-view** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+Quick status: **All features done + Confidence Filter + Filter Presets + Edge presets + Confidence presets + Filtered-props CSV + Risk level filter + Multi-select team filter + Prop insight detail panel + Edge distribution mini-bar + Recommendation filter chips + Compact prop card layout + Prop Quality Score + Game time indicators + Player quick-view + Game time horizon filter** — P0 done · P1 done · P2 done · P3 done · Phase 5 all items done · SQLite cache persistence shipped. Remaining deferred item is the correlation engine graph (no data source identified, accepted limitation).
+
+## 2026-07-24 maintenance pass #37 — 🕐 Game time horizon filter: filter props by time window
+
+**Feature shipped (game time horizon filter chips — filter props by when their game starts, with dynamically populated buckets and per-bucket count badges):** The dashboard had accumulated 10+ independent filter rows (league, category, team, risk, recommendation, edge preset chips, confidence preset chips, player filter, watchlist toggle) — but no way to narrow props by the time horizon of the game. A user scanning props for tonight's slate alongside props for next week had no way to isolate just the tonight or tomorrow games without visually scanning every card's game time. The `game_time` field on every `PropPick` was already loaded into the props array and used for game group headers, relative labels (pass #13), and per-card indicators (pass #35) — but no filter used it.
+
+This pass adds a compact game time horizon filter chip row, placed between the risk chips and the recommendation chips, that dynamically populates horizon buckets from the loaded props. Each chip shows:
+
+- **Today** — props with games starting within 24h
+- **Tomorrow** — props with games starting 24-48h from now
+- **This Week** — props with games starting within 7 days
+- **Future** — props with games starting more than 7 days away
+- **Past** — props with games that already started (keep them visible for post-game review)
+
+A new `gameTimeBucket()` helper classifies each prop's `game_time` ISO string into one of six buckets (`today`, `tomorrow`, `this_week`, `future`, `past`, or empty string for invalid/missing). Per-bucket count badges show how many props fall in each horizon at a glance.
+
+Zero backend changes — purely frontend state, computation, and chip UI.
+
+Shipped:
+- `src-ui/src/components/PrizePicksView.tsx` — New `gameTimeBucket()` helper (16 lines) that classifies ISO game time strings into 5 horizon buckets. New `GAME_TIME_OPTIONS` constant (`['All', 'today', 'tomorrow', 'this_week', 'future', 'past']`). New `GAME_TIME_LABELS` constant mapping bucket keys to human-readable labels. New `selectedGameTime` state, `setSelectedGameTime` setter, and all 18+ integration points: `DashboardPreferences` (+`selectedGameTime: string`), `DEFAULT_PREFERENCES` (+`'All'`), `FilterPreset` interface (+field), `describePreset` (+game time chip in tooltip), state declaration, `hasActiveFilters` (+check), `resetFilters` (+set), `saveCurrentAsPreset` (+field), `applyPreset` (+restore), `activePresetName` (+comparison), `displayProps` filter step (+gated `gameTimeBucket()` check), preferences `useEffect` (+save +deps), props-reload `useEffect` (+reset). New `gameTimeBuckets` useMemo computing available buckets from loaded props. New `gameTimeCounts` useMemo computing per-bucket prop counts. New JSX chip row (~20 lines) between risk and recommendation chips — matching the existing single-select chip pattern with per-bucket count badges. ~89 net insertions.
+- `src-ui/src/index.css` — New `.categoryRowGameTime` (margin pattern matching team/risk/recommendation rows), `.categoryRowGameTime .chip` (11px font, 600 weight), `.categoryRowGameTime .chip.active` (blue-tinted active state), `.gameTimeCountBadge` (count badge with tabular-nums). ~21 CSS lines.
+- `src-ui/src/data/whatsNewData.ts` — New changelog entry for pass #37.
+
+Health checks: `cargo check` (0 errors, 14 pre-existing warnings), `npx tsc --noEmit` (clean), `cargo test --lib` (320/320 pass).
 
 ## 2026-07-23 maintenance pass #36 — 👤 Player quick-view: click a player name to see all their props
 

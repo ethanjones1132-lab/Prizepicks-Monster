@@ -4327,3 +4327,24 @@ button {
   color: rgba(255, 255, 255, 0.75);
 }
 
+
+/* Game time horizon filter chips */
+.categoryRowGameTime {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.categoryRowGameTime .chip {
+  font-size: 11px;
+  font-weight: 600;
+}
+.categoryRowGameTime .chip.active {
+  color: #fff;
+  border-color: rgba(100, 180, 255, 0.5);
+  background: rgba(100, 180, 255, 0.15);
+}
+.gameTimeCountBadge {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}

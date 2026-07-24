@@ -14,6 +14,17 @@ export const WHATS_NEW_STORAGE_KEY = 'prizepicks_whatsnew_last_seen';
 
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
+    date: '2026-07-24',
+    title: 'Game time horizon filter chips — filter props by when their game starts',
+    bullets: [
+      'One-click game time horizon filter chips — filter props by play-time window: Today, Tomorrow, This Week, Future, or Past',
+      'Dynamic chip row automatically populated from the currently loaded props — only shows buckets with at least one matching prop',
+      'Per-bucket count badges on each filter chip showing how many props fall within that time window',
+      'Integrates with all existing filters: filter presets, localStorage persistence, empty-state messages, ↺ Reset, and props-reload reset',
+      'New gameTimeBucket() helper classifies each prop\'s game_time into time-horizon buckets (today/tomorrow/this_week/future/past)',
+    ],
+  },
+  {
     date: '2026-07-23',
     title: 'Player quick-view — click a player name to see all their props',
     bullets: [

@@ -14,6 +14,7 @@ interface DashboardPreferences {
   selectedTeams: string[];
   selectedRisk: string;
   selectedRecommendation: string;
+  selectedGameTime: string;
   playerFilter: string;
 }
 
@@ -27,6 +28,7 @@ const DEFAULT_PREFERENCES: DashboardPreferences = {
   selectedTeams: [],
   selectedRisk: 'All',
   selectedRecommendation: 'All',
+  selectedGameTime: 'All',
   playerFilter: '',
 };
 
@@ -109,6 +111,7 @@ interface FilterPreset {
   selectedTeams: string[];
   selectedRisk: string;
   selectedRecommendation: string;
+  selectedGameTime: string;
   sortKey: PropsSortKey;
   sortDir: 'asc' | 'desc';
   minEdge: number;
@@ -153,6 +156,9 @@ function describePreset(preset: FilterPreset): string {
   }
   if (preset.selectedRisk !== 'All') {
     parts.push(preset.selectedRisk);
+  }
+  if (preset.selectedGameTime !== 'All') {
+    parts.push(GAME_TIME_LABELS[preset.selectedGameTime] || preset.selectedGameTime);
   }
   if (preset.selectedRecommendation !== 'All') {
     parts.push(preset.selectedRecommendation);
@@ -228,6 +234,35 @@ function gameTimeRelative(gameTime: string | undefined | null): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/**
+ * Classify a game time ISO string into a time-horizon bucket for the game time filter.
+ * Returns 'today', 'tomorrow', 'this_week', 'future', 'past', or '' (for invalid/missing).
+ */
+function gameTimeBucket(gameTime: string | undefined | null): string {
+  if (!gameTime) return '';
+  const now = Date.now();
+  const gameDate = new Date(gameTime).getTime();
+  if (!Number.isFinite(gameDate)) return '';
+  const diffMs = gameDate - now;
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 0) return 'past';
+  if (diffSec < 86400) return 'today';
+  if (diffSec < 172800) return 'tomorrow';
+  if (diffSec < 604800) return 'this_week';
+  return 'future';
+}
+
+/** Human-readable labels for game time horizon buckets. */
+const GAME_TIME_OPTIONS = ['All', 'today', 'tomorrow', 'this_week', 'future', 'past'];
+
+const GAME_TIME_LABELS: Record<string, string> = {
+  today: 'Today',
+  tomorrow: 'Tomorrow',
+  this_week: 'This Week',
+  future: 'Future',
+  past: 'Past',
+};
+
 function formatTimeAgo(ts: number): string {
   if (!ts) return 'never';
   const seconds = Math.floor(Date.now() / 1000 - ts);
@@ -287,6 +322,7 @@ export function PrizePicksView() {
   const [minConfidence, setMinConfidence] = useState(savedPreferences.minConfidence);
   const [selectedRisk, setSelectedRisk] = useState(savedPreferences.selectedRisk);
   const [selectedRecommendation, setSelectedRecommendation] = useState(savedPreferences.selectedRecommendation ?? 'All');
+  const [selectedGameTime, setSelectedGameTime] = useState(savedPreferences.selectedGameTime ?? 'All');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -302,7 +338,7 @@ export function PrizePicksView() {
   const [compactView, setCompactView] = useState(savedPreferences.compactView ?? false);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   // True when any filter control is set to a non-default value
-  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || minConfidence > 0 || selectedCategories.length > 0 || selectedTeams.length > 0 || selectedRisk !== 'All' || selectedRecommendation !== 'All' || playerFilter !== '' || showWatchlist;
+  const hasActiveFilters = sortKey !== DEFAULT_PREFERENCES.sortKey || sortDir !== DEFAULT_PREFERENCES.sortDir || minEdge > 0 || minConfidence > 0 || selectedCategories.length > 0 || selectedTeams.length > 0 || selectedRisk !== 'All' || selectedRecommendation !== 'All' || selectedGameTime !== 'All' || playerFilter !== '' || showWatchlist;
 
   const resetFilters = () => {
     setSortKey(DEFAULT_PREFERENCES.sortKey);
@@ -313,6 +349,7 @@ export function PrizePicksView() {
     setSelectedTeams([]);
     setSelectedRisk('All');
     setSelectedRecommendation('All');
+    setSelectedGameTime('All');
     setPlayerFilter('');
     setShowWatchlist(false);
   };
@@ -334,6 +371,7 @@ export function PrizePicksView() {
           selectedTeams,
           selectedRisk,
           selectedRecommendation,
+          selectedGameTime,
           sortKey,
           sortDir,
           minEdge,
@@ -355,6 +393,7 @@ export function PrizePicksView() {
     setSelectedTeams(preset.selectedTeams ?? []);
     setSelectedRisk(preset.selectedRisk);
     setSelectedRecommendation(preset.selectedRecommendation ?? 'All');
+    setSelectedGameTime(preset.selectedGameTime ?? 'All');
     setSortKey(preset.sortKey);
     setSortDir(preset.sortDir);
     setMinEdge(preset.minEdge);
@@ -387,6 +426,7 @@ export function PrizePicksView() {
         p.selectedTeams.length === selectedTeams.length &&
         p.selectedTeams.every((t) => selectedTeams.includes(t)) &&
         p.selectedRisk === selectedRisk &&
+        p.selectedGameTime === selectedGameTime &&
         p.selectedRecommendation === selectedRecommendation &&
         p.selectedCategories.length === selectedCategories.length &&
         p.selectedCategories.every((c) => selectedCategories.includes(c))
@@ -420,10 +460,11 @@ export function PrizePicksView() {
       selectedTeams,
       selectedRisk,
       selectedRecommendation,
+      selectedGameTime,
       playerFilter,
       compactView,
     });
-  }, [sortKey, sortDir, minEdge, minConfidence, selectedCategories, selectedTeams, selectedRisk, selectedRecommendation, playerFilter, compactView]);
+  }, [sortKey, sortDir, minEdge, minConfidence, selectedCategories, selectedTeams, selectedRisk, selectedRecommendation, selectedGameTime, playerFilter, compactView]);
 
   const toggleGameGroup = (key: string) => {
     setCollapsedGames((prev) => {
@@ -470,6 +511,7 @@ export function PrizePicksView() {
     setSelectedTeams([]);
     setSelectedRisk('All');
     setSelectedRecommendation('All');
+    setSelectedGameTime('All');
     setPlayerFilter('');
     setShowWatchlist(false);
   }, [props]);
@@ -532,6 +574,22 @@ export function PrizePicksView() {
   const recommendations = useMemo(() => {
     const recs = new Set(props.map((p) => p.recommendation).filter(Boolean));
     return ['All', ...Array.from(recs).sort()];
+  }, [props]);
+
+  // Compute which game time horizon buckets have props
+  const gameTimeBuckets = useMemo(() => {
+    const bkt = new Set(props.map((p) => gameTimeBucket(p.game_time)).filter(Boolean));
+    return ['All', ...GAME_TIME_OPTIONS.filter((x) => x !== 'All' && bkt.has(x))];
+  }, [props]);
+
+  // Compute per-bucket prop counts for filter chip badges
+  const gameTimeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of props) {
+      const b = gameTimeBucket(p.game_time);
+      if (b) counts[b] = (counts[b] || 0) + 1;
+    }
+    return counts;
   }, [props]);
 
   // Compute per-recommendation prop counts for filter chip badges
@@ -647,11 +705,14 @@ export function PrizePicksView() {
     if (selectedRecommendation !== 'All') {
       filtered = filtered.filter((p) => p.recommendation === selectedRecommendation);
     }
+    if (selectedGameTime !== 'All') {
+      filtered = filtered.filter((p) => gameTimeBucket(p.game_time) === selectedGameTime);
+    }
     if (showWatchlist) {
       filtered = filtered.filter((p) => watchlist.includes(p.id));
     }
     return filtered;
-  }, [props, selectedCategories, selectedTeams, playerFilter, minEdge, minConfidence, selectedRisk, selectedRecommendation, showWatchlist, watchlist]);
+  }, [props, selectedCategories, selectedTeams, playerFilter, minEdge, minConfidence, selectedRisk, selectedRecommendation, selectedGameTime, showWatchlist, watchlist]);
 
   // Client-side sort by edge/confidence/name/projection
   const sortedProps = useMemo(() => {
@@ -996,6 +1057,28 @@ export function PrizePicksView() {
               {rl === 'All' ? 'All' : rl.charAt(0).toUpperCase() + rl.slice(1)}
               {rl !== 'All' && riskCounts[rl] !== undefined && !loading && (
                 <span className="riskCountBadge">{riskCounts[rl]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Game time horizon filter chips */}
+      {!loading && gameTimeBuckets && gameTimeBuckets.length > 1 && (
+        <div className="categoryRow categoryRowGameTime">
+          {gameTimeBuckets.map((gtb) => (
+            <button
+              key={gtb}
+              type="button"
+              className={`chip small ${selectedGameTime === gtb ? 'active' : ''}`}
+              onClick={() => setSelectedGameTime(gtb)}
+              disabled={loading || props.length === 0}
+              title={gtb === 'All' ? 'Show all game times' : `Show only ${GAME_TIME_LABELS[gtb] || gtb} props`}
+              aria-label={gtb === 'All' ? 'Show all game times' : `Filter to ${GAME_TIME_LABELS[gtb] || gtb} games`}
+            >
+              {gtb === 'All' ? 'All' : GAME_TIME_LABELS[gtb] || gtb}
+              {gtb !== 'All' && gameTimeCounts[gtb] !== undefined && !loading && (
+                <span className="gameTimeCountBadge">{gameTimeCounts[gtb]}</span>
               )}
             </button>
           ))}
